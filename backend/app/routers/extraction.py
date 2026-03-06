@@ -1,4 +1,4 @@
-"""Router – AI text extraction (Gemini Vision OCR / Table extraction)."""
+"""Router – AI text extraction, indexing, and RAG query helpers."""
 
 from typing import Optional
 
@@ -9,7 +9,15 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import AuditLog, DocumentType, ExtractionStatus, Page
 from ..schemas import PageOut
-from ..services.extraction_service import extract_text, is_configured
+from ..services.extraction_service import is_configured
+from ..services.indexing_service import (
+    index_existing_page_ocr,
+    is_indexing_available,
+    process_page_extraction,
+    reindex_case_pages,
+)
+from ..services.pinecone_client import is_pinecone_configured
+from ..services.retrieval_service import query_case_rag
 
 router = APIRouter(tags=["extraction"])
 
@@ -23,11 +31,40 @@ class ExtractionResult(BaseModel):
     extraction_status: str
     extraction_method: Optional[str] = None
     ocr_text: Optional[str] = None
+    index_status: str = "pending"
+    index_method: Optional[str] = None
+    indexed_vector_count: int = 0
+    pinecone_document_id: Optional[str] = None
 
 
 class BatchExtractRequest(BaseModel):
     page_ids: list[str]
     has_tables: Optional[bool] = None  # override; if None, infer from DocumentType
+
+
+class ReindexResult(BaseModel):
+    queued: int
+    page_ids: list[str]
+
+
+class RagQueryRequest(BaseModel):
+    question: str
+    top_k: Optional[int] = None
+    page_ids: list[str] = []
+    section_ids: list[str] = []
+    document_type_ids: list[str] = []
+
+
+class RagMatchOut(BaseModel):
+    id: str
+    score: float
+    metadata: dict
+
+
+class RagQueryResponse(BaseModel):
+    question: str
+    total_matches: int
+    matches: list[RagMatchOut]
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────
@@ -43,61 +80,17 @@ def _determine_has_tables(page: Page, override: Optional[bool], db: Session) -> 
     return False
 
 
-def _do_extraction(page_id: str, has_tables: bool):
-    """Run extraction synchronously (called from background task)."""
-    from ..database import SessionLocal
-
-    db = SessionLocal()
-    try:
-        page = db.query(Page).filter(Page.id == page_id).first()
-        if not page:
-            return
-
-        page.extraction_status = ExtractionStatus.PROCESSING.value
-        db.commit()
-
-        abs_path = str(STORAGE_DIR / page.file_path)
-        method = "gemini_tables" if has_tables else "gemini_ocr"
-
-        try:
-            text = extract_text(abs_path, has_tables=has_tables)
-            page.ocr_text = text
-            page.extraction_status = ExtractionStatus.DONE.value
-            page.extraction_method = method
-            db.add(
-                AuditLog(
-                    case_id=page.case_id,
-                    action="extracted",
-                    entity_type="page",
-                    entity_id=page.id,
-                    details={"method": method, "chars": len(text)},
-                )
-            )
-        except Exception as exc:
-            page.extraction_status = ExtractionStatus.ERROR.value
-            page.extraction_method = method
-            page.ocr_text = f"[Error] {str(exc)}"
-            db.add(
-                AuditLog(
-                    case_id=page.case_id,
-                    action="extraction_error",
-                    entity_type="page",
-                    entity_id=page.id,
-                    details={"method": method, "error": str(exc)},
-                )
-            )
-
-        db.commit()
-    finally:
-        db.close()
-
-
 # ── Endpoints ─────────────────────────────────────────────────────────────
 
 @router.get("/extraction/status")
 def extraction_api_status():
-    """Check if the Gemini API key is configured."""
-    return {"configured": is_configured()}
+    """Check if Gemini OCR and Pinecone indexing are configured."""
+    return {
+        "configured": is_configured(),
+        "gemini_configured": is_configured(),
+        "pinecone_configured": is_pinecone_configured(),
+        "indexing_configured": is_indexing_available(),
+    }
 
 
 @router.post("/pages/{page_id}/extract", response_model=ExtractionResult)
@@ -125,12 +118,16 @@ def extract_page(
     page.extraction_status = ExtractionStatus.PROCESSING.value
     db.commit()
 
-    background_tasks.add_task(_do_extraction, page_id, use_tables)
+    background_tasks.add_task(process_page_extraction, page_id, use_tables)
 
     return ExtractionResult(
         page_id=page.id,
         extraction_status=ExtractionStatus.PROCESSING.value,
         extraction_method="gemini_tables" if use_tables else "gemini_ocr",
+        index_status=page.index_status or "pending",
+        index_method=page.index_method,
+        indexed_vector_count=page.indexed_vector_count or 0,
+        pinecone_document_id=page.pinecone_document_id,
     )
 
 
@@ -146,6 +143,10 @@ def get_extraction(page_id: str, db: Session = Depends(get_db)):
         extraction_status=page.extraction_status or ExtractionStatus.PENDING.value,
         extraction_method=page.extraction_method,
         ocr_text=page.ocr_text,
+        index_status=page.index_status or "pending",
+        index_method=page.index_method,
+        indexed_vector_count=page.indexed_vector_count or 0,
+        pinecone_document_id=page.pinecone_document_id,
     )
 
 
@@ -173,7 +174,7 @@ def extract_batch(
         page.extraction_status = ExtractionStatus.PROCESSING.value
         db.commit()
 
-        background_tasks.add_task(_do_extraction, pid, use_tables)
+        background_tasks.add_task(process_page_extraction, pid, use_tables)
         results.append({
             "page_id": pid,
             "extraction_status": "processing",
@@ -181,4 +182,69 @@ def extract_batch(
         })
 
     return {"queued": len(results), "pages": results}
+
+
+@router.post("/pages/{page_id}/reindex", response_model=ReindexResult)
+def reindex_page(
+    page_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """Reindex an already extracted page into Pinecone."""
+    page = db.query(Page).filter(Page.id == page_id).first()
+    if not page:
+        raise HTTPException(404, "Page not found")
+    if not page.ocr_text or not page.ocr_text.strip():
+        raise HTTPException(400, "Page does not have OCR text yet")
+    if not is_indexing_available():
+        raise HTTPException(503, "Pinecone indexing is not configured")
+
+    background_tasks.add_task(index_existing_page_ocr, page_id)
+    return ReindexResult(queued=1, page_ids=[page_id])
+
+
+@router.post("/cases/{case_id}/reindex", response_model=ReindexResult)
+def reindex_case(
+    case_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """Queue OCR reindexing for all extracted pages in a case."""
+    if not is_indexing_available():
+        raise HTTPException(503, "Pinecone indexing is not configured")
+
+    page_ids = [
+        page.id
+        for page in db.query(Page)
+        .filter(Page.case_id == case_id)
+        .order_by(Page.created_at.asc())
+        .all()
+        if page.ocr_text and page.ocr_text.strip()
+    ]
+    if not page_ids:
+        raise HTTPException(400, "No extracted pages found for this case")
+
+    background_tasks.add_task(reindex_case_pages, case_id)
+    return ReindexResult(queued=len(page_ids), page_ids=page_ids)
+
+
+@router.post("/cases/{case_id}/rag/query", response_model=RagQueryResponse)
+def query_case_chunks(case_id: str, body: RagQueryRequest):
+    """Run a semantic query against OCR chunks indexed for a case."""
+    if not is_indexing_available():
+        raise HTTPException(503, "Pinecone indexing is not configured")
+
+    matches = query_case_rag(
+        body.question,
+        case_id=case_id,
+        page_ids=body.page_ids,
+        section_ids=body.section_ids,
+        document_type_ids=body.document_type_ids,
+        top_k=body.top_k,
+    )
+    return RagQueryResponse(
+        question=body.question,
+        total_matches=len(matches),
+        matches=[RagMatchOut(**match) for match in matches],
+    )
 

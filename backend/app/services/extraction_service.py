@@ -16,6 +16,8 @@ import PIL.Image
 from google import genai
 from google.genai import types
 
+from .rag_config import get_rag_settings
+
 # ── Configuration ─────────────────────────────────────────────────────────
 
 _CLIENT: genai.Client | None = None
@@ -88,13 +90,14 @@ def extract_text(image_path: str, has_tables: bool = False) -> str:
         Extracted text (Markdown formatted if has_tables=True).
     """
     client = _get_client()
+    settings = get_rag_settings()
 
     img = PIL.Image.open(image_path)
 
     prompt = PROMPT_TABLES if has_tables else PROMPT_OCR
 
     response = client.models.generate_content(
-        model="gemini-2.0-flash",
+        model=settings.gemini_vision_model or settings.gemini_model,
         contents=[prompt, img],
         config=types.GenerateContentConfig(
             temperature=0.1,

@@ -113,6 +113,11 @@ class PageOut(BaseModel):
     ocr_text: Optional[str] = None
     extraction_status: str = "pending"
     extraction_method: Optional[str] = None
+    index_status: str = "pending"
+    index_method: Optional[str] = None
+    indexed_at: Optional[datetime] = None
+    indexed_vector_count: int = 0
+    pinecone_document_id: Optional[str] = None
     created_at: datetime
     updated_at: datetime
     # Multi-section links

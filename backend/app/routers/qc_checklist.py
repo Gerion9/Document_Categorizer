@@ -4,6 +4,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
+from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..database import SessionLocal, get_db
@@ -40,6 +41,23 @@ from ..schemas import (
 from ..services import qc_autopilot_jobs
 
 router = APIRouter(tags=["qc-checklist"])
+
+
+class QCChecklistQueryRequest(BaseModel):
+    question: str
+    top_k: int = 3
+
+
+class QCChecklistQueryMatchOut(BaseModel):
+    id: str
+    score: float
+    metadata: dict
+
+
+class QCChecklistQueryResponse(BaseModel):
+    question: str
+    total_matches: int
+    matches: list[QCChecklistQueryMatchOut]
 
 
 # ── helpers ───────────────────────────────────────────────────────────────
@@ -622,6 +640,34 @@ def _collect_question_image_paths(q: QCQuestion, db: Session) -> list[str]:
     return unique_paths
 
 
+def _collect_question_page_ids(q: QCQuestion, db: Session) -> list[str]:
+    page_ids: list[str] = []
+
+    for ev in q.evidence:
+        if ev.page_id:
+            page_ids.append(ev.page_id)
+
+    if not page_ids and q.target_section_ids:
+        for sid in q.target_section_ids:
+            sec_pages = (
+                db.query(Page)
+                .filter(Page.section_id == sid)
+                .order_by(Page.order_in_section)
+                .all()
+            )
+            for pg in sec_pages[:5]:
+                page_ids.append(pg.id)
+
+    seen: set[str] = set()
+    unique_ids: list[str] = []
+    for page_id in page_ids:
+        if page_id in seen:
+            continue
+        seen.add(page_id)
+        unique_ids.append(page_id)
+    return unique_ids
+
+
 def _save_ai_result(q: QCQuestion, result: dict) -> None:
     q.ai_answer = result.get("answer", "na")
     q.ai_notes = result.get("explanation", "")
@@ -641,13 +687,45 @@ def _verify_question_with_ai(q: QCQuestion, db: Session) -> str:
         return "skipped"
 
     from ..services.ai_verify_service import verify_question, verify_question_multi_page
+    from ..services.checklist_index_service import upsert_qc_question_answer
+    from ..services.indexing_service import is_indexing_available
+    from ..services.retrieval_service import retrieve_qc_text_context
+
+    checklist = q.part.checklist if q.part else None
+    page_ids = _collect_question_page_ids(q, db)
+    text_context = ""
+    if checklist and checklist.case_id:
+        retrieval = retrieve_qc_text_context(
+            q.description,
+            case_id=checklist.case_id,
+            evidence_page_ids=page_ids,
+            target_section_ids=q.target_section_ids or [],
+        )
+        text_context = retrieval.get("text_context", "")
 
     if len(image_paths) == 1:
-        result = verify_question(image_paths[0], q.description, q.where_to_verify or "")
+        result = verify_question(
+            image_paths[0],
+            q.description,
+            q.where_to_verify or "",
+            text_context=text_context,
+        )
     else:
-        result = verify_question_multi_page(image_paths, q.description, q.where_to_verify or "")
+        result = verify_question_multi_page(
+            image_paths,
+            q.description,
+            q.where_to_verify or "",
+            text_context=text_context,
+        )
 
     _save_ai_result(q, result)
+
+    if checklist and checklist.case_id and is_indexing_available():
+        try:
+            upsert_qc_question_answer(checklist, q, source_page_ids=page_ids)
+        except Exception:
+            pass
+
     return "verified"
 
 
@@ -820,6 +898,33 @@ def ai_verify_part(part_id: str, db: Session = Depends(get_db)):
     db.commit()
 
     return {"verified": verified, "skipped": skipped, "errors": errors}
+
+
+@router.post("/qc-checklists/{cl_id}/semantic-query", response_model=QCChecklistQueryResponse)
+def semantic_query_checklist(cl_id: str, body: QCChecklistQueryRequest, db: Session = Depends(get_db)):
+    """Query indexed checklist answers for a case-bound checklist."""
+    from ..services.indexing_service import is_indexing_available
+    from ..services.retrieval_service import query_checklist_rag
+
+    checklist = db.query(QCChecklist).filter(QCChecklist.id == cl_id).first()
+    if not checklist:
+        raise HTTPException(404, "QC Checklist not found")
+    if not checklist.case_id:
+        raise HTTPException(400, "Semantic query is only available for case-bound checklists")
+    if not is_indexing_available():
+        raise HTTPException(503, "Pinecone indexing is not configured")
+
+    matches = query_checklist_rag(
+        body.question,
+        case_id=checklist.case_id,
+        checklist_id=checklist.id,
+        top_k=body.top_k,
+    )
+    return QCChecklistQueryResponse(
+        question=body.question,
+        total_matches=len(matches),
+        matches=[QCChecklistQueryMatchOut(**match) for match in matches],
+    )
 
 
 # ── QC Link Preset helpers ────────────────────────────────────────────────

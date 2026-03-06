@@ -140,6 +140,14 @@ class ExtractionStatus(str, enum.Enum):
     ERROR = "error"
 
 
+class IndexStatus(str, enum.Enum):
+    PENDING = "pending"
+    PROCESSING = "processing"
+    DONE = "done"
+    ERROR = "error"
+    SKIPPED = "skipped"
+
+
 class Page(Base):
     __tablename__ = "pages"
 
@@ -159,6 +167,11 @@ class Page(Base):
     ocr_text = Column(Text, nullable=True)
     extraction_status = Column(String, default=ExtractionStatus.PENDING.value)
     extraction_method = Column(String, nullable=True)  # "gemini_tables" | "gemini_ocr"
+    index_status = Column(String, default=IndexStatus.PENDING.value)
+    index_method = Column(String, nullable=True)
+    indexed_at = Column(DateTime, nullable=True)
+    indexed_vector_count = Column(Integer, default=0)
+    pinecone_document_id = Column(String, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 

@@ -41,6 +41,16 @@ def _run_migrations():
             migrations.append("ALTER TABLE pages ADD COLUMN extraction_status VARCHAR DEFAULT 'pending'")
         if "extraction_method" not in page_cols:
             migrations.append("ALTER TABLE pages ADD COLUMN extraction_method VARCHAR")
+        if "index_status" not in page_cols:
+            migrations.append("ALTER TABLE pages ADD COLUMN index_status VARCHAR DEFAULT 'pending'")
+        if "index_method" not in page_cols:
+            migrations.append("ALTER TABLE pages ADD COLUMN index_method VARCHAR")
+        if "indexed_at" not in page_cols:
+            migrations.append("ALTER TABLE pages ADD COLUMN indexed_at DATETIME")
+        if "indexed_vector_count" not in page_cols:
+            migrations.append("ALTER TABLE pages ADD COLUMN indexed_vector_count INTEGER DEFAULT 0")
+        if "pinecone_document_id" not in page_cols:
+            migrations.append("ALTER TABLE pages ADD COLUMN pinecone_document_id VARCHAR")
 
     # Section: parent_section_id, depth, path_code (hierarchy)
     if "sections" in existing_tables:
