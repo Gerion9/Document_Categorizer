@@ -444,6 +444,27 @@ class QCLinkPresetCreate(BaseModel):
     doc_template_id: Optional[str] = None
 
 
+# ── QC AI Autopilot ────────────────────────────────────────────────────────
+
+class QCAutopilotJobOut(BaseModel):
+    id: str
+    checklist_id: str
+    case_id: Optional[str] = None
+    status: str
+    phase: str = "queued"
+    total_questions: int = 0
+    processed_questions: int = 0
+    verified: int = 0
+    skipped: int = 0
+    errors: int = 0
+    progress_pct: float = 0.0
+    error_message: Optional[str] = None
+    created_at: datetime
+    updated_at: datetime
+    started_at: Optional[datetime] = None
+    completed_at: Optional[datetime] = None
+
+
 # ── Reorder helpers ───────────────────────────────────────────────────────
 
 class ReorderItem(BaseModel):

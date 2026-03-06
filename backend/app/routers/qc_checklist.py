@@ -1,11 +1,12 @@
 """Router – Complex QC Checklists (hierarchical builder, manual-only)."""
 
+from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
-from ..database import get_db
+from ..database import SessionLocal, get_db
 from ..models import (
     AuditLog,
     Case,
@@ -33,8 +34,10 @@ from ..schemas import (
     QCQuestionEvidenceOut,
     QCQuestionOut,
     QCQuestionUpdate,
+    QCAutopilotJobOut,
     ReorderRequest,
 )
+from ..services import qc_autopilot_jobs
 
 router = APIRouter(tags=["qc-checklist"])
 
@@ -517,6 +520,254 @@ def save_qc_as_template(cl_id: str, db: Session = Depends(get_db)):
 
 # ── AI Verification ───────────────────────────────────────────────────────
 
+STORAGE_DIR = __import__("pathlib").Path(__file__).resolve().parent.parent.parent / "storage"
+
+
+def _part_sort_key(part: QCPart) -> tuple[int, str]:
+    return (part.order or 0, part.code or "")
+
+
+def _question_sort_key(question: QCQuestion) -> tuple[int, str]:
+    return (question.order or 0, question.code or "")
+
+
+def _ordered_questions_for_checklist(cl: QCChecklist) -> list[QCQuestion]:
+    all_parts = list(cl.parts)
+    by_id = {p.id: p for p in all_parts}
+    by_parent: dict[str | None, list[QCPart]] = {}
+    for part in all_parts:
+        by_parent.setdefault(part.parent_part_id, []).append(part)
+
+    for children in by_parent.values():
+        children.sort(key=_part_sort_key)
+
+    ordered_questions: list[QCQuestion] = []
+    visited_parts: set[str] = set()
+
+    def _walk(part_id: str):
+        part = by_id.get(part_id)
+        if not part or part.id in visited_parts:
+            return
+        visited_parts.add(part.id)
+        ordered_questions.extend(sorted(part.questions, key=_question_sort_key))
+        for child in by_parent.get(part.id, []):
+            _walk(child.id)
+
+    for root in by_parent.get(None, []):
+        _walk(root.id)
+
+    # Fallback for orphaned nodes (defensive against malformed trees).
+    for orphan in sorted(all_parts, key=_part_sort_key):
+        if orphan.id not in visited_parts:
+            _walk(orphan.id)
+
+    return ordered_questions
+
+
+def _ordered_questions_for_part(part: QCPart, all_parts: list[QCPart]) -> list[QCQuestion]:
+    by_id = {p.id: p for p in all_parts}
+    by_parent: dict[str | None, list[QCPart]] = {}
+    for node in all_parts:
+        by_parent.setdefault(node.parent_part_id, []).append(node)
+
+    for children in by_parent.values():
+        children.sort(key=_part_sort_key)
+
+    ordered_questions: list[QCQuestion] = []
+    visited_parts: set[str] = set()
+
+    def _walk(part_id: str):
+        node = by_id.get(part_id)
+        if not node or node.id in visited_parts:
+            return
+        visited_parts.add(node.id)
+        ordered_questions.extend(sorted(node.questions, key=_question_sort_key))
+        for child in by_parent.get(node.id, []):
+            _walk(child.id)
+
+    _walk(part.id)
+    return ordered_questions
+
+
+def _collect_question_image_paths(q: QCQuestion, db: Session) -> list[str]:
+    image_paths: list[str] = []
+
+    # Prefer explicit evidence links.
+    for ev in q.evidence:
+        page = db.query(Page).filter(Page.id == ev.page_id).first()
+        if page and page.file_path:
+            image_paths.append(str(STORAGE_DIR / page.file_path))
+
+    # Fallback to mapped target sections.
+    if not image_paths and q.target_section_ids:
+        for sid in q.target_section_ids:
+            sec_pages = (
+                db.query(Page)
+                .filter(Page.section_id == sid)
+                .order_by(Page.order_in_section)
+                .all()
+            )
+            for pg in sec_pages[:3]:
+                if pg.file_path:
+                    image_paths.append(str(STORAGE_DIR / pg.file_path))
+
+    # De-duplicate while preserving order.
+    seen: set[str] = set()
+    unique_paths: list[str] = []
+    for path in image_paths:
+        if path in seen:
+            continue
+        seen.add(path)
+        unique_paths.append(path)
+    return unique_paths
+
+
+def _save_ai_result(q: QCQuestion, result: dict) -> None:
+    q.ai_answer = result.get("answer", "na")
+    q.ai_notes = result.get("explanation", "")
+    q.ai_confidence = result.get("confidence", "low")
+    q.ai_verified_at = datetime.now(timezone.utc)
+
+    # Preserve manual answers if already set by a reviewer.
+    if q.answer == QCAnswerStatus.UNANSWERED.value:
+        q.answer = q.ai_answer
+        q.correction = result.get("correction", "")
+        q.notes = f"[AI {result.get('confidence', '')}] {result.get('explanation', '')}"
+
+
+def _verify_question_with_ai(q: QCQuestion, db: Session) -> str:
+    image_paths = _collect_question_image_paths(q, db)
+    if not image_paths:
+        return "skipped"
+
+    from ..services.ai_verify_service import verify_question, verify_question_multi_page
+
+    if len(image_paths) == 1:
+        result = verify_question(image_paths[0], q.description, q.where_to_verify or "")
+    else:
+        result = verify_question_multi_page(image_paths, q.description, q.where_to_verify or "")
+
+    _save_ai_result(q, result)
+    return "verified"
+
+
+def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
+    db = SessionLocal()
+    try:
+        qc_autopilot_jobs.mark_running(job_id, phase="loading_questions")
+        checklist = db.query(QCChecklist).filter(QCChecklist.id == checklist_id).first()
+        if not checklist:
+            qc_autopilot_jobs.mark_failed(job_id, "QC Checklist not found")
+            return
+
+        questions = _ordered_questions_for_checklist(checklist)
+        qc_autopilot_jobs.set_total_questions(job_id, len(questions))
+        qc_autopilot_jobs.mark_running(job_id, phase="verifying_questions")
+
+        verified = 0
+        skipped = 0
+        errors = 0
+
+        for q in questions:
+            try:
+                status = _verify_question_with_ai(q, db)
+                if status == "verified":
+                    db.commit()
+                    verified += 1
+                    qc_autopilot_jobs.update_progress(
+                        job_id,
+                        processed_delta=1,
+                        verified_delta=1,
+                        phase="verifying_questions",
+                    )
+                else:
+                    skipped += 1
+                    qc_autopilot_jobs.update_progress(
+                        job_id,
+                        processed_delta=1,
+                        skipped_delta=1,
+                        phase="verifying_questions",
+                    )
+            except Exception as exc:
+                db.rollback()
+                errors += 1
+                qc_autopilot_jobs.update_progress(
+                    job_id,
+                    processed_delta=1,
+                    errors_delta=1,
+                    phase="verifying_questions",
+                    error_message=str(exc),
+                )
+
+        if checklist.case_id:
+            try:
+                db.add(
+                    AuditLog(
+                        case_id=checklist.case_id,
+                        action="qc_autopilot_completed",
+                        entity_type="qc_checklist",
+                        entity_id=checklist.id,
+                        details={
+                            "job_id": job_id,
+                            "verified": verified,
+                            "skipped": skipped,
+                            "errors": errors,
+                            "total_questions": len(questions),
+                        },
+                    )
+                )
+                db.commit()
+            except Exception:
+                db.rollback()
+
+        qc_autopilot_jobs.mark_completed(job_id, phase="completed")
+    except Exception as exc:
+        db.rollback()
+        qc_autopilot_jobs.mark_failed(job_id, str(exc))
+    finally:
+        db.close()
+
+
+@router.post("/qc-checklists/{cl_id}/ai-autopilot", response_model=QCAutopilotJobOut, status_code=202)
+def start_checklist_ai_autopilot(
+    cl_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
+    """Start async AI Autopilot for all questions in a checklist."""
+    from ..services.extraction_service import is_configured as gemini_ok
+
+    if not gemini_ok():
+        raise HTTPException(503, "GEMINI_API_KEY not configured")
+
+    cl = db.query(QCChecklist).filter(QCChecklist.id == cl_id).first()
+    if not cl:
+        raise HTTPException(404, "QC Checklist not found")
+    if cl.is_template or not cl.case_id:
+        raise HTTPException(400, "AI Autopilot is only available for case-bound checklists")
+
+    active_job = qc_autopilot_jobs.get_active_job_for_checklist(cl.id)
+    if active_job:
+        return QCAutopilotJobOut(**active_job)
+
+    job_data = qc_autopilot_jobs.create_job(
+        checklist_id=cl.id,
+        case_id=cl.case_id,
+        total_questions=len(_ordered_questions_for_checklist(cl)),
+    )
+    background_tasks.add_task(_run_ai_autopilot_job, job_data["id"], cl.id)
+    return QCAutopilotJobOut(**job_data)
+
+
+@router.get("/qc-autopilot-jobs/{job_id}", response_model=QCAutopilotJobOut)
+def get_checklist_ai_autopilot_job(job_id: str):
+    """Get current status/progress for an AI Autopilot job."""
+    job_data = qc_autopilot_jobs.get_job(job_id)
+    if not job_data:
+        raise HTTPException(404, "AI Autopilot job not found")
+    return QCAutopilotJobOut(**job_data)
+
+
 @router.post("/qc-questions/{q_id}/ai-verify", response_model=QCQuestionOut)
 def ai_verify_question(q_id: str, db: Session = Depends(get_db)):
     """Use Gemini Vision to automatically verify a QC question against its evidence pages."""
@@ -528,48 +779,9 @@ def ai_verify_question(q_id: str, db: Session = Depends(get_db)):
     if not q:
         raise HTTPException(404, "Question not found")
 
-    from ..services.ai_verify_service import verify_question_multi_page, verify_question
-
-    STORAGE_DIR = __import__("pathlib").Path(__file__).resolve().parent.parent.parent / "storage"
-
-    # Collect page images: from evidence links or from target sections
-    image_paths: list[str] = []
-    for ev in q.evidence:
-        page = db.query(Page).filter(Page.id == ev.page_id).first()
-        if page and page.file_path:
-            abs_path = str(STORAGE_DIR / page.file_path)
-            image_paths.append(abs_path)
-
-    # If no evidence, try pages from target sections
-    if not image_paths and q.target_section_ids:
-        from ..models import Section as SectionModel
-        for sid in q.target_section_ids:
-            sec_pages = db.query(Page).filter(Page.section_id == sid).order_by(Page.order_in_section).all()
-            for p in sec_pages[:3]:
-                if p.file_path:
-                    image_paths.append(str(STORAGE_DIR / p.file_path))
-
-    if not image_paths:
+    status = _verify_question_with_ai(q, db)
+    if status == "skipped":
         raise HTTPException(400, "No evidence pages or target section pages available for this question")
-
-    # Call Gemini
-    if len(image_paths) == 1:
-        result = verify_question(image_paths[0], q.description, q.where_to_verify or "")
-    else:
-        result = verify_question_multi_page(image_paths, q.description, q.where_to_verify or "")
-
-    # Save AI result
-    from datetime import datetime, timezone
-    q.ai_answer = result["answer"]
-    q.ai_notes = result.get("explanation", "")
-    q.ai_confidence = result.get("confidence", "low")
-    q.ai_verified_at = datetime.now(timezone.utc)
-
-    # If no manual answer yet, auto-fill as suggestion
-    if q.answer == QCAnswerStatus.UNANSWERED.value:
-        q.answer = result["answer"]
-        q.correction = result.get("correction", "")
-        q.notes = f"[AI {result.get('confidence', '')}] {result.get('explanation', '')}"
 
     db.commit()
     db.refresh(q)
@@ -591,53 +803,20 @@ def ai_verify_part(part_id: str, db: Session = Depends(get_db)):
     skipped = 0
     errors = 0
 
-    def _verify_part_questions(p: QCPart):
-        nonlocal verified, skipped, errors
-        for q in p.questions:
-            try:
-                # Call the single-question endpoint logic
-                STORAGE_DIR = __import__("pathlib").Path(__file__).resolve().parent.parent.parent / "storage"
-                image_paths: list[str] = []
-                for ev in q.evidence:
-                    page = db.query(Page).filter(Page.id == ev.page_id).first()
-                    if page and page.file_path:
-                        image_paths.append(str(STORAGE_DIR / page.file_path))
-                if not image_paths and q.target_section_ids:
-                    for sid in (q.target_section_ids or []):
-                        sec_pages = db.query(Page).filter(Page.section_id == sid).order_by(Page.order_in_section).all()
-                        for pg in sec_pages[:3]:
-                            if pg.file_path:
-                                image_paths.append(str(STORAGE_DIR / pg.file_path))
-
-                if not image_paths:
-                    skipped += 1
-                    continue
-
-                from ..services.ai_verify_service import verify_question_multi_page, verify_question
-                if len(image_paths) == 1:
-                    result = verify_question(image_paths[0], q.description, q.where_to_verify or "")
-                else:
-                    result = verify_question_multi_page(image_paths, q.description, q.where_to_verify or "")
-
-                from datetime import datetime, timezone
-                q.ai_answer = result["answer"]
-                q.ai_notes = result.get("explanation", "")
-                q.ai_confidence = result.get("confidence", "low")
-                q.ai_verified_at = datetime.now(timezone.utc)
-                if q.answer == QCAnswerStatus.UNANSWERED.value:
-                    q.answer = result["answer"]
-                    q.correction = result.get("correction", "")
-                    q.notes = f"[AI {result.get('confidence', '')}] {result.get('explanation', '')}"
+    all_parts = db.query(QCPart).filter(QCPart.checklist_id == part.checklist_id).all()
+    questions = _ordered_questions_for_part(part, all_parts)
+    for q in questions:
+        try:
+            status = _verify_question_with_ai(q, db)
+            if status == "verified":
                 verified += 1
-            except Exception:
-                errors += 1
+                db.commit()
+            else:
+                skipped += 1
+        except Exception:
+            db.rollback()
+            errors += 1
 
-        # Recurse into child parts
-        children = db.query(QCPart).filter(QCPart.parent_part_id == p.id).all()
-        for child in children:
-            _verify_part_questions(child)
-
-    _verify_part_questions(part)
     db.commit()
 
     return {"verified": verified, "skipped": skipped, "errors": errors}
