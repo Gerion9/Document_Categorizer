@@ -86,16 +86,9 @@ function nextCode(siblings: { code: string }[]): string {
 
 const ANSWER_STYLES: Record<string, { bg: string; text: string; label: string }> = {
   unanswered: { bg: "bg-gray-100", text: "text-gray-500", label: "—" },
-  yes: { bg: "bg-green-100", text: "text-green-700", label: "Yes" },
+  yes: { bg: "bg-green-100", text: "text-green-700", label: "Sí" },
   no: { bg: "bg-red-100", text: "text-red-700", label: "No" },
-  na: { bg: "bg-gray-200", text: "text-gray-500", label: "N/A" },
-};
-
-const ANSWER_CYCLE: Record<string, string> = {
-  unanswered: "yes",
-  yes: "no",
-  no: "na",
-  na: "unanswered",
+  na: { bg: "bg-gray-200", text: "text-gray-600", label: "N/A" },
 };
 
 export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Props) {
@@ -190,8 +183,8 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
     } catch { toast.error("Error al crear pregunta"); }
   };
 
-  const handleCycleAnswer = async (q: QCQuestion) => {
-    const next = ANSWER_CYCLE[q.answer] || "unanswered";
+  const handleSetAnswer = async (q: QCQuestion, answer: string) => {
+    const next = q.answer === answer ? "unanswered" : answer;
     try {
       await updateQCQuestion(q.id, { answer: next });
       await reload();
@@ -370,19 +363,23 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
     return (
       <div key={q.id} className="border-l-2 border-transparent hover:border-brand-300 transition rounded-md">
         {/* Main row */}
-        <div className="group flex items-start gap-2 py-2 px-2 hover:bg-gray-50 transition text-xs">
-          {/* Answer button */}
-          <Tooltip content={`Respuesta: ${ans.label}. Clic para cambiar.`}>
-            <button onClick={() => handleCycleAnswer(q)} className={`shrink-0 w-11 py-0.5 rounded-md font-semibold text-[10px] transition-colors ${ans.bg} ${ans.text}`}>
-              {ans.label}
+        <div className="group flex items-start gap-2 py-2 px-2 hover:bg-gray-50 transition-colors text-xs">
+          {/* Delete Action (Left side) */}
+          <Tooltip content="Eliminar pregunta">
+            <button
+              onClick={() => deleteQCQuestion(q.id).then(reload)}
+              aria-label="Eliminar pregunta"
+              className="shrink-0 p-1 mt-0.5 rounded-md text-gray-300 hover:bg-red-50 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+            >
+              <Trash2 className="w-3 h-3" />
             </button>
           </Tooltip>
 
           {/* Code */}
-          <span className="shrink-0 font-mono text-[10px] text-gray-400 w-10 text-right mt-0.5">{q.code}</span>
+          <span className="shrink-0 font-mono text-[10px] text-gray-400 w-6 text-right mt-1">{q.code}</span>
 
           {/* Description + metadata */}
-          <div className="flex-1 min-w-0">
+          <div className="flex-1 min-w-0 mt-0.5">
             <p className="text-gray-700 leading-snug">{q.description}</p>
             {q.where_to_verify && (
               <p className="text-[10px] text-indigo-500 mt-1 flex items-center gap-0.5">
@@ -439,16 +436,29 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
                   AI {String(q.ai_answer).toUpperCase()} · {q.ai_confidence === "high" ? "Alta" : q.ai_confidence === "medium" ? "Media" : "Baja"}
                 </button>
               )}
-
-              <Tooltip content="Eliminar pregunta">
-                <button
-                  onClick={() => deleteQCQuestion(q.id).then(reload)}
-                  className="ml-auto p-1 rounded-md text-gray-400 hover:bg-red-50 hover:text-red-500 transition"
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
-              </Tooltip>
             </div>
+          </div>
+
+          {/* Segmented Control for manual answering */}
+          <div className="shrink-0 flex items-center bg-gray-100 p-0.5 rounded-lg border border-gray-200 mt-0.5">
+            {(["yes", "no", "na"] as const).map((ansKey) => {
+              const isSelected = q.answer === ansKey;
+              const style = ANSWER_STYLES[ansKey];
+              return (
+                <button
+                  key={ansKey}
+                  onClick={() => handleSetAnswer(q, ansKey)}
+                  aria-label={isSelected ? "Quitar selección" : `Marcar como ${style.label}`}
+                  className={`w-9 sm:w-10 py-1 rounded-md text-[10px] font-semibold transition-all ${
+                    isSelected
+                      ? `${style.bg} ${style.text} shadow-sm border border-black/5`
+                      : "text-gray-500 hover:bg-gray-200 border border-transparent"
+                  }`}
+                >
+                  {style.label}
+                </button>
+              );
+            })}
           </div>
         </div>
 
@@ -719,7 +729,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
                     {verifyingCl === cl.id && autopilotJob
                       ? `${Math.round(autopilotJob.progress_pct)}% (${autopilotJob.processed_questions}/${autopilotJob.total_questions})`
                       : verifyingCl === cl.id
-                        ? "INICIANDO..."
+                        ? "INICIANDO…"
                         : "AI AUTOPILOT"}
                   </span>
                 </button>
@@ -814,7 +824,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
                 <div className="flex gap-1.5 mb-2">
                   <input
                     className="flex-1 text-xs border border-purple-200 rounded-lg px-2.5 py-1.5 focus:ring-1 focus:ring-purple-300 outline-none"
-                    placeholder="Pregunta sobre las respuestas del QC..."
+                    placeholder="Pregunta sobre las respuestas del QC…"
                     value={semanticQ}
                     onChange={(e) => setSemanticQ(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleSemanticSearch(cl.id)}
