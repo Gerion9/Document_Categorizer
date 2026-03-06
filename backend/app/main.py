@@ -20,6 +20,8 @@ from .routers import cases, checklist, documents, export, pages, extraction, tem
 
 logging.getLogger("qc_autopilot").setLevel(logging.DEBUG)
 logging.getLogger("qc_autopilot").addHandler(logging.StreamHandler())
+logging.getLogger("gemini_usage").setLevel(logging.INFO)
+logging.getLogger("gemini_usage").addHandler(logging.StreamHandler())
 
 # Create all tables on startup
 Base.metadata.create_all(bind=engine)

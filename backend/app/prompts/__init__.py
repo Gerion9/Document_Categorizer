@@ -8,8 +8,11 @@ from .verification_prompts import (
     get_form_context,
 )
 from .extraction_prompts import (
+    OCR_CACHE_PLACEHOLDER,
     PROMPT_TABLES,
     PROMPT_OCR,
+    get_ocr_system_prompt,
+    build_ocr_page_prompt,
 )
 
 __all__ = [
@@ -22,4 +25,7 @@ __all__ = [
     "get_form_context",
     "PROMPT_TABLES",
     "PROMPT_OCR",
+    "OCR_CACHE_PLACEHOLDER",
+    "get_ocr_system_prompt",
+    "build_ocr_page_prompt",
 ]

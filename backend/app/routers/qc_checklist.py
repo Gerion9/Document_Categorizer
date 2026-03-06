@@ -40,6 +40,7 @@ from ..schemas import (
     ReorderRequest,
 )
 from ..services import qc_autopilot_jobs
+from ..services.gemini_runtime_service import GeminiTokenTracker, create_token_tracker, log_token_summary
 
 router = APIRouter(tags=["qc-checklist"])
 
@@ -734,7 +735,12 @@ def _save_ai_result(q: QCQuestion, result: dict) -> None:
         q.notes = f"[AI {result.get('confidence', '')}] {result.get('explanation', '')}"
 
 
-def _verify_question_with_ai(q: QCQuestion, db: Session) -> str:
+def _verify_question_with_ai(
+    q: QCQuestion,
+    db: Session,
+    *,
+    tracker: GeminiTokenTracker | None = None,
+) -> str:
     """
     Verify a single question. Tries three modes in priority order:
     1) Image + text context (vision model)
@@ -764,6 +770,7 @@ def _verify_question_with_ai(q: QCQuestion, db: Session) -> str:
             case_id=case_id,
             evidence_page_ids=page_ids,
             target_section_ids=q.target_section_ids or [],
+            tracker=tracker,
         )
         log.debug("  [%s] text_context: %d chars", q.code, len(text_context))
 
@@ -775,26 +782,36 @@ def _verify_question_with_ai(q: QCQuestion, db: Session) -> str:
             result = verify_question(
                 image_paths[0], q.description, q.where_to_verify or "",
                 text_context=text_context,
+                tracker=tracker,
+                step_label=f"verify-image-{q.code or q.id}",
             )
         else:
             result = verify_question_multi_page(
                 image_paths, q.description, q.where_to_verify or "",
                 text_context=text_context,
+                tracker=tracker,
+                step_label=f"verify-image-multi-{q.code or q.id}",
             )
     elif text_context:
         log.debug("  [%s] mode=text-only RAG", q.code)
         result = verify_question_rag(
             q.description, q.where_to_verify or "", text_context,
+            tracker=tracker,
+            step_label=f"verify-rag-{q.code or q.id}",
         )
     elif image_paths:
         log.debug("  [%s] mode=image-only (%d images)", q.code, len(image_paths))
         if len(image_paths) == 1:
             result = verify_question(
                 image_paths[0], q.description, q.where_to_verify or "",
+                tracker=tracker,
+                step_label=f"verify-image-{q.code or q.id}",
             )
         else:
             result = verify_question_multi_page(
                 image_paths, q.description, q.where_to_verify or "",
+                tracker=tracker,
+                step_label=f"verify-image-multi-{q.code or q.id}",
             )
     else:
         return "skipped"
@@ -806,6 +823,7 @@ def _verify_question_with_ai(q: QCQuestion, db: Session) -> str:
             upsert_qc_question_answer(
                 checklist, q,
                 source_page_ids=_collect_question_page_ids(q, db, case_id=case_id),
+                tracker=tracker,
             )
         except Exception:
             pass
@@ -823,6 +841,8 @@ def _run_autopilot_batch_rag(
     evidence_map: dict[str, str],
     db: Session,
     checklist: QCChecklist,
+    *,
+    tracker: GeminiTokenTracker | None = None,
 ) -> tuple[int, int, int]:
     """
     Process a batch of questions with a single Gemini call using per-question evidence.
@@ -850,7 +870,12 @@ def _run_autopilot_batch_rag(
         batch_evidence[qid] = evidence_map.get(qid, "")
 
     try:
-        answers = verify_question_batch_rag(batch_input, batch_evidence)
+        answers = verify_question_batch_rag(
+            batch_input,
+            batch_evidence,
+            tracker=tracker,
+            step_label=f"autopilot-batch-{questions[0].code or questions[0].id}",
+        )
     except Exception as exc:
         log.error("  Batch RAG call failed: %s", exc)
         return 0, 0, len(questions)
@@ -869,6 +894,7 @@ def _run_autopilot_batch_rag(
                     upsert_qc_question_answer(
                         checklist, q,
                         source_page_ids=_collect_question_page_ids(q, db, case_id=checklist.case_id),
+                        tracker=tracker,
                     )
                 except Exception:
                     pass
@@ -886,6 +912,7 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
     import logging
     log = logging.getLogger("qc_autopilot")
     db = SessionLocal()
+    tracker = create_token_tracker(label=f"qc-autopilot-{job_id[:8]}")
     try:
         qc_autopilot_jobs.mark_running(job_id, phase="loading_questions")
         checklist = db.query(QCChecklist).filter(QCChecklist.id == checklist_id).first()
@@ -913,6 +940,7 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                     case_id=case_id,
                     evidence_page_ids=page_ids,
                     target_section_ids=q.target_section_ids or [],
+                    tracker=tracker,
                 )
                 evidence_map[qid] = evidence
                 if evidence.strip():
@@ -935,7 +963,13 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                 log.info("  Batch %d-%d (%d questions)", i + 1, i + len(batch), len(batch))
                 bv, bs, be = 0, 0, 0
                 try:
-                    bv, bs, be = _run_autopilot_batch_rag(batch, evidence_map, db, checklist)
+                    bv, bs, be = _run_autopilot_batch_rag(
+                        batch,
+                        evidence_map,
+                        db,
+                        checklist,
+                        tracker=tracker,
+                    )
                     verified += bv
                     skipped += bs
                     errors += be
@@ -958,7 +992,7 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
             for q in questions:
                 q_status = "skipped"
                 try:
-                    q_status = _verify_question_with_ai(q, db)
+                    q_status = _verify_question_with_ai(q, db, tracker=tracker)
                     if q_status == "verified":
                         db.commit()
                         verified += 1
@@ -981,9 +1015,11 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
 
         log.info("Autopilot %s done: verified=%d, skipped=%d, errors=%d",
                  job_id[:8], verified, skipped, errors)
+        log_token_summary(tracker, label=f"AI Autopilot {job_id[:8]}", logger=log)
 
         if case_id:
             try:
+                tracker_summary = tracker.get_summary()
                 db.add(
                     AuditLog(
                         case_id=case_id,
@@ -996,6 +1032,14 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                             "skipped": skipped,
                             "errors": errors,
                             "total_questions": len(questions),
+                            "token_summary": {
+                                "input": tracker_summary["input"],
+                                "output": tracker_summary["output"],
+                                "cached": tracker_summary["cached"],
+                                "thoughts": tracker_summary["thoughts"],
+                                "embedding": tracker_summary["embedding"],
+                                "grand_total": tracker_summary["grand_total"],
+                            },
                         },
                     )
                 )
@@ -1062,12 +1106,14 @@ def ai_verify_question(q_id: str, db: Session = Depends(get_db)):
     if not q:
         raise HTTPException(404, "Question not found")
 
-    status = _verify_question_with_ai(q, db)
+    tracker = create_token_tracker(label=f"qc-question-{q.id[:8]}")
+    status = _verify_question_with_ai(q, db, tracker=tracker)
     if status == "skipped":
         raise HTTPException(400, "No evidence pages or target section pages available for this question")
 
     db.commit()
     db.refresh(q)
+    log_token_summary(tracker, label=f"QC Question {q.code or q.id}")
     return _question_out(q)
 
 
@@ -1085,12 +1131,13 @@ def ai_verify_part(part_id: str, db: Session = Depends(get_db)):
     verified = 0
     skipped = 0
     errors = 0
+    tracker = create_token_tracker(label=f"qc-part-{part_id[:8]}")
 
     all_parts = db.query(QCPart).filter(QCPart.checklist_id == part.checklist_id).all()
     questions = _ordered_questions_for_part(part, all_parts)
     for q in questions:
         try:
-            status = _verify_question_with_ai(q, db)
+            status = _verify_question_with_ai(q, db, tracker=tracker)
             if status == "verified":
                 verified += 1
                 db.commit()
@@ -1101,6 +1148,7 @@ def ai_verify_part(part_id: str, db: Session = Depends(get_db)):
             errors += 1
 
     db.commit()
+    log_token_summary(tracker, label=f"QC Part {part.code or part.id}")
 
     return {"verified": verified, "skipped": skipped, "errors": errors}
 

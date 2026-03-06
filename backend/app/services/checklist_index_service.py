@@ -6,6 +6,7 @@ from typing import Any
 from ..models import QCChecklist, QCQuestion
 from .chunking_service import sanitize_identifier
 from .embedding_service import get_embedding, get_embedding_batch
+from .gemini_runtime_service import GeminiTokenTracker
 from .ocr_index_service import _normalize_matches, _with_retries
 from .pinecone_client import get_index, get_namespace
 from .rag_config import get_rag_settings
@@ -23,6 +24,7 @@ def upsert_qc_question_answer(
     question: QCQuestion,
     *,
     source_page_ids: list[str] | None = None,
+    tracker: GeminiTokenTracker | None = None,
 ) -> dict[str, Any]:
     if not question.description.strip():
         return {"vectors_count": 0}
@@ -34,6 +36,8 @@ def upsert_qc_question_answer(
         [question.description],
         task_type=settings.embedding_task_type_document,
         titles=[f"{checklist.name} | {question.code or question.id}"[:500]],
+        tracker=tracker,
+        step_label=f"checklist-upsert-{str(question.id)[:8]}",
     )
     if not embeddings or not embeddings[0]:
         return {"vectors_count": 0}
@@ -70,6 +74,8 @@ def query_checklist_answers(
     case_id: str | None = None,
     checklist_id: str | None = None,
     top_k: int | None = None,
+    tracker: GeminiTokenTracker | None = None,
+    step_label: str = "checklist-query",
 ) -> list[dict[str, Any]]:
     settings = get_rag_settings()
     if not question or not question.strip():
@@ -81,7 +87,12 @@ def query_checklist_answers(
     if checklist_id:
         filter_payload["checklist_id"] = {"$eq": str(checklist_id)}
 
-    vector = get_embedding(question, task_type=settings.embedding_task_type_query)
+    vector = get_embedding(
+        question,
+        task_type=settings.embedding_task_type_query,
+        tracker=tracker,
+        step_label=step_label,
+    )
     index = get_index()
     namespace = get_namespace(case_id)
     result = _with_retries(

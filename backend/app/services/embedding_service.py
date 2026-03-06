@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import random
 import time
 from typing import Any
@@ -7,7 +8,10 @@ from typing import Any
 from google.genai import types
 
 from .extraction_service import _get_client
+from .gemini_runtime_service import GeminiTokenTracker
 from .rag_config import get_rag_settings
+
+log = logging.getLogger("gemini_usage")
 
 
 def is_embeddings_configured() -> bool:
@@ -82,7 +86,14 @@ def _extract_embeddings(response: Any) -> list[list[float]]:
     return []
 
 
-def _embed_batch(texts: list[str], task_type: str, title: str | None = None) -> list[list[float]]:
+def _embed_batch(
+    texts: list[str],
+    task_type: str,
+    title: str | None = None,
+    *,
+    tracker: GeminiTokenTracker | None = None,
+    step_label: str = "embedding",
+) -> list[list[float]]:
     settings = get_rag_settings()
     client = _get_client()
     last_exc: Exception | None = None
@@ -98,6 +109,21 @@ def _embed_batch(texts: list[str], task_type: str, title: str | None = None) -> 
                     title=title or None,
                 ),
             )
+            if tracker is not None:
+                token_info = tracker.record_embedding_response(
+                    step_label,
+                    response,
+                    texts,
+                    model=settings.embedding_model,
+                )
+                if settings.gemini_log_token_usage:
+                    log.info(
+                        "[GEMINI] %s model=%s embedding_tokens=%d estimated=%s",
+                        step_label,
+                        settings.embedding_model,
+                        token_info["token_count"],
+                        token_info["estimated"],
+                    )
             embeddings = _extract_embeddings(response)
             if len(embeddings) != len(texts):
                 raise RuntimeError(
@@ -117,6 +143,9 @@ def get_embedding_batch(
     texts: list[str],
     task_type: str | None = None,
     titles: list[str] | None = None,
+    *,
+    tracker: GeminiTokenTracker | None = None,
+    step_label: str = "embedding",
 ) -> list[list[float]]:
     clean_texts = [str(text or "").strip() for text in texts]
     if not clean_texts:
@@ -131,22 +160,47 @@ def get_embedding_batch(
         clean_titles = [str(title or "").strip() for title in titles]
         if len(clean_titles) != len(clean_texts):
             raise ValueError("titles length must match texts length")
-        for text, title in zip(clean_texts, clean_titles, strict=False):
-            all_embeddings.extend(_embed_batch([text], resolved_task_type, title=title or None))
+        for index, (text, title) in enumerate(zip(clean_texts, clean_titles, strict=False), start=1):
+            all_embeddings.extend(
+                _embed_batch(
+                    [text],
+                    resolved_task_type,
+                    title=title or None,
+                    tracker=tracker,
+                    step_label=f"{step_label}-{index}",
+                )
+            )
         return all_embeddings
 
     for start in range(0, len(clean_texts), batch_size):
         batch = clean_texts[start:start + batch_size]
-        all_embeddings.extend(_embed_batch(batch, resolved_task_type))
+        batch_number = (start // batch_size) + 1
+        all_embeddings.extend(
+            _embed_batch(
+                batch,
+                resolved_task_type,
+                tracker=tracker,
+                step_label=f"{step_label}-{batch_number}",
+            )
+        )
 
     return all_embeddings
 
 
-def get_embedding(text: str, task_type: str | None = None, title: str | None = None) -> list[float]:
+def get_embedding(
+    text: str,
+    task_type: str | None = None,
+    title: str | None = None,
+    *,
+    tracker: GeminiTokenTracker | None = None,
+    step_label: str = "embedding-query",
+) -> list[float]:
     settings = get_rag_settings()
     embeddings = get_embedding_batch(
         [text],
         task_type=task_type or settings.embedding_task_type_query,
         titles=[title] if title is not None else None,
+        tracker=tracker,
+        step_label=step_label,
     )
     return embeddings[0] if embeddings else []

@@ -13,6 +13,7 @@ from .chunking_service import (
     sanitize_identifier,
 )
 from .embedding_service import get_embedding, get_embedding_batch
+from .gemini_runtime_service import GeminiTokenTracker
 from .pinecone_client import get_index, get_namespace
 from .rag_config import get_rag_settings
 
@@ -170,7 +171,11 @@ def delete_page_ocr_chunks(page_id: str, case_id: str | None = None) -> None:
     )
 
 
-def upsert_page_ocr_chunks(page: Page) -> dict[str, Any]:
+def upsert_page_ocr_chunks(
+    page: Page,
+    *,
+    tracker: GeminiTokenTracker | None = None,
+) -> dict[str, Any]:
     index = get_index()
     settings = get_rag_settings()
     namespace = get_namespace(page.case_id)
@@ -188,6 +193,8 @@ def upsert_page_ocr_chunks(page: Page) -> dict[str, Any]:
         [record["text"] for record in records],
         task_type=settings.embedding_task_type_document,
         titles=[str(record["metadata"].get("document_title", "") or "") for record in records],
+        tracker=tracker,
+        step_label=f"ocr-upsert-{str(page.id)[:8]}",
     )
     vectors = []
     for record, embedding in zip(records, embeddings, strict=False):
@@ -243,6 +250,8 @@ def query_ocr_chunks(
     section_ids: list[str] | None = None,
     document_type_ids: list[str] | None = None,
     top_k: int | None = None,
+    tracker: GeminiTokenTracker | None = None,
+    step_label: str = "ocr-query",
 ) -> list[dict[str, Any]]:
     settings = get_rag_settings()
     if not question or not question.strip():
@@ -258,7 +267,12 @@ def query_ocr_chunks(
     if document_type_ids:
         filter_payload["document_type_id"] = {"$in": [str(doc_id) for doc_id in document_type_ids]}
 
-    vector = get_embedding(question, task_type=settings.embedding_task_type_query)
+    vector = get_embedding(
+        question,
+        task_type=settings.embedding_task_type_query,
+        tracker=tracker,
+        step_label=step_label,
+    )
     index = get_index()
     namespace = get_namespace(case_id)
     result = _with_retries(

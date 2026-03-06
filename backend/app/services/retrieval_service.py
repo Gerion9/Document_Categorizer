@@ -5,6 +5,7 @@ import re
 from typing import Any
 
 from .checklist_index_service import query_checklist_answers
+from .gemini_runtime_service import GeminiTokenTracker
 from .ocr_index_service import query_ocr_chunks
 from .pinecone_client import is_pinecone_configured
 from .rag_config import get_rag_settings
@@ -117,6 +118,7 @@ def collect_evidence_for_question(
     evidence_page_ids: list[str] | None = None,
     target_section_ids: list[str] | None = None,
     top_k: int | None = None,
+    tracker: GeminiTokenTracker | None = None,
 ) -> str:
     """
     Collect, rank, dedup, and format evidence for a single QC question.
@@ -144,6 +146,8 @@ def collect_evidence_for_question(
                     question_text,
                     case_id=case_id,
                     top_k=resolved_top_k,
+                    tracker=tracker,
+                    step_label=f"evidence-query-{stage_name}",
                     **extra_filters,
                 )
                 all_matches.extend(matches)
@@ -166,6 +170,7 @@ def retrieve_qc_text_context(
     evidence_page_ids: list[str] | None = None,
     target_section_ids: list[str] | None = None,
     top_k: int | None = None,
+    tracker: GeminiTokenTracker | None = None,
 ) -> dict[str, Any]:
     """
     Get text context for a QC question.
@@ -188,6 +193,8 @@ def retrieve_qc_text_context(
                     question,
                     case_id=case_id,
                     top_k=top_k,
+                    tracker=tracker,
+                    step_label=f"qc-context-{stage_name}",
                     **extra_filters,
                 )
                 if matches:
@@ -220,6 +227,7 @@ def query_case_rag(
     section_ids: list[str] | None = None,
     document_type_ids: list[str] | None = None,
     top_k: int | None = None,
+    tracker: GeminiTokenTracker | None = None,
 ) -> list[dict[str, Any]]:
     return query_ocr_chunks(
         question,
@@ -228,6 +236,7 @@ def query_case_rag(
         section_ids=section_ids,
         document_type_ids=document_type_ids,
         top_k=top_k,
+        tracker=tracker,
     )
 
 
@@ -237,10 +246,12 @@ def query_checklist_rag(
     case_id: str | None = None,
     checklist_id: str | None = None,
     top_k: int | None = None,
+    tracker: GeminiTokenTracker | None = None,
 ) -> list[dict[str, Any]]:
     return query_checklist_answers(
         question,
         case_id=case_id,
         checklist_id=checklist_id,
         top_k=top_k,
+        tracker=tracker,
     )
