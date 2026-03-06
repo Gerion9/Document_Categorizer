@@ -101,6 +101,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
   const [showTemplates, setShowTemplates] = useState(false);
   const [verifyingQ, setVerifyingQ] = useState<string | null>(null);
   const [verifyingPart, setVerifyingPart] = useState<string | null>(null);
+  const [verifyingCl, setVerifyingCl] = useState<string | null>(null);
   const [geminiOk, setGeminiOk] = useState(false);
   const [mappingQ, setMappingQ] = useState<string | null>(null);
 
@@ -215,6 +216,14 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
     setVerifyingPart(null);
   };
 
+  const handleAIVerifyChecklist = async (clId: string) => {
+    setVerifyingCl(clId);
+    // Simulamos un retraso
+    await new Promise(r => setTimeout(r, 1000));
+    toast.error("Funcionalidad de llenado automático de checklist aún no implementada");
+    setVerifyingCl(null);
+  };
+
   const handleToggleSectionTarget = async (qId: string, sectionId: string, current: string[]) => {
     const next = current.includes(sectionId)
       ? current.filter((id) => id !== sectionId)
@@ -319,30 +328,6 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
             )}
             {/* Priority action bar */}
             <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <Tooltip content={geminiOk ? "Verificar esta pregunta con AI (Gemini analiza páginas de las secciones mapeadas)" : "Configurar GEMINI_API_KEY en backend/.env para activar AI"}>
-                <button
-                  onClick={() => geminiOk ? handleAIVerify(q.id) : toast.error("Configura GEMINI_API_KEY en backend/.env")}
-                  disabled={verifyingQ === q.id}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all disabled:opacity-50 border relative overflow-hidden group/aiq ${
-                    geminiOk
-                      ? "bg-[#0B0F19] text-white border-gray-700 shadow-md hover:shadow-purple-500/25 hover:border-purple-500/50"
-                      : "bg-gray-100 text-gray-400 border-transparent hover:bg-gray-200"
-                  }`}
-                >
-                  {geminiOk && (
-                    <span className="absolute inset-0 bg-gradient-to-r from-transparent via-purple-500/20 to-transparent translate-x-[-100%] group-hover/aiq:animate-[shimmer_1.5s_infinite]" />
-                  )}
-                  {verifyingQ === q.id ? (
-                    <Loader2 className="w-3.5 h-3.5 animate-spin text-purple-400 relative z-10" />
-                  ) : (
-                    <AnimatedAIBot className={`w-3.5 h-3.5 relative z-10 ${geminiOk ? "text-purple-400" : "text-gray-400"}`} />
-                  )}
-                  <span className={`relative z-10 tracking-wide ${geminiOk ? "text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400" : ""}`}>
-                    {verifyingQ === q.id ? "PROCESANDO..." : hasAI ? "RE-VERIFICAR AI" : "VERIFICAR CON AI"}
-                  </span>
-                </button>
-              </Tooltip>
-
               <Tooltip content="Mapear a secciones del documento">
                 <button
                   onClick={() => setMappingQ(mappingQ === q.id ? null : q.id)}
@@ -491,33 +476,6 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
             </div>
           )}
 
-          {/* AI Verify Part — PREMIUM BUTTON */}
-          {stats.total > 0 && (
-            <button
-              onClick={(e) => { e.stopPropagation(); geminiOk ? handleAIVerifyPart(part.id) : toast.error("Configura GEMINI_API_KEY en backend/.env"); }}
-              disabled={verifyingPart === part.id}
-              className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-bold transition-all disabled:opacity-50 shrink-0 border relative overflow-hidden group/ai ${
-                geminiOk
-                  ? "bg-[#0B0F19] text-white border-gray-700 shadow-lg hover:shadow-purple-500/25 hover:border-purple-500/50"
-                  : "bg-gray-100 text-gray-400 hover:bg-gray-200"
-              }`}
-            >
-              {/* Background gradient sweep for premium feel */}
-              {geminiOk && (
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-purple-500/20 to-transparent translate-x-[-100%] group-hover/ai:animate-[shimmer_1.5s_infinite]" />
-              )}
-              
-              {verifyingPart === part.id ? (
-                <Loader2 className="w-4 h-4 animate-spin text-purple-400" />
-              ) : (
-                <AnimatedAIBot className={`w-4 h-4 ${geminiOk ? "text-purple-400" : "text-gray-400"}`} />
-              )}
-              <span className={`tracking-wide ${geminiOk ? "text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400" : ""}`}>
-                {verifyingPart === part.id ? "PROCESANDO..." : "AI AUTOPILOT"}
-              </span>
-            </button>
-          )}
-
           {/* Secondary actions */}
           <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition shrink-0">
             <Tooltip content="Agregar subparte">
@@ -656,6 +614,33 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
               <div className="w-20 h-1.5 bg-gray-200 rounded-full overflow-hidden">
                 <div className="h-full bg-green-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
               </div>
+              
+              {/* AI Verify Checklist — PREMIUM BUTTON */}
+              {cl.total_questions > 0 && (
+                <button
+                  onClick={(e) => { e.stopPropagation(); geminiOk ? handleAIVerifyChecklist(cl.id) : toast.error("Configura GEMINI_API_KEY en backend/.env"); }}
+                  disabled={verifyingCl === cl.id}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-bold transition-all disabled:opacity-50 shrink-0 border relative overflow-hidden group/ai ${
+                    geminiOk
+                      ? "bg-[#0B0F19] text-white border-gray-700 shadow-lg hover:shadow-purple-500/25 hover:border-purple-500/50"
+                      : "bg-gray-100 text-gray-400 hover:bg-gray-200"
+                  }`}
+                >
+                  {geminiOk && (
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-purple-500/20 to-transparent translate-x-[-100%] group-hover/ai:animate-[shimmer_1.5s_infinite]" />
+                  )}
+                  
+                  {verifyingCl === cl.id ? (
+                    <Loader2 className="w-4 h-4 animate-spin text-purple-400" />
+                  ) : (
+                    <AnimatedAIBot className={`w-4 h-4 ${geminiOk ? "text-purple-400" : "text-gray-400"}`} />
+                  )}
+                  <span className={`tracking-wide ${geminiOk ? "text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400" : ""}`}>
+                    {verifyingCl === cl.id ? "PROCESANDO..." : "AI AUTOPILOT"}
+                  </span>
+                </button>
+              )}
+
               <Tooltip content="Guardar como plantilla reutilizable">
                 <button onClick={async (e) => { e.stopPropagation(); try { await saveQCAsTemplate(cl.id); toast.success("Guardado como plantilla"); await reload(); } catch { toast.error("Error"); } }} className="p-0.5 text-gray-400 hover:text-purple-600 transition">
                   <Download className="w-3.5 h-3.5" />
