@@ -77,6 +77,58 @@ def format_match_context(matches: list[dict[str, Any]], *, max_chars: int = 4000
     return "\n\n".join(blocks)
 
 
+def _build_retrieval_stages(
+    *,
+    evidence_page_ids: list[str] | None = None,
+    target_section_ids: list[str] | None = None,
+) -> list[tuple[str, dict[str, Any]]]:
+    stages: list[tuple[str, dict[str, Any]]] = []
+    if evidence_page_ids:
+        stages.append(("evidence_pages", {"page_ids": evidence_page_ids}))
+    if target_section_ids:
+        stages.append(("target_sections", {"section_ids": target_section_ids}))
+    stages.append(("case_wide", {}))
+    return stages
+
+
+def _rank_matches(matches: list[dict[str, Any]], *, top_k: int) -> list[dict[str, Any]]:
+    deduped = _dedup_matches(matches)
+    ranked = sorted(deduped, key=_evidence_rank_score, reverse=True)
+    return ranked[:max(1, top_k)]
+
+
+def _query_best_stage_matches(
+    question: str,
+    *,
+    case_id: str,
+    top_k: int,
+    tracker: GeminiTokenTracker | None = None,
+    step_prefix: str,
+    evidence_page_ids: list[str] | None = None,
+    target_section_ids: list[str] | None = None,
+) -> tuple[str | None, list[dict[str, Any]]]:
+    stages = _build_retrieval_stages(
+        evidence_page_ids=evidence_page_ids,
+        target_section_ids=target_section_ids,
+    )
+    for stage_name, extra_filters in stages:
+        try:
+            matches = query_ocr_chunks(
+                question,
+                case_id=case_id,
+                top_k=top_k,
+                tracker=tracker,
+                step_label=f"{step_prefix}-{stage_name}",
+                **extra_filters,
+            )
+            ranked_matches = _rank_matches(matches, top_k=top_k)
+            if ranked_matches and format_match_context(ranked_matches):
+                return stage_name, ranked_matches
+        except Exception as exc:
+            log.warning("Evidence query failed (stage=%s): %s", stage_name, exc)
+    return None, []
+
+
 def _ocr_text_from_db(case_id: str, *, max_chars: int = 6000) -> str:
     """Fallback: gather Gemini OCR text directly from the DB when Pinecone is not available."""
     from ..database import SessionLocal
@@ -122,42 +174,31 @@ def collect_evidence_for_question(
 ) -> str:
     """
     Collect, rank, dedup, and format evidence for a single QC question.
-    Merges results from all retrieval stages (like OCRDocPinecone collectEvidence).
+    Preserves narrow-to-broad stage precedence while keeping broad fallbacks.
     Returns formatted text evidence string.
     """
     settings = get_rag_settings()
     resolved_top_k = max(4, top_k or settings.retrieval_top_k)
 
     if is_pinecone_configured():
-        all_matches: list[dict[str, Any]] = []
         evidence_page_ids = [str(pid) for pid in (evidence_page_ids or []) if pid]
         target_section_ids = [str(sid) for sid in (target_section_ids or []) if sid]
-
-        stages: list[tuple[str, dict[str, Any]]] = []
-        if evidence_page_ids:
-            stages.append(("evidence_pages", {"page_ids": evidence_page_ids}))
-        if target_section_ids:
-            stages.append(("target_sections", {"section_ids": target_section_ids}))
-        stages.append(("case_wide", {}))
-
-        for stage_name, extra_filters in stages:
-            try:
-                matches = query_ocr_chunks(
-                    question_text,
-                    case_id=case_id,
-                    top_k=resolved_top_k,
-                    tracker=tracker,
-                    step_label=f"evidence-query-{stage_name}",
-                    **extra_filters,
-                )
-                all_matches.extend(matches)
-            except Exception as exc:
-                log.warning("Evidence query failed (stage=%s): %s", stage_name, exc)
-
-        if all_matches:
-            deduped = _dedup_matches(all_matches)
-            ranked = sorted(deduped, key=_evidence_rank_score, reverse=True)
-            return format_match_context(ranked[:resolved_top_k])
+        stage_name, ranked_matches = _query_best_stage_matches(
+            question_text,
+            case_id=case_id,
+            top_k=resolved_top_k,
+            tracker=tracker,
+            step_prefix="evidence-query",
+            evidence_page_ids=evidence_page_ids,
+            target_section_ids=target_section_ids,
+        )
+        if ranked_matches:
+            log.debug(
+                "Using %s stage for evidence collection (%d matches)",
+                stage_name or "unknown",
+                len(ranked_matches),
+            )
+            return format_match_context(ranked_matches)
 
     db_text = _ocr_text_from_db(case_id)
     return db_text
@@ -179,32 +220,23 @@ def retrieve_qc_text_context(
     if is_pinecone_configured():
         evidence_page_ids = [str(pid) for pid in (evidence_page_ids or []) if pid]
         target_section_ids = [str(sid) for sid in (target_section_ids or []) if sid]
-
-        stages: list[tuple[str, dict[str, Any]]] = []
-        if evidence_page_ids:
-            stages.append(("evidence_pages", {"page_ids": evidence_page_ids}))
-        if target_section_ids:
-            stages.append(("target_sections", {"section_ids": target_section_ids}))
-        stages.append(("case_wide", {}))
-
-        for stage_name, extra_filters in stages:
-            try:
-                matches = query_ocr_chunks(
-                    question,
-                    case_id=case_id,
-                    top_k=top_k,
-                    tracker=tracker,
-                    step_label=f"qc-context-{stage_name}",
-                    **extra_filters,
-                )
-                if matches:
-                    return {
-                        "stage": stage_name,
-                        "matches": matches,
-                        "text_context": format_match_context(matches),
-                    }
-            except Exception as exc:
-                log.warning("Pinecone query failed (stage=%s): %s", stage_name, exc)
+        settings = get_rag_settings()
+        resolved_top_k = max(1, top_k or settings.retrieval_top_k)
+        stage_name, ranked_matches = _query_best_stage_matches(
+            question,
+            case_id=case_id,
+            top_k=resolved_top_k,
+            tracker=tracker,
+            step_prefix="qc-context",
+            evidence_page_ids=evidence_page_ids,
+            target_section_ids=target_section_ids,
+        )
+        if ranked_matches:
+            return {
+                "stage": stage_name or "unknown",
+                "matches": ranked_matches,
+                "text_context": format_match_context(ranked_matches),
+            }
 
     # Fallback: read Gemini OCR text directly from DB
     db_text = _ocr_text_from_db(case_id)

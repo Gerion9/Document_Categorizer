@@ -191,7 +191,7 @@ export interface QCQuestion {
   description: string;
   where_to_verify: string;
   order: number;
-  answer: "unanswered" | "yes" | "no" | "na";
+  answer: "unanswered" | "yes" | "no" | "na" | "insufficient";
   correction: string;
   notes: string;
   answered_by: string | null;

@@ -50,6 +50,7 @@ import {
   saveLinkPreset,
   getLinkPresets,
   applyLinkPreset,
+  autoLinkQCSections,
   deleteLinkPreset,
   startAutopilot,
   getAutopilotJob,
@@ -89,6 +90,7 @@ const ANSWER_STYLES: Record<string, { bg: string; text: string; label: string }>
   yes: { bg: "bg-green-100", text: "text-green-700", label: "Sí" },
   no: { bg: "bg-red-100", text: "text-red-700", label: "No" },
   na: { bg: "bg-gray-200", text: "text-gray-600", label: "N/A" },
+  insufficient: { bg: "bg-amber-100", text: "text-amber-700", label: "Ins." },
 };
 
 export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Props) {
@@ -344,6 +346,16 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
     } catch { toast.error("Error al aplicar preset"); }
   };
 
+  const handleAutoLinkSections = async (clId: string) => {
+    try {
+      await autoLinkQCSections(caseId, clId);
+      toast.success("Auto-mapeo ejecutado");
+      await reload();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Error al auto-mapear secciones");
+    }
+  };
+
   const handleDeleteLinkPreset = async (presetId: string) => {
     try {
       await deleteLinkPreset(presetId);
@@ -428,6 +440,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
                   className={`inline-flex items-center gap-1 text-[9px] px-2 py-1 rounded-full font-semibold transition ${
                     q.ai_answer === "yes" ? "bg-green-100 text-green-700" :
                     q.ai_answer === "no" ? "bg-red-100 text-red-700" :
+                    q.ai_answer === "insufficient" ? "bg-amber-100 text-amber-700" :
                     "bg-gray-100 text-gray-500"
                   } hover:ring-1 hover:ring-purple-300`}
                   title="Ver resultado AI"
@@ -441,7 +454,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
 
           {/* Segmented Control for manual answering */}
           <div className="shrink-0 flex items-center bg-gray-100 p-0.5 rounded-lg border border-gray-200 mt-0.5">
-            {(["yes", "no", "na"] as const).map((ansKey) => {
+            {(["yes", "no", "na", "insufficient"] as const).map((ansKey) => {
               const isSelected = q.answer === ansKey;
               const style = ANSWER_STYLES[ansKey];
               return (
@@ -474,6 +487,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
               <div className={`p-2 rounded-lg text-[10px] leading-relaxed ${
                 q.ai_answer === "yes" ? "bg-green-50 border border-green-200" :
                 q.ai_answer === "no" ? "bg-red-50 border border-red-200" :
+                q.ai_answer === "insufficient" ? "bg-amber-50 border border-amber-200" :
                 "bg-gray-50 border border-gray-200"
               }`}>
                 <div className="flex items-center gap-1 mb-1 font-semibold">
@@ -767,6 +781,11 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
               <Tooltip content="Aplicar preset de vinculación">
                 <button onClick={(e) => { e.stopPropagation(); handleShowPresets(cl.id, cl.source_template_id); }} className={`p-0.5 transition ${showPresetMenuFor === cl.id ? "text-teal-600" : "text-gray-400 hover:text-teal-600"}`}>
                   <Link2 className="w-3.5 h-3.5" />
+                </button>
+              </Tooltip>
+              <Tooltip content="Auto-mapear secciones desde Where to verify">
+                <button onClick={(e) => { e.stopPropagation(); handleAutoLinkSections(cl.id); }} className="p-0.5 text-gray-400 hover:text-amber-600 transition">
+                  <Sparkles className="w-3.5 h-3.5" />
                 </button>
               </Tooltip>
               <Tooltip content="Agregar parte raíz">
