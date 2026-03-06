@@ -1,6 +1,6 @@
 """Router – CRUD for DocumentTypes and Sections (taxonomy tree with multi-level hierarchy)."""
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -14,6 +14,7 @@ from ..schemas import (
     SectionOut,
     SectionUpdate,
 )
+from ..services.indexing_service import is_indexing_available, reindex_case_pages
 
 router = APIRouter(tags=["documents"])
 
@@ -47,6 +48,20 @@ def _compute_depth(sec: Section, db: Session) -> int:
             break
         current = parent
     return depth
+
+
+def _refresh_section_subtree(sec: Section, db: Session) -> None:
+    sec.depth = _compute_depth(sec, db)
+    sec.path_code = _compute_path_code(sec, db)
+    children = db.query(Section).filter(Section.parent_section_id == sec.id).all()
+    for child in children:
+        _refresh_section_subtree(child, db)
+
+
+def _queue_case_reindex(background_tasks: BackgroundTasks, case_id: str | None) -> None:
+    if not case_id or not is_indexing_available():
+        return
+    background_tasks.add_task(reindex_case_pages, case_id)
 
 
 def _section_out(sec: Section, all_sections: list[Section] | None = None) -> SectionOut:
@@ -120,21 +135,33 @@ def create_document_type(case_id: str, body: DocumentTypeCreate, db: Session = D
 
 
 @router.put("/document-types/{dt_id}", response_model=DocumentTypeOut)
-def update_document_type(dt_id: str, body: DocumentTypeUpdate, db: Session = Depends(get_db)):
+def update_document_type(
+    dt_id: str,
+    body: DocumentTypeUpdate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     dt = db.query(DocumentType).filter(DocumentType.id == dt_id).first()
     if not dt:
         raise HTTPException(404, "DocumentType not found")
+    should_refresh_sections = False
     if body.name is not None:
         dt.name = body.name
     if body.code is not None:
         dt.code = body.code
+        should_refresh_sections = True
     if body.order is not None:
         dt.order = body.order
     if body.has_tables is not None:
         dt.has_tables = body.has_tables
+    if should_refresh_sections:
+        for sec in db.query(Section).filter(Section.document_type_id == dt.id).all():
+            if not sec.parent_section_id:
+                _refresh_section_subtree(sec, db)
     db.add(AuditLog(case_id=dt.case_id, action="updated", entity_type="document_type", entity_id=dt.id))
     db.commit()
     db.refresh(dt)
+    _queue_case_reindex(background_tasks, dt.case_id)
     return _doctype_out(dt)
 
 
@@ -207,7 +234,12 @@ def create_section(dt_id: str, body: SectionCreate, db: Session = Depends(get_db
 
 
 @router.put("/sections/{sec_id}", response_model=SectionOut)
-def update_section(sec_id: str, body: SectionUpdate, db: Session = Depends(get_db)):
+def update_section(
+    sec_id: str,
+    body: SectionUpdate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     sec = db.query(Section).filter(Section.id == sec_id).first()
     if not sec:
         raise HTTPException(404, "Section not found")
@@ -223,11 +255,11 @@ def update_section(sec_id: str, body: SectionUpdate, db: Session = Depends(get_d
         sec.parent_section_id = body.parent_section_id
 
     # Re-compute hierarchy fields
-    sec.depth = _compute_depth(sec, db)
-    sec.path_code = _compute_path_code(sec, db)
+    _refresh_section_subtree(sec, db)
 
     db.commit()
     db.refresh(sec)
+    _queue_case_reindex(background_tasks, sec.document_type.case_id if sec.document_type else None)
     return _section_out(sec)
 
 

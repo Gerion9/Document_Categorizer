@@ -12,6 +12,7 @@ from ..models import (
     AuditLog,
     Case,
     Page,
+    PageSectionLink,
     QCAnswerStatus,
     QCChecklist,
     QCLinkPreset,
@@ -41,6 +42,31 @@ from ..schemas import (
 from ..services import qc_autopilot_jobs
 
 router = APIRouter(tags=["qc-checklist"])
+
+
+def _pages_for_target_section(section_id: str, db: Session, *, limit: int) -> list[Page]:
+    links = (
+        db.query(PageSectionLink)
+        .filter(PageSectionLink.section_id == section_id)
+        .order_by(PageSectionLink.is_primary.desc(), PageSectionLink.order_in_section.asc())
+        .limit(limit)
+        .all()
+    )
+    pages_by_id: dict[str, Page] = {}
+    for link in links:
+        if link.page and link.page.id not in pages_by_id:
+            pages_by_id[link.page.id] = link.page
+
+    if pages_by_id:
+        return list(pages_by_id.values())
+
+    return (
+        db.query(Page)
+        .filter(Page.section_id == section_id)
+        .order_by(Page.order_in_section)
+        .limit(limit)
+        .all()
+    )
 
 
 class QCChecklistQueryRequest(BaseModel):
@@ -619,13 +645,8 @@ def _collect_question_image_paths(q: QCQuestion, db: Session) -> list[str]:
     # Fallback to mapped target sections.
     if not image_paths and q.target_section_ids:
         for sid in q.target_section_ids:
-            sec_pages = (
-                db.query(Page)
-                .filter(Page.section_id == sid)
-                .order_by(Page.order_in_section)
-                .all()
-            )
-            for pg in sec_pages[:3]:
+            sec_pages = _pages_for_target_section(sid, db, limit=3)
+            for pg in sec_pages:
                 if pg.file_path:
                     image_paths.append(str(STORAGE_DIR / pg.file_path))
 
@@ -649,13 +670,8 @@ def _collect_question_page_ids(q: QCQuestion, db: Session) -> list[str]:
 
     if not page_ids and q.target_section_ids:
         for sid in q.target_section_ids:
-            sec_pages = (
-                db.query(Page)
-                .filter(Page.section_id == sid)
-                .order_by(Page.order_in_section)
-                .all()
-            )
-            for pg in sec_pages[:5]:
+            sec_pages = _pages_for_target_section(sid, db, limit=5)
+            for pg in sec_pages:
                 page_ids.append(pg.id)
 
     seen: set[str] = set()

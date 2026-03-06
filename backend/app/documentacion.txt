@@ -1,0 +1,437 @@
+DOCUMENTACION DE CAMBIOS - INTEGRACION OCR + PINECONE + GEMINI
+
+Proyecto:
+Document_Categorizer
+
+Ubicacion de esta documentacion:
+backend/app/documentacion.txt
+
+
+1. OBJETIVO DE LOS CAMBIOS
+
+Se implemento una capa de indexacion semantica con Gemini + Pinecone dentro del
+backend Python de Document_Categorizer para que el flujo actual del proyecto
+pueda:
+
+- extraer texto OCR de paginas
+- dividir ese texto en chunks utiles
+- generar embeddings semanticos
+- guardar esos embeddings en Pinecone
+- consultar Pinecone por caso, pagina, seccion y checklist
+- enriquecer la verificacion AI del sistema QC
+- mantener sincronizado el indice cuando el usuario reorganiza paginas
+
+La idea no fue reemplazar la logica principal del sistema, sino integrarla al
+flujo real ya documentado en README:
+
+- subir archivos
+- dividir PDFs en paginas
+- clasificar paginas en secciones
+- extraer OCR
+- verificar checklist y QC
+- exportar resultados
+
+
+2. ARQUITECTURA GENERAL AGREGADA
+
+Se agregaron nuevos servicios al backend:
+
+- services/rag_config.py
+- services/pinecone_client.py
+- services/embedding_service.py
+- services/chunking_service.py
+- services/ocr_index_service.py
+- services/checklist_index_service.py
+- services/retrieval_service.py
+- services/indexing_service.py
+
+Estos servicios trabajan asi:
+
+1. extraction_service.py extrae OCR con Gemini.
+2. indexing_service.py coordina la indexacion de una pagina ya extraida.
+3. chunking_service.py divide el OCR en chunks.
+4. embedding_service.py genera embeddings con Gemini.
+5. pinecone_client.py abre el indice Pinecone.
+6. ocr_index_service.py hace upsert/query de chunks OCR.
+7. checklist_index_service.py indexa respuestas QC.
+8. retrieval_service.py compone consultas semanticas reutilizables.
+
+
+3. CONFIGURACION NUEVA
+
+Se creo el archivo:
+
+- backend/.env
+
+Variables importantes:
+
+- GEMINI_API_KEY
+- GEMINI_MODEL
+- GEMINI_VISION_MODEL
+- EMBEDDING_MODEL
+- EMBEDDING_DIMENSION
+- EMBEDDING_TASK_TYPE_QUERY
+- EMBEDDING_TASK_TYPE_DOCUMENT
+- EMBEDDING_BATCH_SIZE
+- EMBEDDING_MAX_RETRIES
+- EMBEDDING_RETRY_BASE_MS
+- PINECONE_API_KEY
+- PINECONE_INDEX_OCR
+- PINECONE_NAMESPACE_PREFIX
+- OCR_CHUNK_SIZE
+- OCR_CHUNK_OVERLAP
+- RETRIEVAL_TOP_K
+- UPSERT_BATCH_SIZE
+- UPSERT_MAX_RETRIES
+- UPSERT_RETRY_BASE_MS
+
+Importante:
+
+- El indice Pinecone debe coincidir con la dimension del embedding.
+- Actualmente la configuracion usa gemini-embedding-001 con dimension 1024.
+
+
+4. DEPENDENCIAS NUEVAS
+
+Se agrego en backend/requirements.txt:
+
+- pinecone
+
+Ya se estaba usando:
+
+- google-genai
+- python-dotenv
+
+
+5. CAMBIOS EN MODELOS Y SCHEMAS
+
+Se extendio el modelo Page en models.py para persistir estado de indexacion:
+
+- index_status
+- index_method
+- indexed_at
+- indexed_vector_count
+- pinecone_document_id
+
+Tambien se expusieron esos campos en schemas.py dentro de PageOut para que el
+frontend pueda ver si una pagina:
+
+- fue indexada
+- cuantas vectors genero
+- con que metodo se indexo
+
+main.py tambien fue ajustado para crear/migrar esas columnas si no existen.
+
+
+6. OCR Y EXTRACCION
+
+Archivo involucrado:
+
+- routers/extraction.py
+- services/extraction_service.py
+- services/indexing_service.py
+
+Comportamiento actual:
+
+- El endpoint de extraccion sigue funcionando igual para el usuario.
+- Cuando se extrae texto de una pagina, el backend intenta indexarla en
+  Pinecone automaticamente.
+- Si Pinecone o embeddings no estan configurados, la extraccion sigue
+  funcionando y la indexacion queda como "skipped".
+- Si Pinecone falla, no se pierde el OCR ya extraido.
+
+Endpoints relacionados:
+
+- GET /api/extraction/status
+- POST /api/pages/{page_id}/extract
+- GET /api/pages/{page_id}/extraction
+- POST /api/cases/{case_id}/extract-batch
+- POST /api/pages/{page_id}/reindex
+- POST /api/cases/{case_id}/reindex
+- POST /api/cases/{case_id}/rag/query
+
+
+7. CHUNKING IMPLEMENTADO
+
+Archivo:
+
+- services/chunking_service.py
+
+Se porto la logica base del proyecto OCRDocPinecone y se adapto a Python.
+
+Incluye:
+
+- deteccion de headers de seccion
+- split por secciones
+- sliding window
+- limpieza de chunks basura
+- extraccion de etiquetas de seccion
+- sanitizacion de IDs
+
+Objetivo:
+
+- evitar indexar chunks vacios o poco utiles
+- mejorar la calidad del retrieval
+
+
+8. PINECONE IMPLEMENTADO
+
+Archivos:
+
+- services/pinecone_client.py
+- services/ocr_index_service.py
+- services/checklist_index_service.py
+
+Buenas practicas aplicadas:
+
+- namespace por caso usando case_id
+- metadata por pagina, seccion y tipo documental
+- IDs deterministas de chunks
+- retries con backoff
+- borrado y recreacion de vectores al reindexar
+
+Namespace actual:
+
+- case-{case_id}
+
+Esto mejora:
+
+- aislamiento por caso
+- costo de consulta
+- precision de scoping
+- mantenimiento del indice
+
+
+9. EMBEDDINGS IMPLEMENTADOS
+
+Archivo:
+
+- services/embedding_service.py
+
+Buenas practicas aplicadas:
+
+- uso de google-genai moderno
+- task_type para query y document
+- output_dimensionality configurable
+- batching
+- retries
+- title documental para embeddings de retrieval
+
+Actualmente se usan:
+
+- RETRIEVAL_QUERY para preguntas
+- RETRIEVAL_DOCUMENT para chunks OCR y respuestas QC
+
+
+10. RETRIEVAL IMPLEMENTADO
+
+Archivo:
+
+- services/retrieval_service.py
+
+Funciones principales:
+
+- armar contexto textual desde chunks OCR
+- consultar OCR por caso
+- consultar respuestas QC indexadas
+- formatear texto recuperado para prompts Gemini
+
+Esto permite que la IA no mire solo la imagen, sino tambien el OCR ya indexado.
+
+
+11. QC Y AUTOPILOT MEJORADOS
+
+Archivos:
+
+- routers/qc_checklist.py
+- services/ai_verify_service.py
+- services/checklist_index_service.py
+
+Mejoras:
+
+- la verificacion AI ahora usa contexto OCR recuperado desde Pinecone
+- las respuestas del QC se indexan para consultas futuras
+- se agrego consulta semantica para checklist QC
+- se cambio el parseo manual de JSON por salidas estructuradas con schema
+  Pydantic
+
+Esto hace la verificacion:
+
+- mas robusta
+- mas estable
+- menos propensa a errores de parsing
+
+
+12. SINCRONIZACION CON EL FLUJO REAL DEL PROYECTO
+
+Este fue uno de los cambios mas importantes.
+
+Problema anterior:
+
+- Pinecone se llenaba cuando se extraia OCR
+- pero si el usuario movia paginas entre secciones, cambiaba la primaria,
+  agregaba referencias secundarias o modificaba codigos de secciones, la
+  metadata indexada podia quedar vieja
+
+Solucion implementada:
+
+Archivo:
+
+- routers/pages.py
+- routers/documents.py
+
+Ahora Pinecone se resincroniza cuando:
+
+- se clasifica una pagina
+- se desclasifica una pagina
+- se marca como extra
+- se agrega un section link
+- se quita un section link
+- se cambia la seccion primaria
+- se elimina una pagina
+- se cambia el code de un DocumentType
+- se cambia name/code/parent de una Section
+
+Tambien se recalculan correctamente:
+
+- path_code
+- depth
+- subarboles de secciones
+
+
+13. SECTION LINKS Y QC
+
+El sistema actual usa page_section_links para referencias secundarias.
+
+Antes:
+
+- parte del QC buscaba paginas por page.section_id
+
+Ahora:
+
+- tambien usa PageSectionLink
+- esto permite que una pagina vinculada como referencia secundaria tambien sea
+  considerada por retrieval y verificacion
+
+Esto alinea Pinecone con el comportamiento real del tab Organizar.
+
+
+14. ENDPOINTS NUEVOS O MEJORADOS
+
+Extraccion y RAG:
+
+- GET /api/extraction/status
+- POST /api/pages/{page_id}/extract
+- GET /api/pages/{page_id}/extraction
+- POST /api/cases/{case_id}/extract-batch
+- POST /api/pages/{page_id}/reindex
+- POST /api/cases/{case_id}/reindex
+- POST /api/cases/{case_id}/rag/query
+
+QC:
+
+- POST /api/qc-checklists/{cl_id}/ai-autopilot
+- GET /api/qc-autopilot-jobs/{job_id}
+- POST /api/qc-questions/{q_id}/ai-verify
+- POST /api/qc-parts/{part_id}/ai-verify-all
+- POST /api/qc-checklists/{cl_id}/semantic-query
+
+
+15. LO QUE YA FUNCIONA MEJOR AHORA
+
+Escenario real del README:
+
+1. Se suben PDFs o imagenes.
+2. Se convierten a paginas.
+3. Se clasifican en una taxonomia.
+4. Se extrae OCR con Gemini.
+5. Ese OCR se indexa en Pinecone.
+6. Si luego cambian la organizacion del caso, Pinecone se actualiza.
+7. El QC y el autopilot consumen OCR + imagen + contexto semantico.
+
+Resultado:
+
+- mejor consistencia entre UI, DB y Pinecone
+- mejor retrieval por seccion
+- mejor soporte para evidencias secundarias
+- mejor estabilidad en respuestas AI
+
+
+16. LIMITACIONES ACTUALES
+
+Aunque la integracion ya es bastante solida, todavia hay cosas que no son nivel
+infraestructura enterprise:
+
+- se usa BackgroundTasks en vez de una cola durable tipo Celery o RQ
+- no se implemento OCR PDF-native con Files API de Gemini
+- no se implemento reranking posterior a Pinecone
+- falta prueba end-to-end contra credenciales reales del usuario
+- falta suite de tests automatizados para esta capa nueva
+
+Esto significa que:
+
+- el sistema deberia funcionar bien en el flujo local normal
+- pero para alto volumen o produccion fuerte aun conviene endurecer mas
+
+
+17. COMO PROBAR EL SISTEMA
+
+Paso 1:
+Completar backend/.env con credenciales reales.
+
+Paso 2:
+Instalar dependencias:
+
+backend:
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+
+frontend:
+npm install
+
+Paso 3:
+Iniciar backend:
+
+uvicorn app.main:app --reload --port 8000
+
+Paso 4:
+Iniciar frontend:
+
+npm run dev
+
+Paso 5:
+Verificar:
+
+- http://localhost:8000/api/health
+- http://localhost:8000/api/extraction/status
+
+Paso 6:
+Prueba funcional recomendada:
+
+- crear un caso
+- subir un PDF
+- clasificar paginas en secciones
+- extraer texto de 1 pagina
+- mover esa pagina a otra seccion
+- ejecutar reindexado o dejar que se resincronice
+- correr AI verify o autopilot sobre un QC checklist
+
+
+18. RESUMEN FINAL
+
+La integracion hecha en este proyecto no solo agrega Pinecone, sino que lo
+conecta con el flujo real de Document_Categorizer.
+
+Lo mas importante que se logro:
+
+- OCR indexable
+- retrieval por caso y seccion
+- QC con contexto semantico
+- namespaces por caso
+- salidas estructuradas en Gemini
+- resincronizacion del indice cuando cambia la organizacion documental
+
+En otras palabras:
+
+Pinecone ya no esta "pegado aparte", sino conectado al flujo vivo del caso.

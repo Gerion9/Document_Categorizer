@@ -2,7 +2,7 @@
 
 from typing import Optional
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from ..database import get_db
@@ -23,6 +23,8 @@ from ..schemas import (
     PageSetPrimary,
     PagesReorderBatch,
 )
+from ..services.indexing_service import index_existing_page_ocr, is_indexing_available
+from ..services.ocr_index_service import delete_page_ocr_chunks
 from ..services.pdf_service import process_image, save_uploaded_file, split_pdf
 
 router = APIRouter(tags=["pages"])
@@ -68,12 +70,27 @@ def _page_out(p: Page) -> PageOut:
         "ocr_text": p.ocr_text,
         "extraction_status": p.extraction_status or "pending",
         "extraction_method": p.extraction_method,
+        "index_status": p.index_status or "pending",
+        "index_method": p.index_method,
+        "indexed_at": p.indexed_at,
+        "indexed_vector_count": p.indexed_vector_count or 0,
+        "pinecone_document_id": p.pinecone_document_id,
         "created_at": p.created_at,
         "updated_at": p.updated_at,
         "section_links": link_outs,
         "link_count": len(link_outs),
     }
     return PageOut(**d)
+
+
+def _queue_reindex_if_needed(background_tasks: BackgroundTasks, page: Page | None) -> None:
+    if not page:
+        return
+    if not page.ocr_text or not page.ocr_text.strip():
+        return
+    if not is_indexing_available():
+        return
+    background_tasks.add_task(index_existing_page_ocr, page.id)
 
 
 def _sync_legacy_fields(page: Page, db: Session):
@@ -201,7 +218,12 @@ def list_pages(
 # ── Classify a page (moves primary to target section) ────────────────────
 
 @router.put("/pages/{page_id}/classify", response_model=PageOut)
-def classify_page(page_id: str, body: PageClassify, db: Session = Depends(get_db)):
+def classify_page(
+    page_id: str,
+    body: PageClassify,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     page = db.query(Page).filter(Page.id == page_id).first()
     if not page:
         raise HTTPException(404, "Page not found")
@@ -247,13 +269,18 @@ def classify_page(page_id: str, body: PageClassify, db: Session = Depends(get_db
     )
     db.commit()
     db.refresh(page)
+    _queue_reindex_if_needed(background_tasks, page)
     return _page_out(page)
 
 
 # ── Unclassify a page (remove ALL links) ──────────────────────────────────
 
 @router.put("/pages/{page_id}/unclassify", response_model=PageOut)
-def unclassify_page(page_id: str, db: Session = Depends(get_db)):
+def unclassify_page(
+    page_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     page = db.query(Page).filter(Page.id == page_id).first()
     if not page:
         raise HTTPException(404, "Page not found")
@@ -269,13 +296,18 @@ def unclassify_page(page_id: str, db: Session = Depends(get_db)):
     db.add(AuditLog(case_id=page.case_id, action="unclassified", entity_type="page", entity_id=page.id))
     db.commit()
     db.refresh(page)
+    _queue_reindex_if_needed(background_tasks, page)
     return _page_out(page)
 
 
 # ── Mark page as extra ────────────────────────────────────────────────────
 
 @router.put("/pages/{page_id}/extra", response_model=PageOut)
-def mark_extra(page_id: str, db: Session = Depends(get_db)):
+def mark_extra(
+    page_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     page = db.query(Page).filter(Page.id == page_id).first()
     if not page:
         raise HTTPException(404, "Page not found")
@@ -288,6 +320,7 @@ def mark_extra(page_id: str, db: Session = Depends(get_db)):
     page.status = PageStatus.EXTRA.value
     db.commit()
     db.refresh(page)
+    _queue_reindex_if_needed(background_tasks, page)
     return _page_out(page)
 
 
@@ -306,7 +339,12 @@ def get_page_links(page_id: str, db: Session = Depends(get_db)):
 
 
 @router.post("/pages/{page_id}/section-links", response_model=PageOut, status_code=201)
-def add_section_link(page_id: str, body: PageSectionLinkCreate, db: Session = Depends(get_db)):
+def add_section_link(
+    page_id: str,
+    body: PageSectionLinkCreate,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     """Link a page to a section. If is_primary=True, demotes any existing primary."""
     page = db.query(Page).filter(Page.id == page_id).first()
     if not page:
@@ -332,6 +370,7 @@ def add_section_link(page_id: str, body: PageSectionLinkCreate, db: Session = De
         _sync_legacy_fields(page, db)
         db.commit()
         db.refresh(page)
+        _queue_reindex_if_needed(background_tasks, page)
         return _page_out(page)
 
     # If this is primary, demote any existing primary
@@ -368,11 +407,17 @@ def add_section_link(page_id: str, body: PageSectionLinkCreate, db: Session = De
                     details={"section_id": body.section_id, "is_primary": make_primary}))
     db.commit()
     db.refresh(page)
+    _queue_reindex_if_needed(background_tasks, page)
     return _page_out(page)
 
 
 @router.delete("/pages/{page_id}/section-links/{section_id}", response_model=PageOut)
-def remove_section_link(page_id: str, section_id: str, db: Session = Depends(get_db)):
+def remove_section_link(
+    page_id: str,
+    section_id: str,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     """Remove a page's link to a section. If removing primary, promote another link."""
     page = db.query(Page).filter(Page.id == page_id).first()
     if not page:
@@ -406,11 +451,17 @@ def remove_section_link(page_id: str, section_id: str, db: Session = Depends(get
                     details={"section_id": section_id, "was_primary": was_primary}))
     db.commit()
     db.refresh(page)
+    _queue_reindex_if_needed(background_tasks, page)
     return _page_out(page)
 
 
 @router.put("/pages/{page_id}/section-links/primary", response_model=PageOut)
-def set_primary_link(page_id: str, body: PageSetPrimary, db: Session = Depends(get_db)):
+def set_primary_link(
+    page_id: str,
+    body: PageSetPrimary,
+    background_tasks: BackgroundTasks,
+    db: Session = Depends(get_db),
+):
     """Change which section is the primary for this page."""
     page = db.query(Page).filter(Page.id == page_id).first()
     if not page:
@@ -433,6 +484,7 @@ def set_primary_link(page_id: str, body: PageSetPrimary, db: Session = Depends(g
     _sync_legacy_fields(page, db)
     db.commit()
     db.refresh(page)
+    _queue_reindex_if_needed(background_tasks, page)
     return _page_out(page)
 
 
@@ -466,6 +518,11 @@ def delete_page(page_id: str, db: Session = Depends(get_db)):
     page = db.query(Page).filter(Page.id == page_id).first()
     if not page:
         raise HTTPException(404, "Page not found")
+    if is_indexing_available():
+        try:
+            delete_page_ocr_chunks(page.id, page.case_id)
+        except Exception:
+            pass
     db.add(AuditLog(case_id=page.case_id, action="deleted", entity_type="page", entity_id=page.id))
     db.delete(page)
     db.commit()
