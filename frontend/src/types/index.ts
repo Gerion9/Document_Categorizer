@@ -49,6 +49,8 @@ export interface PageSectionLink {
   document_type_name: string;
 }
 
+export type IndexStatus = "pending" | "processing" | "done" | "error" | "skipped";
+
 export interface Page {
   id: string;
   case_id: string;
@@ -65,6 +67,11 @@ export interface Page {
   ocr_text: string | null;
   extraction_status: "pending" | "processing" | "done" | "error";
   extraction_method: string | null;
+  index_status: IndexStatus;
+  index_method: string | null;
+  indexed_at: string | null;
+  indexed_vector_count: number;
+  pinecone_document_id: string | null;
   created_at: string;
   updated_at: string;
   section_links: PageSectionLink[];
@@ -76,6 +83,48 @@ export interface ExtractionResult {
   extraction_status: string;
   extraction_method: string | null;
   ocr_text: string | null;
+  index_status: string;
+  index_method: string | null;
+  indexed_vector_count: number;
+  pinecone_document_id: string | null;
+}
+
+export interface ExtractionStatus {
+  configured: boolean;
+  gemini_configured: boolean;
+  pinecone_configured: boolean;
+  indexing_configured: boolean;
+}
+
+export interface RagMatch {
+  id: string;
+  score: number;
+  metadata: Record<string, unknown>;
+}
+
+export interface RagQueryResponse {
+  question: string;
+  total_matches: number;
+  matches: RagMatch[];
+}
+
+export interface AutopilotJob {
+  id: string;
+  checklist_id: string;
+  case_id: string | null;
+  status: "queued" | "running" | "completed" | "failed";
+  phase: string;
+  total_questions: number;
+  processed_questions: number;
+  verified: number;
+  skipped: number;
+  errors: number;
+  progress_pct: number;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+  started_at: string | null;
+  completed_at: string | null;
 }
 
 export interface SectionTarget {

@@ -354,6 +354,7 @@ class QCAnswerStatus(str, enum.Enum):
     YES = "yes"
     NO = "no"
     NA = "na"
+    INSUFFICIENT = "insufficient"
 
 
 class QCChecklist(Base):

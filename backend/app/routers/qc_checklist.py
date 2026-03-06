@@ -633,24 +633,46 @@ def _ordered_questions_for_part(part: QCPart, all_parts: list[QCPart]) -> list[Q
     return ordered_questions
 
 
-def _collect_question_image_paths(q: QCQuestion, db: Session) -> list[str]:
+def _collect_question_image_paths(
+    q: QCQuestion, db: Session, *, case_id: str | None = None
+) -> list[str]:
+    import logging
+    log = logging.getLogger("qc_autopilot")
     image_paths: list[str] = []
 
-    # Prefer explicit evidence links.
-    for ev in q.evidence:
+    ev_list = list(q.evidence) if q.evidence else []
+    log.debug("    collect_images [%s]: evidence=%d, target_sections=%s",
+              q.code, len(ev_list), q.target_section_ids)
+
+    # 1) Explicit evidence links
+    for ev in ev_list:
         page = db.query(Page).filter(Page.id == ev.page_id).first()
         if page and page.file_path:
             image_paths.append(str(STORAGE_DIR / page.file_path))
 
-    # Fallback to mapped target sections.
+    # 2) Mapped target sections
     if not image_paths and q.target_section_ids:
         for sid in q.target_section_ids:
             sec_pages = _pages_for_target_section(sid, db, limit=3)
+            log.debug("    section %s -> %d pages", sid[:8], len(sec_pages))
             for pg in sec_pages:
                 if pg.file_path:
                     image_paths.append(str(STORAGE_DIR / pg.file_path))
 
-    # De-duplicate while preserving order.
+    # 3) Case-level fallback: use any pages in the case (max 5)
+    if not image_paths and case_id:
+        case_pages = (
+            db.query(Page)
+            .filter(Page.case_id == case_id)
+            .filter(Page.file_path.isnot(None))
+            .order_by(Page.created_at.asc())
+            .limit(5)
+            .all()
+        )
+        log.debug("    case fallback -> %d pages from case", len(case_pages))
+        for pg in case_pages:
+            image_paths.append(str(STORAGE_DIR / pg.file_path))
+
     seen: set[str] = set()
     unique_paths: list[str] = []
     for path in image_paths:
@@ -658,10 +680,13 @@ def _collect_question_image_paths(q: QCQuestion, db: Session) -> list[str]:
             continue
         seen.add(path)
         unique_paths.append(path)
+    log.debug("    -> %d unique image paths", len(unique_paths))
     return unique_paths
 
 
-def _collect_question_page_ids(q: QCQuestion, db: Session) -> list[str]:
+def _collect_question_page_ids(
+    q: QCQuestion, db: Session, *, case_id: str | None = None
+) -> list[str]:
     page_ids: list[str] = []
 
     for ev in q.evidence:
@@ -673,6 +698,18 @@ def _collect_question_page_ids(q: QCQuestion, db: Session) -> list[str]:
             sec_pages = _pages_for_target_section(sid, db, limit=5)
             for pg in sec_pages:
                 page_ids.append(pg.id)
+
+    if not page_ids and case_id:
+        case_pages = (
+            db.query(Page)
+            .filter(Page.case_id == case_id)
+            .filter(Page.file_path.isnot(None))
+            .order_by(Page.created_at.asc())
+            .limit(5)
+            .all()
+        )
+        for pg in case_pages:
+            page_ids.append(pg.id)
 
     seen: set[str] = set()
     unique_ids: list[str] = []
@@ -698,54 +735,156 @@ def _save_ai_result(q: QCQuestion, result: dict) -> None:
 
 
 def _verify_question_with_ai(q: QCQuestion, db: Session) -> str:
-    image_paths = _collect_question_image_paths(q, db)
-    if not image_paths:
-        return "skipped"
+    """
+    Verify a single question. Tries three modes in priority order:
+    1) Image + text context (vision model)
+    2) Text-only RAG (text model, Gemini OCR evidence)
+    3) Skip if neither images nor text available
+    """
+    import logging
+    log = logging.getLogger("qc_autopilot")
 
-    from ..services.ai_verify_service import verify_question, verify_question_multi_page
+    from ..services.ai_verify_service import (
+        verify_question,
+        verify_question_multi_page,
+        verify_question_rag,
+    )
     from ..services.checklist_index_service import upsert_qc_question_answer
     from ..services.indexing_service import is_indexing_available
-    from ..services.retrieval_service import retrieve_qc_text_context
+    from ..services.retrieval_service import collect_evidence_for_question
 
     checklist = q.part.checklist if q.part else None
-    page_ids = _collect_question_page_ids(q, db)
+    case_id = checklist.case_id if checklist else None
+
     text_context = ""
-    if checklist and checklist.case_id:
-        retrieval = retrieve_qc_text_context(
+    if case_id:
+        page_ids = _collect_question_page_ids(q, db, case_id=case_id)
+        text_context = collect_evidence_for_question(
             q.description,
-            case_id=checklist.case_id,
+            case_id=case_id,
             evidence_page_ids=page_ids,
             target_section_ids=q.target_section_ids or [],
         )
-        text_context = retrieval.get("text_context", "")
+        log.debug("  [%s] text_context: %d chars", q.code, len(text_context))
 
-    if len(image_paths) == 1:
-        result = verify_question(
-            image_paths[0],
-            q.description,
-            q.where_to_verify or "",
-            text_context=text_context,
+    image_paths = _collect_question_image_paths(q, db, case_id=case_id)
+
+    if image_paths and text_context:
+        log.debug("  [%s] mode=image+text (%d images)", q.code, len(image_paths))
+        if len(image_paths) == 1:
+            result = verify_question(
+                image_paths[0], q.description, q.where_to_verify or "",
+                text_context=text_context,
+            )
+        else:
+            result = verify_question_multi_page(
+                image_paths, q.description, q.where_to_verify or "",
+                text_context=text_context,
+            )
+    elif text_context:
+        log.debug("  [%s] mode=text-only RAG", q.code)
+        result = verify_question_rag(
+            q.description, q.where_to_verify or "", text_context,
         )
+    elif image_paths:
+        log.debug("  [%s] mode=image-only (%d images)", q.code, len(image_paths))
+        if len(image_paths) == 1:
+            result = verify_question(
+                image_paths[0], q.description, q.where_to_verify or "",
+            )
+        else:
+            result = verify_question_multi_page(
+                image_paths, q.description, q.where_to_verify or "",
+            )
     else:
-        result = verify_question_multi_page(
-            image_paths,
-            q.description,
-            q.where_to_verify or "",
-            text_context=text_context,
-        )
+        return "skipped"
 
     _save_ai_result(q, result)
 
-    if checklist and checklist.case_id and is_indexing_available():
+    if checklist and case_id and is_indexing_available():
         try:
-            upsert_qc_question_answer(checklist, q, source_page_ids=page_ids)
+            upsert_qc_question_answer(
+                checklist, q,
+                source_page_ids=_collect_question_page_ids(q, db, case_id=case_id),
+            )
         except Exception:
             pass
 
     return "verified"
 
 
+# ── Batch RAG helpers ─────────────────────────────────────────────────
+
+BATCH_SIZE = 5
+
+
+def _run_autopilot_batch_rag(
+    questions: list[QCQuestion],
+    evidence_map: dict[str, str],
+    db: Session,
+    checklist: QCChecklist,
+) -> tuple[int, int, int]:
+    """
+    Process a batch of questions with a single Gemini call using per-question evidence.
+    Returns (verified, skipped, errors).
+    """
+    import logging
+    log = logging.getLogger("qc_autopilot")
+
+    from ..services.ai_verify_service import verify_question_batch_rag
+    from ..services.checklist_index_service import upsert_qc_question_answer
+    from ..services.indexing_service import is_indexing_available
+
+    batch_input = [
+        {
+            "id": q.code or q.id,
+            "description": q.description,
+            "where_to_verify": q.where_to_verify or "",
+        }
+        for q in questions
+    ]
+
+    batch_evidence: dict[str, str] = {}
+    for q in questions:
+        qid = q.code or q.id
+        batch_evidence[qid] = evidence_map.get(qid, "")
+
+    try:
+        answers = verify_question_batch_rag(batch_input, batch_evidence)
+    except Exception as exc:
+        log.error("  Batch RAG call failed: %s", exc)
+        return 0, 0, len(questions)
+
+    verified = 0
+    errors_count = 0
+    for q, ans in zip(questions, answers):
+        try:
+            _save_ai_result(q, ans)
+            db.commit()
+            verified += 1
+            log.info("  [%s] -> %s (confidence=%s)", q.code, ans.get("answer"), ans.get("confidence"))
+
+            if checklist.case_id and is_indexing_available():
+                try:
+                    upsert_qc_question_answer(
+                        checklist, q,
+                        source_page_ids=_collect_question_page_ids(q, db, case_id=checklist.case_id),
+                    )
+                except Exception:
+                    pass
+        except Exception as exc:
+            db.rollback()
+            errors_count += 1
+            log.error("  [%s] save failed: %s", q.code, exc)
+
+    return verified, 0, errors_count
+
+
+# ── Autopilot job runner ──────────────────────────────────────────────
+
 def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
+    import logging
+    log = logging.getLogger("qc_autopilot")
     db = SessionLocal()
     try:
         qc_autopilot_jobs.mark_running(job_id, phase="loading_questions")
@@ -754,50 +893,100 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
             qc_autopilot_jobs.mark_failed(job_id, "QC Checklist not found")
             return
 
+        case_id = checklist.case_id
         questions = _ordered_questions_for_checklist(checklist)
+        log.info("Autopilot %s: %d questions, case=%s", job_id[:8], len(questions), (case_id or "?")[:8])
         qc_autopilot_jobs.set_total_questions(job_id, len(questions))
+
+        # 1) Gather per-question evidence (like OCRDocPinecone collectEvidence)
+        qc_autopilot_jobs.mark_running(job_id, phase="gathering_evidence")
+        from ..services.retrieval_service import collect_evidence_for_question
+
+        evidence_map: dict[str, str] = {}
+        has_any_evidence = False
+        if case_id:
+            for idx, q in enumerate(questions, start=1):
+                qid = q.code or q.id
+                page_ids = _collect_question_page_ids(q, db, case_id=case_id)
+                evidence = collect_evidence_for_question(
+                    q.description,
+                    case_id=case_id,
+                    evidence_page_ids=page_ids,
+                    target_section_ids=q.target_section_ids or [],
+                )
+                evidence_map[qid] = evidence
+                if evidence.strip():
+                    has_any_evidence = True
+                if idx % 20 == 0:
+                    log.info("  Evidence collected: %d/%d questions", idx, len(questions))
+
+        log.info("  Evidence collection done: %d questions, has_evidence=%s",
+                 len(evidence_map), has_any_evidence)
+
         qc_autopilot_jobs.mark_running(job_id, phase="verifying_questions")
 
         verified = 0
         skipped = 0
         errors = 0
 
-        for q in questions:
-            try:
-                status = _verify_question_with_ai(q, db)
-                if status == "verified":
-                    db.commit()
-                    verified += 1
-                    qc_autopilot_jobs.update_progress(
-                        job_id,
-                        processed_delta=1,
-                        verified_delta=1,
-                        phase="verifying_questions",
-                    )
-                else:
-                    skipped += 1
-                    qc_autopilot_jobs.update_progress(
-                        job_id,
-                        processed_delta=1,
-                        skipped_delta=1,
-                        phase="verifying_questions",
-                    )
-            except Exception as exc:
-                db.rollback()
-                errors += 1
+        if has_any_evidence:
+            for i in range(0, len(questions), BATCH_SIZE):
+                batch = questions[i : i + BATCH_SIZE]
+                log.info("  Batch %d-%d (%d questions)", i + 1, i + len(batch), len(batch))
+                bv, bs, be = 0, 0, 0
+                try:
+                    bv, bs, be = _run_autopilot_batch_rag(batch, evidence_map, db, checklist)
+                    verified += bv
+                    skipped += bs
+                    errors += be
+                except Exception as exc:
+                    db.rollback()
+                    be = len(batch)
+                    errors += be
+                    log.error("  Batch failed: %s", exc)
+
+                qc_autopilot_jobs.update_progress(
+                    job_id,
+                    processed_delta=len(batch),
+                    verified_delta=bv,
+                    skipped_delta=bs,
+                    errors_delta=be,
+                    phase="verifying_questions",
+                )
+        else:
+            log.info("  No evidence found; using per-question fallback mode")
+            for q in questions:
+                q_status = "skipped"
+                try:
+                    q_status = _verify_question_with_ai(q, db)
+                    if q_status == "verified":
+                        db.commit()
+                        verified += 1
+                    else:
+                        skipped += 1
+                except Exception as exc:
+                    db.rollback()
+                    errors += 1
+                    q_status = "error"
+                    log.error("  [%s] error: %s", q.code, exc)
+
                 qc_autopilot_jobs.update_progress(
                     job_id,
                     processed_delta=1,
-                    errors_delta=1,
+                    verified_delta=1 if q_status == "verified" else 0,
+                    skipped_delta=1 if q_status == "skipped" else 0,
+                    errors_delta=1 if q_status == "error" else 0,
                     phase="verifying_questions",
-                    error_message=str(exc),
                 )
 
-        if checklist.case_id:
+        log.info("Autopilot %s done: verified=%d, skipped=%d, errors=%d",
+                 job_id[:8], verified, skipped, errors)
+
+        if case_id:
             try:
                 db.add(
                     AuditLog(
-                        case_id=checklist.case_id,
+                        case_id=case_id,
                         action="qc_autopilot_completed",
                         entity_type="qc_checklist",
                         entity_id=checklist.id,

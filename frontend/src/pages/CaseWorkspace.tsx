@@ -25,6 +25,10 @@ import {
   FileText,
   Copy,
   FolderOpen,
+  Database,
+  RefreshCw,
+  Search,
+  Send,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
@@ -35,7 +39,9 @@ import type {
   Case,
   Checklist,
   DocumentType,
+  ExtractionStatus as ExtStatusType,
   Page,
+  RagMatch,
   Section,
 } from "../types";
 import {
@@ -51,6 +57,9 @@ import {
   getExtraction,
   extractBatch,
   getExtractionStatus,
+  reindexPage,
+  reindexCase,
+  ragQuery,
 } from "../api/client";
 
 import FileUpload from "../components/FileUpload";
@@ -80,8 +89,17 @@ export default function CaseWorkspace() {
   const [previewPage, setPreviewPage] = useState<Page | null>(null);
   const [refreshKey, setRefreshKey] = useState(0);
   const [geminiConfigured, setGeminiConfigured] = useState<boolean | null>(null);
+  const [pineconeConfigured, setPineconeConfigured] = useState(false);
+  const [indexingConfigured, setIndexingConfigured] = useState(false);
   const [extracting, setExtracting] = useState(false);
   const [showOcrText, setShowOcrText] = useState(false);
+  const [reindexing, setReindexing] = useState(false);
+
+  // RAG query state
+  const [ragQuestion, setRagQuestion] = useState("");
+  const [ragResults, setRagResults] = useState<RagMatch[]>([]);
+  const [ragSearching, setRagSearching] = useState(false);
+  const [showRagPanel, setShowRagPanel] = useState(false);
 
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
 
@@ -103,11 +121,18 @@ export default function CaseWorkspace() {
 
   // Old checklist loading removed – QC Checklist is the primary system now
 
-  // Check if Gemini API is configured
   useEffect(() => {
     getExtractionStatus()
-      .then((r) => setGeminiConfigured(r.configured))
-      .catch(() => setGeminiConfigured(false));
+      .then((r) => {
+        setGeminiConfigured(r.gemini_configured ?? r.configured);
+        setPineconeConfigured(r.pinecone_configured ?? false);
+        setIndexingConfigured(r.indexing_configured ?? false);
+      })
+      .catch(() => {
+        setGeminiConfigured(false);
+        setPineconeConfigured(false);
+        setIndexingConfigured(false);
+      });
   }, []);
 
   // ── Derived data ─────────────────────────────────────────────────────
@@ -326,6 +351,45 @@ export default function CaseWorkspace() {
     }
   };
 
+  // ── Reindex handlers ─────────────────────────────────────────────────
+  const handleReindexPage = async (page: Page) => {
+    try {
+      await reindexPage(page.id);
+      toast.success("Pagina en cola de re-indexacion");
+      setTimeout(() => refresh(), 4000);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Error al reindexar pagina");
+    }
+  };
+
+  const handleReindexCase = async () => {
+    if (!caseId) return;
+    setReindexing(true);
+    try {
+      const result = await reindexCase(caseId);
+      toast.success(`${result.queued} paginas en cola de re-indexacion`);
+      setTimeout(() => refresh(), 5000);
+      setTimeout(() => refresh(), 15000);
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Error al reindexar caso");
+    }
+    setReindexing(false);
+  };
+
+  // ── RAG query handler ──────────────────────────────────────────────
+  const handleRagSearch = async () => {
+    if (!ragQuestion.trim() || !caseId) return;
+    setRagSearching(true);
+    try {
+      const result = await ragQuery(caseId, ragQuestion.trim());
+      setRagResults(result.matches);
+      if (result.matches.length === 0) toast("Sin resultados para esa consulta");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Error en consulta semantica");
+    }
+    setRagSearching(false);
+  };
+
   // Get the DocumentType for a page (to check has_tables)
   const getPageDocType = (page: Page): DocumentType | undefined =>
     docTypes.find((dt) => dt.id === page.document_type_id);
@@ -340,17 +404,137 @@ export default function CaseWorkspace() {
 
   // ── Tab content renderers ────────────────────────────────────────────
 
+  const indexedPages = pages.filter((p) => p.index_status === "done");
+
   const renderPagesTab = () => (
     <div className="flex flex-col gap-6">
       <FileUpload caseId={caseId} onUploaded={refresh} />
 
       {/* Stats bar */}
-      <div className="flex items-center gap-6 text-sm text-gray-500">
+      <div className="flex items-center gap-6 text-sm text-gray-500 flex-wrap">
         <span>{pages.length} paginas totales</span>
         <span className="text-green-600">{classifiedPages.length} clasificadas</span>
         <span className="text-gray-400">{unclassifiedPages.length} sin clasificar</span>
         <span className="text-amber-500">{extraPages.length} extras</span>
+
+        {indexingConfigured && (
+          <span className="flex items-center gap-1 text-indigo-600">
+            <Database className="w-3.5 h-3.5" />
+            {indexedPages.length} indexadas
+          </span>
+        )}
+
+        {/* Service status pills */}
+        <div className="ml-auto flex items-center gap-2">
+          {pineconeConfigured && (
+            <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-200">
+              <Database className="w-3 h-3" /> Pinecone
+            </span>
+          )}
+
+          {indexingConfigured && pages.some((p) => p.extraction_status === "done") && (
+            <Tooltip content="Re-indexar todas las paginas extraidas en Pinecone">
+              <button
+                onClick={handleReindexCase}
+                disabled={reindexing}
+                className="flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg bg-indigo-100 text-indigo-700 hover:bg-indigo-200 transition disabled:opacity-50"
+              >
+                <RefreshCw className={`w-3 h-3 ${reindexing ? "animate-spin" : ""}`} />
+                Reindexar caso
+              </button>
+            </Tooltip>
+          )}
+
+          {indexingConfigured && (
+            <Tooltip content="Busqueda semantica en el contenido del caso">
+              <button
+                onClick={() => setShowRagPanel(!showRagPanel)}
+                className={`flex items-center gap-1 text-[10px] px-2 py-1 rounded-lg transition ${
+                  showRagPanel
+                    ? "bg-purple-600 text-white"
+                    : "bg-purple-50 text-purple-700 hover:bg-purple-100"
+                }`}
+              >
+                <Search className="w-3 h-3" />
+                Buscar en documentos
+              </button>
+            </Tooltip>
+          )}
+        </div>
       </div>
+
+      {/* RAG Semantic Search Panel */}
+      <AnimatePresence>
+        {showRagPanel && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: "auto", opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden"
+          >
+            <GlassSurface filterId="glass-panel" className="rounded-xl p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Search className="w-4 h-4 text-purple-500" />
+                <h4 className="text-sm font-semibold text-gray-700">Busqueda Semantica (RAG)</h4>
+              </div>
+              <div className="flex gap-2 mb-3">
+                <input
+                  className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-300 focus:border-purple-400 outline-none"
+                  placeholder="Escribe tu pregunta sobre los documentos del caso..."
+                  value={ragQuestion}
+                  onChange={(e) => setRagQuestion(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && handleRagSearch()}
+                />
+                <button
+                  onClick={handleRagSearch}
+                  disabled={ragSearching || !ragQuestion.trim()}
+                  className="flex items-center gap-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition disabled:opacity-50 text-sm"
+                >
+                  {ragSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  Buscar
+                </button>
+              </div>
+
+              {ragResults.length > 0 && (
+                <div className="flex flex-col gap-2 max-h-80 overflow-y-auto custom-scroll">
+                  {ragResults.map((match, i) => (
+                    <div key={match.id} className="p-3 bg-white/60 rounded-lg border border-gray-200 text-xs">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="font-semibold text-gray-700">#{i + 1}</span>
+                        <span className="text-[10px] text-purple-600 font-mono">
+                          score: {match.score.toFixed(3)}
+                        </span>
+                      </div>
+                      {!!match.metadata.text && (
+                        <p className="text-gray-600 whitespace-pre-wrap line-clamp-4 mb-1">
+                          {String(match.metadata.text)}
+                        </p>
+                      )}
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {!!match.metadata.section_path_code && (
+                          <span className="text-[9px] bg-indigo-50 text-indigo-600 rounded px-1.5 py-0.5">
+                            {String(match.metadata.section_path_code)}
+                          </span>
+                        )}
+                        {!!match.metadata.page_id && (
+                          <span className="text-[9px] bg-gray-100 text-gray-500 rounded px-1.5 py-0.5">
+                            page: {String(match.metadata.page_id).slice(0, 8)}...
+                          </span>
+                        )}
+                        {match.metadata.chunk_index != null && (
+                          <span className="text-[9px] bg-gray-100 text-gray-500 rounded px-1.5 py-0.5">
+                            chunk #{String(match.metadata.chunk_index)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </GlassSurface>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* All pages grid */}
       <motion.div layout className="flex flex-wrap gap-3">
@@ -364,6 +548,7 @@ export default function CaseWorkspace() {
                 setSelectedPage(page);
                 setPreviewPage(page);
               }}
+              showIndexStatus={indexingConfigured}
             />
           ))}
         </AnimatePresence>
@@ -813,6 +998,37 @@ export default function CaseWorkspace() {
                       )}
                     </button>
                   ) : null}
+
+                  {/* Reindex / Index status */}
+                  {indexingConfigured && previewPage.extraction_status === "done" && (
+                    <>
+                      <div className="h-4 w-px bg-gray-300" />
+                      {previewPage.index_status === "done" ? (
+                        <span className="flex items-center gap-1 text-[10px] text-indigo-600">
+                          <Database className="w-3 h-3" />
+                          Indexada ({previewPage.indexed_vector_count} vectores)
+                        </span>
+                      ) : previewPage.index_status === "processing" ? (
+                        <span className="flex items-center gap-1 text-[10px] text-amber-600">
+                          <Loader2 className="w-3 h-3 animate-spin" />
+                          Indexando...
+                        </span>
+                      ) : previewPage.index_status === "error" ? (
+                        <span className="flex items-center gap-1 text-[10px] text-red-500">
+                          <AlertCircle className="w-3 h-3" />
+                          Error de indexacion
+                        </span>
+                      ) : null}
+                      <button
+                        onClick={() => handleReindexPage(previewPage)}
+                        className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition"
+                        title="Re-indexar esta pagina en Pinecone"
+                      >
+                        <RefreshCw className="w-3 h-3" />
+                        Reindexar
+                      </button>
+                    </>
+                  )}
 
                   {/* Divider */}
                   <div className="h-4 w-px bg-gray-300" />

@@ -18,6 +18,8 @@ import {
   MapPin,
   Link2,
   Upload,
+  Search,
+  Send,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
@@ -49,7 +51,11 @@ import {
   getLinkPresets,
   applyLinkPreset,
   deleteLinkPreset,
+  startAutopilot,
+  getAutopilotJob,
+  qcSemanticQuery,
 } from "../../api/client";
+import type { AutopilotJob, RagMatch } from "../../types";
 
 function flattenSections(sections: Section[]): Section[] {
   const r: Section[] = [];
@@ -216,12 +222,86 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
     setVerifyingPart(null);
   };
 
+  // ── AI Autopilot (real backend endpoint) ──
+  const [autopilotJob, setAutopilotJob] = useState<AutopilotJob | null>(null);
+
   const handleAIVerifyChecklist = async (clId: string) => {
     setVerifyingCl(clId);
-    // Simulamos un retraso
-    await new Promise(r => setTimeout(r, 1000));
-    toast.error("Funcionalidad de llenado automático de checklist aún no implementada");
-    setVerifyingCl(null);
+    try {
+      const job = await startAutopilot(clId);
+      setAutopilotJob(job);
+      toast.success("AI Autopilot iniciado");
+      pollAutopilotJob(job.id, clId);
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail;
+      if (detail) toast.error(detail);
+      else toast.error("Error al iniciar AI Autopilot");
+      setVerifyingCl(null);
+    }
+  };
+
+  const pollAutopilotJob = (jobId: string, _clId: string) => {
+    const poll = setInterval(async () => {
+      try {
+        const job = await getAutopilotJob(jobId);
+        setAutopilotJob(job);
+        if (job.status === "completed") {
+          clearInterval(poll);
+          setVerifyingCl(null);
+          setAutopilotJob(null);
+          if (job.verified === 0 && job.skipped > 0) {
+            toast.error(
+              `AI Autopilot: ${job.skipped} preguntas omitidas. Las preguntas necesitan paginas vinculadas (evidencia o secciones mapeadas con paginas clasificadas).`,
+              { duration: 8000 }
+            );
+          } else if (job.verified > 0) {
+            toast.success(
+              `AI Autopilot completado: ${job.verified} verificadas` +
+              (job.skipped > 0 ? `, ${job.skipped} omitidas (sin paginas)` : "") +
+              (job.errors > 0 ? `, ${job.errors} errores` : "")
+            );
+          } else {
+            toast.success("AI Autopilot completado");
+          }
+          await reload();
+        } else if (job.status === "failed") {
+          clearInterval(poll);
+          setVerifyingCl(null);
+          toast.error(`AI Autopilot fallo: ${job.error_message || "error desconocido"}`);
+          setAutopilotJob(null);
+        }
+      } catch {
+        clearInterval(poll);
+        setVerifyingCl(null);
+        setAutopilotJob(null);
+      }
+    }, 2000);
+  };
+
+  // ── QC Semantic Query state ──
+  const [semanticClId, setSemanticClId] = useState<string | null>(null);
+  const [semanticQ, setSemanticQ] = useState("");
+  const [semanticResults, setSemanticResults] = useState<RagMatch[]>([]);
+  const [semanticSearching, setSemanticSearching] = useState(false);
+  const [indexingOk, setIndexingOk] = useState(false);
+
+  useEffect(() => {
+    getExtractionStatus()
+      .then((r: any) => setIndexingOk(r.indexing_configured ?? false))
+      .catch(() => {});
+  }, []);
+
+  const handleSemanticSearch = async (clId: string) => {
+    if (!semanticQ.trim()) return;
+    setSemanticSearching(true);
+    try {
+      const result = await qcSemanticQuery(clId, semanticQ.trim());
+      setSemanticResults(result.matches);
+      if (result.matches.length === 0) toast("Sin resultados para esa consulta");
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Error en consulta semantica");
+    }
+    setSemanticSearching(false);
   };
 
   const handleToggleSectionTarget = async (qId: string, sectionId: string, current: string[]) => {
@@ -636,9 +716,32 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
                     <AnimatedAIBot className={`w-4 h-4 ${geminiOk ? "text-purple-400" : "text-gray-400"}`} />
                   )}
                   <span className={`tracking-wide ${geminiOk ? "text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400" : ""}`}>
-                    {verifyingCl === cl.id ? "PROCESANDO..." : "AI AUTOPILOT"}
+                    {verifyingCl === cl.id && autopilotJob
+                      ? `${Math.round(autopilotJob.progress_pct)}% (${autopilotJob.processed_questions}/${autopilotJob.total_questions})`
+                      : verifyingCl === cl.id
+                        ? "INICIANDO..."
+                        : "AI AUTOPILOT"}
                   </span>
                 </button>
+              )}
+
+              {/* Semantic Query button */}
+              {indexingOk && !cl.is_template && cl.case_id && (
+                <Tooltip content="Busqueda semantica en respuestas QC">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setSemanticClId(semanticClId === cl.id ? null : cl.id);
+                      setSemanticResults([]);
+                      setSemanticQ("");
+                    }}
+                    className={`p-0.5 transition ${
+                      semanticClId === cl.id ? "text-purple-600" : "text-gray-400 hover:text-purple-600"
+                    }`}
+                  >
+                    <Search className="w-3.5 h-3.5" />
+                  </button>
+                </Tooltip>
               )}
 
               <Tooltip content="Guardar como plantilla reutilizable">
@@ -691,6 +794,56 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
                             <Trash2 className="w-3 h-3" />
                           </button>
                         </Tooltip>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Semantic query panel */}
+            {semanticClId === cl.id && (
+              <div className="px-4 py-3 bg-purple-50 border-t border-purple-200">
+                <div className="flex items-center gap-2 mb-2">
+                  <Search className="w-3.5 h-3.5 text-purple-500" />
+                  <span className="text-[10px] font-semibold text-purple-700 uppercase">Busqueda Semantica QC</span>
+                  <button onClick={() => { setSemanticClId(null); setSemanticResults([]); }} className="ml-auto text-gray-400 hover:text-gray-600">
+                    <XIcon className="w-3 h-3" />
+                  </button>
+                </div>
+                <div className="flex gap-1.5 mb-2">
+                  <input
+                    className="flex-1 text-xs border border-purple-200 rounded-lg px-2.5 py-1.5 focus:ring-1 focus:ring-purple-300 outline-none"
+                    placeholder="Pregunta sobre las respuestas del QC..."
+                    value={semanticQ}
+                    onChange={(e) => setSemanticQ(e.target.value)}
+                    onKeyDown={(e) => e.key === "Enter" && handleSemanticSearch(cl.id)}
+                  />
+                  <button
+                    onClick={() => handleSemanticSearch(cl.id)}
+                    disabled={semanticSearching || !semanticQ.trim()}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition disabled:opacity-50 text-[10px] font-semibold"
+                  >
+                    {semanticSearching ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
+                    Buscar
+                  </button>
+                </div>
+                {semanticResults.length > 0 && (
+                  <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto custom-scroll">
+                    {semanticResults.map((match, i) => (
+                      <div key={match.id} className="p-2 bg-white/70 rounded-lg border border-purple-100 text-[10px]">
+                        <div className="flex items-center justify-between mb-0.5">
+                          <span className="font-semibold text-gray-700">#{i + 1}</span>
+                          <span className="text-purple-600 font-mono">score: {match.score.toFixed(3)}</span>
+                        </div>
+                        {!!match.metadata.text && (
+                          <p className="text-gray-600 whitespace-pre-wrap line-clamp-3">{String(match.metadata.text)}</p>
+                        )}
+                        {!!match.metadata.question_code && (
+                          <span className="inline-block mt-0.5 text-[9px] bg-indigo-50 text-indigo-600 rounded px-1 py-0.5">
+                            {String(match.metadata.question_code)}
+                          </span>
+                        )}
                       </div>
                     ))}
                   </div>

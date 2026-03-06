@@ -1,7 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, X, Tag, Sparkles, Loader2, Link2 } from "lucide-react";
+import { GripVertical, X, Tag, Sparkles, Loader2, Link2, Database } from "lucide-react";
 import { Tooltip } from "./ui/Tooltip";
 import { motion } from "framer-motion";
 import type { Page } from "../types";
@@ -21,6 +21,8 @@ interface Props {
   isSecondary?: boolean;
   /** Override the sortable id (used to make IDs unique across multiple SortableContexts) */
   sortableId?: string;
+  /** Show Pinecone index status indicator */
+  showIndexStatus?: boolean;
 }
 
 export default function PageThumbnail({
@@ -32,6 +34,7 @@ export default function PageThumbnail({
   compact = false,
   isSecondary = false,
   sortableId,
+  showIndexStatus = false,
 }: Props) {
   const effectiveId = sortableId || page.id;
   const {
@@ -163,13 +166,27 @@ export default function PageThumbnail({
 
       {/* Extraction status indicator */}
       {page.extraction_status === "done" && (
-        <div className="absolute top-1.5 left-1.5 z-10 pointer-events-none" title="Texto extraído">
+        <div className="absolute top-1.5 left-1.5 z-10 pointer-events-none" title="Texto extraido">
           <Sparkles className="w-3 h-3 text-purple-500" />
         </div>
       )}
       {page.extraction_status === "processing" && (
         <div className="absolute top-1.5 left-1.5 z-10 pointer-events-none" title="Extrayendo...">
           <Loader2 className="w-3 h-3 text-amber-500 animate-spin" />
+        </div>
+      )}
+
+      {/* Pinecone index status */}
+      {showIndexStatus && page.index_status === "done" && (
+        <Tooltip content={`Indexada en Pinecone (${page.indexed_vector_count || 0} vectores)`}>
+          <div className="absolute top-1.5 left-5 z-10 pointer-events-none">
+            <Database className="w-3 h-3 text-indigo-500" />
+          </div>
+        </Tooltip>
+      )}
+      {showIndexStatus && page.index_status === "processing" && (
+        <div className="absolute top-1.5 left-5 z-10 pointer-events-none" title="Indexando...">
+          <Loader2 className="w-2.5 h-2.5 text-indigo-400 animate-spin" />
         </div>
       )}
 

@@ -6,6 +6,8 @@ Run with:
     uvicorn app.main:app --reload --port 8000
 """
 
+import logging
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -15,6 +17,9 @@ from sqlalchemy import inspect, text
 
 from .database import Base, engine
 from .routers import cases, checklist, documents, export, pages, extraction, templates, qc_checklist
+
+logging.getLogger("qc_autopilot").setLevel(logging.DEBUG)
+logging.getLogger("qc_autopilot").addHandler(logging.StreamHandler())
 
 # Create all tables on startup
 Base.metadata.create_all(bind=engine)

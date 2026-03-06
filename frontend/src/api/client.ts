@@ -6,14 +6,17 @@
 import axios from "axios";
 import type {
   AuditEntry,
+  AutopilotJob,
   Case,
   Checklist,
   ChecklistItem,
   DocumentType,
   EvidenceLink,
   ExtractionResult,
+  ExtractionStatus,
   Page,
   PageSectionLink,
+  RagQueryResponse,
   Section,
   Template,
 } from "../types";
@@ -336,7 +339,7 @@ export const exportQCReport = (caseId: string) =>
 /* ── Extraction / OCR ──────────────────────────────────────────────── */
 
 export const getExtractionStatus = () =>
-  api.get<{ configured: boolean }>("/extraction/status").then((r) => r.data);
+  api.get<ExtractionStatus>("/extraction/status").then((r) => r.data);
 
 export const extractPage = (pageId: string, hasTables?: boolean) =>
   api
@@ -363,6 +366,49 @@ export const extractBatch = (
       has_tables: hasTables,
     })
     .then((r) => r.data);
+
+/* ── Pinecone Indexing / Reindex ──────────────────────────────────── */
+
+export const reindexPage = (pageId: string) =>
+  api.post<{ queued: number; page_ids: string[] }>(`/pages/${pageId}/reindex`).then((r) => r.data);
+
+export const reindexCase = (caseId: string) =>
+  api.post<{ queued: number; page_ids: string[] }>(`/cases/${caseId}/reindex`).then((r) => r.data);
+
+/* ── RAG Semantic Query ──────────────────────────────────────────── */
+
+export const ragQuery = (
+  caseId: string,
+  question: string,
+  opts?: { top_k?: number; page_ids?: string[]; section_ids?: string[]; document_type_ids?: string[] }
+) =>
+  api
+    .post<RagQueryResponse>(`/cases/${caseId}/rag/query`, {
+      question,
+      top_k: opts?.top_k,
+      page_ids: opts?.page_ids ?? [],
+      section_ids: opts?.section_ids ?? [],
+      document_type_ids: opts?.document_type_ids ?? [],
+    })
+    .then((r) => r.data);
+
+/* ── QC Semantic Query ───────────────────────────────────────────── */
+
+export const qcSemanticQuery = (clId: string, question: string, topK = 3) =>
+  api
+    .post<RagQueryResponse>(`/qc-checklists/${clId}/semantic-query`, {
+      question,
+      top_k: topK,
+    })
+    .then((r) => r.data);
+
+/* ── AI Autopilot ────────────────────────────────────────────────── */
+
+export const startAutopilot = (clId: string) =>
+  api.post<AutopilotJob>(`/qc-checklists/${clId}/ai-autopilot`).then((r) => r.data);
+
+export const getAutopilotJob = (jobId: string) =>
+  api.get<AutopilotJob>(`/qc-autopilot-jobs/${jobId}`).then((r) => r.data);
 
 /* ── Audit ──────────────────────────────────────────────────────────── */
 
