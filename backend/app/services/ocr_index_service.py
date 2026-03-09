@@ -215,14 +215,6 @@ def delete_case_ocr_chunks(case_id: str) -> None:
     index = get_index()
     namespace = get_namespace(case_id)
     try:
-<<<<<<< HEAD
-        index.delete(delete_all=True, namespace=namespace)
-    except Exception as exc:
-        if "not found" in str(exc).lower() or "404" in str(exc):
-            pass
-        else:
-            raise
-=======
         _with_retries(
             lambda: index.delete(delete_all=True, namespace=namespace)
         )
@@ -237,7 +229,6 @@ def delete_case_ocr_chunks(case_id: str) -> None:
             )
             return
         raise
->>>>>>> checklist
 
 
 def upsert_page_ocr_chunks(

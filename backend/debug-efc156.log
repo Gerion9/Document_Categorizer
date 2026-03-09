@@ -1,8 +1,3 @@
-<<<<<<< HEAD
-{"sessionId": "efc156", "hypothesisId": "H-B", "runId": "post-fix", "location": "case_extraction_service.py:result", "message": "extraction result", "data": {"total_case_pages": 332, "already_done": 0, "queued": 332, "processed": 332}, "timestamp": 1773078564756}
-{"sessionId": "efc156", "hypothesisId": "H-B", "runId": "post-fix", "location": "case_extraction_service.py:result", "message": "extraction result", "data": {"total_case_pages": 332, "already_done": 0, "queued": 332, "processed": 332}, "timestamp": 1773081083673}
-{"sessionId": "efc156", "hypothesisId": "ALL", "runId": "post-fix", "location": "qc_checklist.py:token_json_write", "message": "final token JSON written", "data": {"phases": ["ocr", "indexing", "autopilot"], "total_pages": 332, "verified": 108, "skipped": 0}, "timestamp": 1773081880242}
-=======
 {"sessionId": "efc156", "hypothesisId": "H-B", "runId": "post-fix", "location": "case_extraction_service.py:result", "message": "extraction result", "data": {"total_case_pages": 332, "already_done": 332, "queued": 0, "processed": 0}, "timestamp": 1773079888364}
 {"sessionId": "efc156", "hypothesisId": "H-B", "runId": "post-fix", "location": "case_extraction_service.py:result", "message": "extraction result", "data": {"total_case_pages": 332, "already_done": 332, "queued": 0, "processed": 0}, "timestamp": 1773079970095}
 {"sessionId": "efc156", "hypothesisId": "H-B", "runId": "post-fix", "location": "case_extraction_service.py:result", "message": "extraction result", "data": {"total_case_pages": 332, "already_done": 332, "queued": 0, "processed": 0}, "timestamp": 1773080219191}
@@ -12,4 +7,5 @@
 {"sessionId": "efc156", "hypothesisId": "ALL", "runId": "post-fix", "location": "qc_checklist.py:token_json_write", "message": "final token JSON written", "data": {"phases": ["ocr", "indexing", "autopilot"], "total_pages": 332, "verified": 108, "skipped": 0}, "timestamp": 1773081371182}
 {"sessionId": "efc156", "hypothesisId": "H-B", "runId": "post-fix", "location": "case_extraction_service.py:result", "message": "extraction result", "data": {"total_case_pages": 332, "already_done": 332, "queued": 0, "processed": 0}, "timestamp": 1773083850965}
 {"sessionId": "efc156", "hypothesisId": "ALL", "runId": "post-fix", "location": "qc_checklist.py:token_json_write", "message": "final token JSON written", "data": {"phases": ["ocr", "autopilot"], "total_pages": 332, "verified": 108, "skipped": 0}, "timestamp": 1773084251141}
->>>>>>> checklist
+{"sessionId": "efc156", "hypothesisId": "H-B", "runId": "post-fix", "location": "case_extraction_service.py:result", "message": "extraction result", "data": {"total_case_pages": 332, "already_done": 0, "queued": 332, "processed": 332}, "timestamp": 1773088084051}
+{"sessionId": "efc156", "hypothesisId": "ALL", "runId": "post-fix", "location": "qc_checklist.py:token_json_write", "message": "final token JSON written", "data": {"phases": ["ocr", "indexing", "autopilot"], "total_pages": 332, "verified": 108, "skipped": 0}, "timestamp": 1773088725387}
