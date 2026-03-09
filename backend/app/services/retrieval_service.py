@@ -259,7 +259,7 @@ def collect_evidence_bundle_for_question(
                 "matches": ranked_matches,
             }
 
-    db_text, db_source_pages = _ocr_text_from_db(case_id)
+    db_text, db_source_pages = _ocr_text_from_db(case_id, max_chars=max_context_chars)
     return {
         "text_context": db_text,
         "source_pages": db_source_pages,

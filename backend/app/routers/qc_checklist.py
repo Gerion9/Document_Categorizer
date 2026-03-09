@@ -1163,9 +1163,25 @@ def _int_env(name: str, default: int) -> int:
         return default
 
 
-BATCH_SIZE = max(1, _int_env("QC_AUTOPILOT_BATCH_SIZE", 8))
-AUTOPILOT_EVIDENCE_TOP_K = max(1, _int_env("QC_AUTOPILOT_EVIDENCE_TOP_K", 4))
-AUTOPILOT_EVIDENCE_MAX_CHARS = max(1200, _int_env("QC_AUTOPILOT_EVIDENCE_MAX_CHARS", 3500))
+def _bool_env(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() in {"1", "true", "yes", "on"}
+
+
+BATCH_SIZE = max(1, _int_env("QC_AUTOPILOT_BATCH_SIZE", 16))
+AUTOPILOT_EVIDENCE_TOP_K = max(1, _int_env("QC_AUTOPILOT_EVIDENCE_TOP_K", 2))
+AUTOPILOT_EVIDENCE_MAX_CHARS = max(1200, _int_env("QC_AUTOPILOT_EVIDENCE_MAX_CHARS", 1600))
+AUTOPILOT_SKIP_PREVERIFIED = _bool_env("QC_AUTOPILOT_SKIP_PREVERIFIED", True)
+
+
+def _is_question_preverified(q: QCQuestion) -> bool:
+    if not AUTOPILOT_SKIP_PREVERIFIED:
+        return False
+    if not q.ai_verified_at:
+        return False
+    return str(q.ai_answer or "").strip().lower() in {"yes", "no", "na", "insufficient"}
 
 
 def _group_questions_for_autopilot_batches(
@@ -1344,9 +1360,18 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
         }
 
         qc_autopilot_jobs.mark_running(job_id, phase="loading_questions")
-        questions = _ordered_questions_for_checklist(checklist)
-        log.info("Autopilot %s: %d questions, case=%s", job_id[:8], len(questions), (case_id or "?")[:8])
-        qc_autopilot_jobs.set_total_questions(job_id, len(questions))
+        all_questions = _ordered_questions_for_checklist(checklist)
+        questions = [q for q in all_questions if not _is_question_preverified(q)]
+        preverified_skipped = max(0, len(all_questions) - len(questions))
+        log.info(
+            "Autopilot %s: total=%d pending=%d preverified=%d case=%s",
+            job_id[:8],
+            len(all_questions),
+            len(questions),
+            preverified_skipped,
+            (case_id or "?")[:8],
+        )
+        qc_autopilot_jobs.set_total_questions(job_id, len(all_questions))
         qc_autopilot_jobs.set_evidence_total(job_id, len(questions))
 
         phase_summaries: dict[str, dict] = {}
@@ -1501,10 +1526,19 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
         qc_autopilot_jobs.mark_running(job_id, phase="verifying_questions")
 
         verified = 0
-        skipped = 0
+        skipped = preverified_skipped
         errors = 0
+        if preverified_skipped > 0:
+            qc_autopilot_jobs.update_progress(
+                job_id,
+                processed_delta=preverified_skipped,
+                skipped_delta=preverified_skipped,
+                phase="verifying_questions",
+            )
 
-        if has_any_evidence:
+        if not questions:
+            log.info("  No pending questions to verify (preverified=%d)", preverified_skipped)
+        elif has_any_evidence:
             grouped_batches = _group_questions_for_autopilot_batches(questions, db)
             processed_offset = 0
             for batch_form_type, batch in grouped_batches:
@@ -1586,7 +1620,7 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                     "verified": verified,
                     "skipped": skipped,
                     "errors": errors,
-                    "total_questions": len(questions),
+                    "total_questions": len(all_questions),
                 }
                 save_final_token_summary(
                     case_id,
@@ -1607,7 +1641,7 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                             "verified": verified,
                             "skipped": skipped,
                             "errors": errors,
-                            "total_questions": len(questions),
+                            "total_questions": len(all_questions),
                             "ocr_total_pages": ocr_stats["total_pages"],
                             "ocr_extracted_pages": ocr_stats["extracted_pages"],
                             "ocr_skipped_pages": ocr_stats["skipped_pages"],
