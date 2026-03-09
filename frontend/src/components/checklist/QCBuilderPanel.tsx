@@ -727,7 +727,9 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
                   )}
                   <span className={`tracking-wide ${geminiOk ? "text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400" : ""}`}>
                     {verifyingCl === cl.id && autopilotJob
-                      ? `${Math.round(autopilotJob.progress_pct)}% (${autopilotJob.processed_questions}/${autopilotJob.total_questions})`
+                      ? autopilotJob.phase === "extracting_ocr"
+                        ? "EXTRAYENDO OCR..."
+                        : `${Math.round(autopilotJob.progress_pct)}% (${autopilotJob.processed_questions}/${autopilotJob.total_questions})`
                       : verifyingCl === cl.id
                         ? "INICIANDO…"
                         : "AI AUTOPILOT"}

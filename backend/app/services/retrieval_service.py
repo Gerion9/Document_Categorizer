@@ -50,6 +50,36 @@ def _dedup_matches(matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return list(seen.values())
 
 
+def _source_pages_from_matches(matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    pages: list[dict[str, Any]] = []
+    seen_page_ids: set[str] = set()
+
+    for match in matches:
+        metadata = match.get("metadata", {}) or {}
+        page_id = str(metadata.get("page_id", "")).strip()
+        if not page_id or page_id in seen_page_ids:
+            continue
+        seen_page_ids.add(page_id)
+
+        page_number_raw = metadata.get("page_number")
+        page_number: int | None = None
+        if page_number_raw is not None:
+            try:
+                page_number = int(page_number_raw)
+            except (TypeError, ValueError):
+                page_number = None
+
+        pages.append(
+            {
+                "page_id": page_id,
+                "page_number": page_number,
+                "original_filename": str(metadata.get("original_filename", "") or ""),
+            }
+        )
+
+    return pages
+
+
 def format_match_context(matches: list[dict[str, Any]], *, max_chars: int = 4000) -> str:
     ranked = sorted(matches, key=_evidence_rank_score, reverse=True)
     blocks: list[str] = []
@@ -76,7 +106,7 @@ def format_match_context(matches: list[dict[str, Any]], *, max_chars: int = 4000
     return "\n\n".join(blocks)
 
 
-def _ocr_text_from_db(case_id: str, *, max_chars: int = 6000) -> str:
+def _ocr_text_from_db(case_id: str, *, max_chars: int = 6000) -> tuple[str, list[dict[str, Any]]]:
     """Fallback: gather Gemini OCR text directly from the DB when Pinecone is not available."""
     from ..database import SessionLocal
     from ..models import Page
@@ -90,6 +120,8 @@ def _ocr_text_from_db(case_id: str, *, max_chars: int = 6000) -> str:
             .all()
         )
         blocks: list[str] = []
+        source_pages: list[dict[str, Any]] = []
+        seen_page_ids: set[str] = set()
         remaining = max_chars
         for pg in pages:
             text = (pg.ocr_text or "").strip()
@@ -102,26 +134,39 @@ def _ocr_text_from_db(case_id: str, *, max_chars: int = 6000) -> str:
             if not block:
                 break
             blocks.append(block)
+            if pg.id not in seen_page_ids:
+                seen_page_ids.add(pg.id)
+                source_pages.append(
+                    {
+                        "page_id": str(pg.id),
+                        "page_number": int(pg.original_page_number or 0),
+                        "original_filename": str(pg.original_filename or ""),
+                    }
+                )
             remaining -= len(block) + 2
             if remaining <= 0:
                 break
-        return "\n\n".join(blocks)
+        return "\n\n".join(blocks), source_pages
     finally:
         db.close()
 
 
-def collect_evidence_for_question(
+def collect_evidence_bundle_for_question(
     question_text: str,
     *,
     case_id: str,
     evidence_page_ids: list[str] | None = None,
     target_section_ids: list[str] | None = None,
     top_k: int | None = None,
-) -> str:
+) -> dict[str, Any]:
     """
-    Collect, rank, dedup, and format evidence for a single QC question.
-    Merges results from all retrieval stages (like OCRDocPinecone collectEvidence).
-    Returns formatted text evidence string.
+    Collect evidence plus page-level traceability for a QC question.
+    Returns:
+      {
+        "text_context": str,
+        "source_pages": list[{page_id, page_number, original_filename}],
+        "stage": str,
+      }
     """
     settings = get_rag_settings()
     resolved_top_k = max(4, top_k or settings.retrieval_top_k)
@@ -153,10 +198,42 @@ def collect_evidence_for_question(
         if all_matches:
             deduped = _dedup_matches(all_matches)
             ranked = sorted(deduped, key=_evidence_rank_score, reverse=True)
-            return format_match_context(ranked[:resolved_top_k])
+            selected = ranked[:resolved_top_k]
+            return {
+                "text_context": format_match_context(selected),
+                "source_pages": _source_pages_from_matches(selected),
+                "stage": "pinecone",
+            }
 
-    db_text = _ocr_text_from_db(case_id)
-    return db_text
+    db_text, db_source_pages = _ocr_text_from_db(case_id)
+    return {
+        "text_context": db_text,
+        "source_pages": db_source_pages,
+        "stage": "db_ocr_text" if db_text else "no_matches",
+    }
+
+
+def collect_evidence_for_question(
+    question_text: str,
+    *,
+    case_id: str,
+    evidence_page_ids: list[str] | None = None,
+    target_section_ids: list[str] | None = None,
+    top_k: int | None = None,
+) -> str:
+    """
+    Collect, rank, dedup, and format evidence for a single QC question.
+    Merges results from all retrieval stages (like OCRDocPinecone collectEvidence).
+    Returns formatted text evidence string.
+    """
+    bundle = collect_evidence_bundle_for_question(
+        question_text,
+        case_id=case_id,
+        evidence_page_ids=evidence_page_ids,
+        target_section_ids=target_section_ids,
+        top_k=top_k,
+    )
+    return str(bundle.get("text_context", "") or "")
 
 
 def retrieve_qc_text_context(
@@ -200,7 +277,7 @@ def retrieve_qc_text_context(
                 log.warning("Pinecone query failed (stage=%s): %s", stage_name, exc)
 
     # Fallback: read Gemini OCR text directly from DB
-    db_text = _ocr_text_from_db(case_id)
+    db_text, _ = _ocr_text_from_db(case_id)
     if db_text:
         log.debug("Using DB ocr_text fallback (%d chars)", len(db_text))
         return {
