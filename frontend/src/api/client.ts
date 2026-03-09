@@ -325,6 +325,9 @@ export const deleteLinkPreset = (presetId: string) =>
 export const applyLinkPreset = (caseId: string, clId: string, presetId: string) =>
   api.post<QCChecklist>(`/cases/${caseId}/qc-checklists/${clId}/apply-link-preset/${presetId}`).then((r) => r.data);
 
+export const autoLinkQCSections = (caseId: string, clId: string) =>
+  api.post<QCChecklist>(`/cases/${caseId}/qc-checklists/${clId}/auto-link-sections`).then((r) => r.data);
+
 /* ── Export ──────────────────────────────────────────────────────────── */
 
 export const exportPdf = (caseId: string) =>

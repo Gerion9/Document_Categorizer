@@ -1,7 +1,7 @@
 """Router – Complex QC Checklists (hierarchical builder, manual-only)."""
 
 from datetime import datetime, timezone
-import os
+import re
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -42,8 +42,223 @@ from ..schemas import (
     ReorderRequest,
 )
 from ..services import qc_autopilot_jobs
+from ..services.gemini_runtime_service import GeminiTokenTracker, create_token_tracker, log_token_summary
 
 router = APIRouter(tags=["qc-checklist"])
+
+
+_LOOKUP_TOKEN_VARIANTS: dict[str, set[str]] = {
+    "application": {"applications", "app"},
+    "applications": {"application", "app"},
+    "app": {"application", "applications"},
+    "certificate": {"cert"},
+    "cert": {"certificate"},
+    "document": {"documents", "docs", "doc"},
+    "documents": {"document", "docs", "doc"},
+    "docs": {"document", "documents", "doc"},
+    "doc": {"document", "documents", "docs"},
+    "record": {"records"},
+    "records": {"record"},
+}
+_FORM_I914A_RE = re.compile(r"\bi\s*914a\b|\bsupplement\s*a\b", re.IGNORECASE)
+_FORM_I914_RE = re.compile(r"\bi\s*914\b", re.IGNORECASE)
+
+
+def _question_internal_key(q: QCQuestion) -> str:
+    return str(q.id)
+
+
+def _normalize_lookup_text(value: str) -> str:
+    normalized = str(value or "").lower().replace("&", " and ")
+    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
+    return re.sub(r"\s+", " ", normalized).strip()
+
+
+def _expand_lookup_aliases(value: str) -> set[str]:
+    normalized = _normalize_lookup_text(value)
+    if not normalized:
+        return set()
+
+    variants = {normalized}
+    if normalized.startswith("form "):
+        variants.add(normalized.removeprefix("form ").strip())
+
+    without_prefix = re.sub(r"^(original)\s+", "", normalized).strip()
+    without_suffix = re.sub(r"\s+(draft|drafts)$", "", normalized).strip()
+    for candidate in (without_prefix, without_suffix):
+        if candidate and candidate != normalized:
+            variants.add(candidate)
+
+    tokens = normalized.split()
+    for idx, token in enumerate(tokens):
+        for replacement in _LOOKUP_TOKEN_VARIANTS.get(token, set()):
+            alias_tokens = tokens.copy()
+            alias_tokens[idx] = replacement
+            variants.add(" ".join(alias_tokens).strip())
+
+    return {variant for variant in variants if len(variant) >= 2}
+
+
+def _split_lookup_parts(value: str) -> list[str]:
+    return [part.strip() for part in re.split(r"[;/(),]+", str(value or "")) if part.strip()]
+
+
+def _build_case_section_alias_index(case_id: str, db: Session) -> dict[str, set[str]]:
+    sections = (
+        db.query(Section)
+        .filter(Section.document_type.has(case_id=case_id))
+        .order_by(Section.path_code.asc(), Section.name.asc())
+        .all()
+    )
+    sections_per_doc_type: dict[str, int] = {}
+    for section in sections:
+        sections_per_doc_type[section.document_type_id] = sections_per_doc_type.get(section.document_type_id, 0) + 1
+
+    alias_index: dict[str, set[str]] = {}
+    for section in sections:
+        doc_type = section.document_type
+        raw_candidates = {
+            section.name or "",
+            section.path_code or "",
+        }
+        for part in _split_lookup_parts(section.name or ""):
+            raw_candidates.add(part)
+        if doc_type:
+            raw_candidates.add(f"{doc_type.name} {section.name}".strip())
+            if sections_per_doc_type.get(section.document_type_id, 0) == 1:
+                raw_candidates.add(doc_type.name or "")
+
+        aliases: set[str] = set()
+        for candidate in raw_candidates:
+            aliases.update(_expand_lookup_aliases(candidate))
+
+        for alias in aliases:
+            alias_index.setdefault(alias, set()).add(section.id)
+
+    return alias_index
+
+
+def _spans_overlap(span_a: tuple[int, int], span_b: tuple[int, int]) -> bool:
+    return not (span_a[1] <= span_b[0] or span_a[0] >= span_b[1])
+
+
+def _resolve_auto_link_targets(
+    where_to_verify: str,
+    alias_index: dict[str, set[str]],
+) -> list[str]:
+    normalized_text = _normalize_lookup_text(where_to_verify)
+    if not normalized_text:
+        return []
+
+    matches: list[tuple[int, int, int, str]] = []
+    for alias, section_ids in alias_index.items():
+        if len(section_ids) != 1 or not alias:
+            continue
+        pattern = rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])"
+        for match in re.finditer(pattern, normalized_text):
+            matches.append((len(alias), match.start(), match.end(), next(iter(section_ids))))
+
+    matches.sort(key=lambda item: (item[0], item[2] - item[1]), reverse=True)
+    occupied_spans: list[tuple[int, int]] = []
+    resolved_section_ids: list[str] = []
+
+    for _, start, end, section_id in matches:
+        span = (start, end)
+        if any(_spans_overlap(span, occupied) for occupied in occupied_spans):
+            continue
+        occupied_spans.append(span)
+        if section_id not in resolved_section_ids:
+            resolved_section_ids.append(section_id)
+
+    return resolved_section_ids
+
+
+def _auto_link_checklist_questions(cl: QCChecklist, db: Session) -> tuple[int, int]:
+    if not cl.case_id:
+        return 0, 0
+
+    alias_index = _build_case_section_alias_index(cl.case_id, db)
+    if not alias_index:
+        return 0, 0
+
+    linked_questions = 0
+    resolved_sections = 0
+    for question in _ordered_questions_for_checklist(cl):
+        if question.target_section_ids or not (question.where_to_verify or "").strip():
+            continue
+        resolved = _resolve_auto_link_targets(question.where_to_verify, alias_index)
+        if not resolved:
+            continue
+        question.target_section_ids = resolved
+        linked_questions += 1
+        resolved_sections += len(resolved)
+
+    return linked_questions, resolved_sections
+
+
+def _infer_form_type_from_text(text: str) -> str:
+    normalized_text = _normalize_lookup_text(text)
+    if not normalized_text:
+        return ""
+    if _FORM_I914A_RE.search(normalized_text):
+        return "i-914a"
+    if _FORM_I914_RE.search(normalized_text):
+        return "i-914"
+    return ""
+
+
+def _question_sections(q: QCQuestion, db: Session) -> list[Section]:
+    sections_by_id: dict[str, Section] = {}
+    for section_id in q.target_section_ids or []:
+        section = db.query(Section).filter(Section.id == section_id).first()
+        if section:
+            sections_by_id[section.id] = section
+
+    for evidence in q.evidence:
+        page = db.query(Page).filter(Page.id == evidence.page_id).first()
+        if not page:
+            continue
+        if page.section_id:
+            section = db.query(Section).filter(Section.id == page.section_id).first()
+            if section:
+                sections_by_id[section.id] = section
+        for link in page.section_links or []:
+            section = getattr(link, "section", None)
+            if section:
+                sections_by_id[section.id] = section
+
+    return list(sections_by_id.values())
+
+
+def _infer_form_type_for_question(q: QCQuestion, db: Session) -> str:
+    candidate_texts: list[str] = []
+    for section in _question_sections(q, db):
+        candidate_texts.extend(
+            [
+                section.name or "",
+                section.path_code or "",
+                section.document_type.name if section.document_type else "",
+            ]
+        )
+
+    candidate_texts.extend(
+        [
+            q.where_to_verify or "",
+            q.description or "",
+        ]
+    )
+
+    checklist = q.part.checklist if q.part else None
+    if checklist:
+        candidate_texts.extend([checklist.name or "", checklist.description or ""])
+
+    for candidate in candidate_texts:
+        if _infer_form_type_from_text(candidate) == "i-914a":
+            return "i-914a"
+    for candidate in candidate_texts:
+        if _infer_form_type_from_text(candidate) == "i-914":
+            return "i-914"
+    return ""
 
 
 def _pages_for_target_section(section_id: str, db: Session, *, limit: int) -> list[Page]:
@@ -363,6 +578,7 @@ def apply_qc_template(case_id: str, template_id: str, db: Session = Depends(get_
     )
     if preset:
         _apply_link_preset_to_checklist(inst, preset, db)
+    _auto_link_checklist_questions(inst, db)
 
     db.commit()
     db.refresh(inst)
@@ -569,6 +785,31 @@ def save_qc_as_template(cl_id: str, db: Session = Depends(get_db)):
 STORAGE_DIR = __import__("pathlib").Path(__file__).resolve().parent.parent.parent / "storage"
 
 
+def _compact_tracker_summary(summary: dict) -> dict[str, int]:
+    return {
+        "input": int(summary.get("input", 0)),
+        "output": int(summary.get("output", 0)),
+        "cached": int(summary.get("cached", 0)),
+        "thoughts": int(summary.get("thoughts", 0)),
+        "embedding": int(summary.get("embedding", 0)),
+        "grand_total": int(summary.get("grand_total", 0)),
+    }
+
+
+def _sample_case_pages(case_id: str, db: Session, *, limit: int) -> list[Page]:
+    """Return a spread of pages across the whole document instead of just the first N."""
+    all_pages = (
+        db.query(Page)
+        .filter(Page.case_id == case_id, Page.file_path.isnot(None))
+        .order_by(Page.original_page_number.asc())
+        .all()
+    )
+    if len(all_pages) <= limit:
+        return all_pages
+    step = max(1, len(all_pages) // limit)
+    return [all_pages[i] for i in range(0, len(all_pages), step)][:limit]
+
+
 def _part_sort_key(part: QCPart) -> tuple[int, str]:
     return (part.order or 0, part.code or "")
 
@@ -661,16 +902,9 @@ def _collect_question_image_paths(
                 if pg.file_path:
                     image_paths.append(str(STORAGE_DIR / pg.file_path))
 
-    # 3) Case-level fallback: use any pages in the case (max 5)
+    # 3) Case-level fallback: sample pages spread across the document
     if not image_paths and case_id:
-        case_pages = (
-            db.query(Page)
-            .filter(Page.case_id == case_id)
-            .filter(Page.file_path.isnot(None))
-            .order_by(Page.created_at.asc())
-            .limit(5)
-            .all()
-        )
+        case_pages = _sample_case_pages(case_id, db, limit=5)
         log.debug("    case fallback -> %d pages from case", len(case_pages))
         for pg in case_pages:
             image_paths.append(str(STORAGE_DIR / pg.file_path))
@@ -705,6 +939,7 @@ def _collect_question_page_ids(
             for pg in sec_pages:
                 page_ids.append(pg.id)
 
+<<<<<<< HEAD
     if include_case_fallback and not page_ids and case_id:
         case_pages = (
             db.query(Page)
@@ -715,6 +950,10 @@ def _collect_question_page_ids(
             .all()
         )
         for pg in case_pages:
+=======
+    if not page_ids and case_id:
+        for pg in _sample_case_pages(case_id, db, limit=10):
+>>>>>>> pinecone
             page_ids.append(pg.id)
 
     seen: set[str] = set()
@@ -809,7 +1048,12 @@ def _save_ai_result(q: QCQuestion, result: dict, *, source_pages: list[dict] | N
         q.notes = note_text
 
 
-def _verify_question_with_ai(q: QCQuestion, db: Session) -> str:
+def _verify_question_with_ai(
+    q: QCQuestion,
+    db: Session,
+    *,
+    tracker: GeminiTokenTracker | None = None,
+) -> str:
     """
     Verify a single question. Tries three modes in priority order:
     1) Image + text context (vision model)
@@ -830,6 +1074,7 @@ def _verify_question_with_ai(q: QCQuestion, db: Session) -> str:
 
     checklist = q.part.checklist if q.part else None
     case_id = checklist.case_id if checklist else None
+    form_type = _infer_form_type_for_question(q, db)
 
     text_context = ""
     source_pages: list[dict] = []
@@ -845,6 +1090,7 @@ def _verify_question_with_ai(q: QCQuestion, db: Session) -> str:
             case_id=case_id,
             evidence_page_ids=page_ids,
             target_section_ids=q.target_section_ids or [],
+            tracker=tracker,
         )
         text_context = str(evidence_bundle.get("text_context", "") or "")
         raw_sources = evidence_bundle.get("source_pages")
@@ -860,26 +1106,41 @@ def _verify_question_with_ai(q: QCQuestion, db: Session) -> str:
             result = verify_question(
                 image_paths[0], q.description, q.where_to_verify or "",
                 text_context=text_context,
+                form_type=form_type,
+                tracker=tracker,
+                step_label=f"verify-image-{q.id[:8]}",
             )
         else:
             result = verify_question_multi_page(
                 image_paths, q.description, q.where_to_verify or "",
                 text_context=text_context,
+                form_type=form_type,
+                tracker=tracker,
+                step_label=f"verify-image-multi-{q.id[:8]}",
             )
     elif text_context:
         log.debug("  [%s] mode=text-only RAG", q.code)
         result = verify_question_rag(
             q.description, q.where_to_verify or "", text_context,
+            form_type=form_type,
+            tracker=tracker,
+            step_label=f"verify-rag-{q.id[:8]}",
         )
     elif image_paths:
         log.debug("  [%s] mode=image-only (%d images)", q.code, len(image_paths))
         if len(image_paths) == 1:
             result = verify_question(
                 image_paths[0], q.description, q.where_to_verify or "",
+                form_type=form_type,
+                tracker=tracker,
+                step_label=f"verify-image-{q.id[:8]}",
             )
         else:
             result = verify_question_multi_page(
                 image_paths, q.description, q.where_to_verify or "",
+                form_type=form_type,
+                tracker=tracker,
+                step_label=f"verify-image-multi-{q.id[:8]}",
             )
     else:
         return "skipped"
@@ -893,7 +1154,12 @@ def _verify_question_with_ai(q: QCQuestion, db: Session) -> str:
                 source_page_ids = _collect_question_page_ids(q, db, case_id=case_id)
             upsert_qc_question_answer(
                 checklist, q,
+<<<<<<< HEAD
                 source_page_ids=source_page_ids,
+=======
+                source_page_ids=_collect_question_page_ids(q, db, case_id=case_id),
+                tracker=tracker,
+>>>>>>> pinecone
             )
         except Exception:
             pass
@@ -916,12 +1182,38 @@ def _int_env(name: str, default: int) -> int:
 BATCH_SIZE = max(1, _int_env("QC_AUTOPILOT_BATCH_SIZE", 8))
 
 
+def _group_questions_for_autopilot_batches(
+    questions: list[QCQuestion],
+    db: Session,
+) -> list[tuple[str, list[QCQuestion]]]:
+    batches: list[tuple[str, list[QCQuestion]]] = []
+    current_form_type = ""
+    current_batch: list[QCQuestion] = []
+
+    for question in questions:
+        form_type = _infer_form_type_for_question(question, db)
+        if current_batch and (len(current_batch) >= BATCH_SIZE or form_type != current_form_type):
+            batches.append((current_form_type, current_batch))
+            current_batch = []
+        if not current_batch:
+            current_form_type = form_type
+        current_batch.append(question)
+
+    if current_batch:
+        batches.append((current_form_type, current_batch))
+
+    return batches
+
+
 def _run_autopilot_batch_rag(
     questions: list[QCQuestion],
     evidence_map: dict[str, str],
     evidence_source_map: dict[str, list[dict]],
     db: Session,
     checklist: QCChecklist,
+    *,
+    form_type: str = "",
+    tracker: GeminiTokenTracker | None = None,
 ) -> tuple[int, int, int]:
     """
     Process a batch of questions with a single Gemini call using per-question evidence.
@@ -936,7 +1228,7 @@ def _run_autopilot_batch_rag(
 
     batch_input = [
         {
-            "id": q.code or q.id,
+            "id": _question_internal_key(q),
             "description": q.description,
             "where_to_verify": q.where_to_verify or "",
         }
@@ -945,11 +1237,17 @@ def _run_autopilot_batch_rag(
 
     batch_evidence: dict[str, str] = {}
     for q in questions:
-        qid = q.code or q.id
+        qid = _question_internal_key(q)
         batch_evidence[qid] = evidence_map.get(qid, "")
 
     try:
-        answers = verify_question_batch_rag(batch_input, batch_evidence)
+        answers = verify_question_batch_rag(
+            batch_input,
+            batch_evidence,
+            form_type=form_type,
+            tracker=tracker,
+            step_label=f"autopilot-batch-{questions[0].id[:8]}",
+        )
     except Exception as exc:
         log.error("  Batch RAG call failed: %s", exc)
         return 0, 0, len(questions)
@@ -972,7 +1270,12 @@ def _run_autopilot_batch_rag(
                         source_page_ids = _collect_question_page_ids(q, db, case_id=checklist.case_id)
                     upsert_qc_question_answer(
                         checklist, q,
+<<<<<<< HEAD
                         source_page_ids=source_page_ids,
+=======
+                        source_page_ids=_collect_question_page_ids(q, db, case_id=checklist.case_id),
+                        tracker=tracker,
+>>>>>>> pinecone
                     )
                 except Exception:
                     pass
@@ -1037,6 +1340,7 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
     import logging
     log = logging.getLogger("qc_autopilot")
     db = SessionLocal()
+    tracker = create_token_tracker(label=f"qc-autopilot-{job_id[:8]}")
     try:
         qc_autopilot_jobs.mark_running(job_id, phase="loading_questions")
         checklist = db.query(QCChecklist).filter(QCChecklist.id == checklist_id).first()
@@ -1067,6 +1371,76 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
         questions = _ordered_questions_for_checklist(checklist)
         log.info("Autopilot %s: %d questions, case=%s", job_id[:8], len(questions), (case_id or "?")[:8])
         qc_autopilot_jobs.set_total_questions(job_id, len(questions))
+        qc_autopilot_jobs.set_evidence_total(job_id, len(questions))
+
+        phase_summaries: dict[str, dict] = {}
+        total_case_pages = 0
+
+        if case_id:
+            from ..services.case_extraction_service import extract_case_pages
+            from ..services.ocr_index_service import index_case_ocr_json
+            from ..services.indexing_service import is_indexing_available
+
+            def _autopilot_progress(event: dict[str, int | str]) -> None:
+                phase = str(event.get("phase", "") or "")
+                if phase == "extracting_document":
+                    qc_autopilot_jobs.set_ocr_total(job_id, int(event.get("ocr_total_pages", 0) or 0), phase=phase)
+                    qc_autopilot_jobs.update_ocr_progress(
+                        job_id,
+                        processed_pages=int(event.get("ocr_processed_pages", 0) or 0),
+                        error_pages=int(event.get("ocr_error_pages", 0) or 0),
+                        phase=phase,
+                    )
+                elif phase == "writing_json":
+                    qc_autopilot_jobs.mark_running(job_id, phase=phase)
+                elif phase == "indexing_document":
+                    qc_autopilot_jobs.set_index_total(job_id, int(event.get("index_total_chunks", 0) or 0), phase=phase)
+                    qc_autopilot_jobs.update_index_progress(
+                        job_id,
+                        processed_chunks=int(event.get("index_processed_chunks", 0) or 0),
+                        error_chunks=int(event.get("index_error_chunks", 0) or 0),
+                        phase=phase,
+                    )
+
+            extraction_summary = extract_case_pages(
+                case_id,
+                only_missing=True,
+                progress_callback=_autopilot_progress,
+            )
+            total_case_pages = extraction_summary.get("total_case_pages", extraction_summary.get("written_pages", 0))
+            log.info(
+                "Autopilot %s OCR done: %d extracted, %d already done, %d total pages, %d errors",
+                job_id[:8],
+                extraction_summary.get("processed", 0),
+                extraction_summary.get("already_done", 0),
+                total_case_pages,
+                extraction_summary.get("errors", 0),
+            )
+            phase_summaries["ocr"] = {
+                "token_summary": extraction_summary.get("ocr_token_summary", {}),
+                "pages_extracted": extraction_summary.get("processed", 0),
+                "pages_already_done": extraction_summary.get("already_done", 0),
+                "pages_total": total_case_pages,
+            }
+
+            if extraction_summary.get("written_pages", 0) > 0 and is_indexing_available():
+                index_tracker = create_token_tracker(label=f"qc-index-{job_id[:8]}")
+                index_summary = index_case_ocr_json(
+                    case_id,
+                    tracker=index_tracker,
+                    progress_callback=_autopilot_progress,
+                )
+                log.info(
+                    "Autopilot %s indexing done: %d vectors, %d chunks",
+                    job_id[:8],
+                    index_summary.get("vectors_count", 0),
+                    index_summary.get("total_chunks", 0),
+                )
+                phase_summaries["indexing"] = {
+                    "token_summary": _compact_tracker_summary(index_tracker.get_summary()),
+                    "vectors_count": index_summary.get("vectors_count", 0),
+                    "total_chunks": index_summary.get("total_chunks", 0),
+                }
 
         # 1) Gather per-question evidence (like OCRDocPinecone collectEvidence)
         qc_autopilot_jobs.mark_running(job_id, phase="gathering_evidence")
@@ -1077,6 +1451,7 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
         has_any_evidence = False
         if case_id:
             for idx, q in enumerate(questions, start=1):
+<<<<<<< HEAD
                 qid = q.code or q.id
                 page_ids = _collect_question_page_ids(
                     q,
@@ -1085,10 +1460,16 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                     include_case_fallback=False,
                 )
                 evidence_bundle = collect_evidence_bundle_for_question(
+=======
+                qid = _question_internal_key(q)
+                page_ids = _collect_question_page_ids(q, db, case_id=case_id)
+                evidence = collect_evidence_for_question(
+>>>>>>> pinecone
                     q.description,
                     case_id=case_id,
                     evidence_page_ids=page_ids,
                     target_section_ids=q.target_section_ids or [],
+                    tracker=tracker,
                 )
                 evidence = str(evidence_bundle.get("text_context", "") or "")
                 evidence_map[qid] = evidence
@@ -1096,6 +1477,11 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                 evidence_source_map[qid] = raw_sources if isinstance(raw_sources, list) else []
                 if evidence.strip():
                     has_any_evidence = True
+                qc_autopilot_jobs.update_evidence_progress(
+                    job_id,
+                    processed_questions=idx,
+                    phase="gathering_evidence",
+                )
                 if idx % 20 == 0:
                     log.info("  Evidence collected: %d/%d questions", idx, len(questions))
 
@@ -1109,17 +1495,34 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
         errors = 0
 
         if has_any_evidence:
-            for i in range(0, len(questions), BATCH_SIZE):
-                batch = questions[i : i + BATCH_SIZE]
-                log.info("  Batch %d-%d (%d questions)", i + 1, i + len(batch), len(batch))
+            grouped_batches = _group_questions_for_autopilot_batches(questions, db)
+            processed_offset = 0
+            for batch_form_type, batch in grouped_batches:
+                batch_start = processed_offset + 1
+                batch_end = processed_offset + len(batch)
+                processed_offset += len(batch)
+                log.info(
+                    "  Batch %d-%d (%d questions, form_type=%s)",
+                    batch_start,
+                    batch_end,
+                    len(batch),
+                    batch_form_type or "default",
+                )
                 bv, bs, be = 0, 0, 0
                 try:
                     bv, bs, be = _run_autopilot_batch_rag(
                         batch,
                         evidence_map,
+<<<<<<< HEAD
                         evidence_source_map,
                         db,
                         checklist,
+=======
+                        db,
+                        checklist,
+                        form_type=batch_form_type,
+                        tracker=tracker,
+>>>>>>> pinecone
                     )
                     verified += bv
                     skipped += bs
@@ -1143,7 +1546,7 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
             for q in questions:
                 q_status = "skipped"
                 try:
-                    q_status = _verify_question_with_ai(q, db)
+                    q_status = _verify_question_with_ai(q, db, tracker=tracker)
                     if q_status == "verified":
                         db.commit()
                         verified += 1
@@ -1166,9 +1569,28 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
 
         log.info("Autopilot %s done: verified=%d, skipped=%d, errors=%d",
                  job_id[:8], verified, skipped, errors)
+        log_token_summary(tracker, label=f"AI Autopilot {job_id[:8]}", logger=log)
 
         if case_id:
             try:
+                tracker_summary = tracker.get_summary()
+                from ..services.json_export_service import save_final_token_summary
+
+                phase_summaries["autopilot"] = {
+                    "token_summary": _compact_tracker_summary(tracker_summary),
+                    "verified": verified,
+                    "skipped": skipped,
+                    "errors": errors,
+                    "total_questions": len(questions),
+                }
+                save_final_token_summary(
+                    case_id,
+                    phases=phase_summaries,
+                    total_pages=total_case_pages,
+                )
+                # region agent log
+                import json as _json; open("debug-efc156.log", "a").write(_json.dumps({"sessionId":"efc156","hypothesisId":"ALL","runId":"post-fix","location":"qc_checklist.py:token_json_write","message":"final token JSON written","data":{"phases":list(phase_summaries.keys()),"total_pages":total_case_pages,"verified":verified,"skipped":skipped},"timestamp":int(__import__("time").time()*1000)}) + "\n")
+                # endregion
                 db.add(
                     AuditLog(
                         case_id=case_id,
@@ -1181,10 +1603,14 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                             "skipped": skipped,
                             "errors": errors,
                             "total_questions": len(questions),
+<<<<<<< HEAD
                             "ocr_total_pages": ocr_stats["total_pages"],
                             "ocr_extracted_pages": ocr_stats["extracted_pages"],
                             "ocr_skipped_pages": ocr_stats["skipped_pages"],
                             "ocr_error_pages": ocr_stats["error_pages"],
+=======
+                            "token_summary": _compact_tracker_summary(tracker_summary),
+>>>>>>> pinecone
                         },
                     )
                 )
@@ -1217,6 +1643,10 @@ def start_checklist_ai_autopilot(
         raise HTTPException(404, "QC Checklist not found")
     if cl.is_template or not cl.case_id:
         raise HTTPException(400, "AI Autopilot is only available for case-bound checklists")
+
+    case_pages = db.query(Page).filter(Page.case_id == cl.case_id).all()
+    if not case_pages:
+        raise HTTPException(400, "No hay paginas cargadas en este caso")
 
     active_job = qc_autopilot_jobs.get_active_job_for_checklist(cl.id)
     if active_job:
@@ -1251,12 +1681,14 @@ def ai_verify_question(q_id: str, db: Session = Depends(get_db)):
     if not q:
         raise HTTPException(404, "Question not found")
 
-    status = _verify_question_with_ai(q, db)
+    tracker = create_token_tracker(label=f"qc-question-{q.id[:8]}")
+    status = _verify_question_with_ai(q, db, tracker=tracker)
     if status == "skipped":
         raise HTTPException(400, "No evidence pages or target section pages available for this question")
 
     db.commit()
     db.refresh(q)
+    log_token_summary(tracker, label=f"QC Question {q.code or q.id}")
     return _question_out(q)
 
 
@@ -1274,12 +1706,13 @@ def ai_verify_part(part_id: str, db: Session = Depends(get_db)):
     verified = 0
     skipped = 0
     errors = 0
+    tracker = create_token_tracker(label=f"qc-part-{part_id[:8]}")
 
     all_parts = db.query(QCPart).filter(QCPart.checklist_id == part.checklist_id).all()
     questions = _ordered_questions_for_part(part, all_parts)
     for q in questions:
         try:
-            status = _verify_question_with_ai(q, db)
+            status = _verify_question_with_ai(q, db, tracker=tracker)
             if status == "verified":
                 verified += 1
                 db.commit()
@@ -1290,6 +1723,7 @@ def ai_verify_part(part_id: str, db: Session = Depends(get_db)):
             errors += 1
 
     db.commit()
+    log_token_summary(tracker, label=f"QC Part {part.code or part.id}")
 
     return {"verified": verified, "skipped": skipped, "errors": errors}
 
@@ -1467,9 +1901,42 @@ def apply_link_preset(case_id: str, cl_id: str, preset_id: str, db: Session = De
         raise HTTPException(404, "Preset not found")
 
     _apply_link_preset_to_checklist(cl, preset, db)
+    linked_questions, resolved_sections = _auto_link_checklist_questions(cl, db)
 
     db.add(AuditLog(case_id=case_id, action="applied_link_preset", entity_type="qc_link_preset",
-                    entity_id=preset.id, details={"preset_name": preset.name, "checklist_id": cl.id}))
+                    entity_id=preset.id, details={
+                        "preset_name": preset.name,
+                        "checklist_id": cl.id,
+                        "auto_linked_questions": linked_questions,
+                        "auto_linked_sections": resolved_sections,
+                    }))
+    db.commit()
+    db.refresh(cl)
+    return _checklist_out(cl)
+
+
+@router.post("/cases/{case_id}/qc-checklists/{cl_id}/auto-link-sections", response_model=QCChecklistOut)
+def auto_link_checklist_sections(case_id: str, cl_id: str, db: Session = Depends(get_db)):
+    """Auto-link unresolved QC questions from where_to_verify against this case's taxonomy."""
+    cl = db.query(QCChecklist).filter(QCChecklist.id == cl_id, QCChecklist.case_id == case_id).first()
+    if not cl:
+        raise HTTPException(404, "QC Checklist not found in this case")
+    if cl.is_template:
+        raise HTTPException(400, "Auto-link is only available for case-bound checklists")
+
+    linked_questions, resolved_sections = _auto_link_checklist_questions(cl, db)
+    db.add(
+        AuditLog(
+            case_id=case_id,
+            action="auto_linked_qc_sections",
+            entity_type="qc_checklist",
+            entity_id=cl.id,
+            details={
+                "linked_questions": linked_questions,
+                "resolved_sections": resolved_sections,
+            },
+        )
+    )
     db.commit()
     db.refresh(cl)
     return _checklist_out(cl)

@@ -18,8 +18,19 @@ from sqlalchemy import inspect, text
 from .database import Base, engine
 from .routers import cases, checklist, documents, export, pages, extraction, templates, qc_checklist
 
-logging.getLogger("qc_autopilot").setLevel(logging.DEBUG)
-logging.getLogger("qc_autopilot").addHandler(logging.StreamHandler())
+
+def _configure_logger(name: str, level: int) -> None:
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+    if not logger.handlers:
+        logger.addHandler(logging.StreamHandler())
+    logger.propagate = False
+
+
+_configure_logger("qc_autopilot", logging.INFO)
+_configure_logger("gemini_usage", logging.INFO)
+_configure_logger("json_export", logging.INFO)
+logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
 
 # Create all tables on startup
 Base.metadata.create_all(bind=engine)

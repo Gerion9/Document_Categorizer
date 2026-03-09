@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Plus,
   Trash2,
@@ -50,6 +50,7 @@ import {
   saveLinkPreset,
   getLinkPresets,
   applyLinkPreset,
+  autoLinkQCSections,
   deleteLinkPreset,
   startAutopilot,
   getAutopilotJob,
@@ -89,7 +90,52 @@ const ANSWER_STYLES: Record<string, { bg: string; text: string; label: string }>
   yes: { bg: "bg-green-100", text: "text-green-700", label: "Sí" },
   no: { bg: "bg-red-100", text: "text-red-700", label: "No" },
   na: { bg: "bg-gray-200", text: "text-gray-600", label: "N/A" },
+  insufficient: { bg: "bg-amber-100", text: "text-amber-700", label: "Ins." },
 };
+
+function autopilotPhaseSummary(job: AutopilotJob | null): { title: string; detail: string } {
+  if (!job) return { title: "AI AUTOPILOT", detail: "" };
+
+  if (job.phase === "extracting_document") {
+    const processed = (job.ocr_processed_pages || 0) + (job.ocr_error_pages || 0);
+    return {
+      title: `OCR ${processed}/${job.ocr_total_pages || 0}`,
+      detail: `Extrayendo OCR ${processed}/${job.ocr_total_pages || 0} páginas`,
+    };
+  }
+  if (job.phase === "writing_json") {
+    return {
+      title: "JSON",
+      detail: "Escribiendo archivos JSON del documento",
+    };
+  }
+  if (job.phase === "indexing_document") {
+    const processed = (job.index_processed_chunks || 0) + (job.index_error_chunks || 0);
+    return {
+      title: `INDEX ${processed}/${job.index_total_chunks || 0}`,
+      detail: `Indexando ${processed}/${job.index_total_chunks || 0} chunks`,
+    };
+  }
+  if (job.phase === "gathering_evidence") {
+    return {
+      title: `EVID ${job.evidence_processed_questions || 0}/${job.evidence_total_questions || 0}`,
+      detail: `Reuniendo evidencia ${job.evidence_processed_questions || 0}/${job.evidence_total_questions || 0} preguntas`,
+    };
+  }
+  if (job.phase === "verifying_questions") {
+    return {
+      title: `QC ${job.processed_questions || 0}/${job.total_questions || 0}`,
+      detail: `Verificando ${job.processed_questions || 0}/${job.total_questions || 0} preguntas`,
+    };
+  }
+  if (job.phase === "completed") {
+    return {
+      title: "COMPLETADO",
+      detail: "AI Autopilot completado",
+    };
+  }
+  return { title: "PREPARANDO", detail: "Preparando AI Autopilot" };
+}
 
 export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Props) {
   const [checklists, setChecklists] = useState<QCChecklist[]>([]);
@@ -217,8 +263,29 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
 
   // ── AI Autopilot (real backend endpoint) ──
   const [autopilotJob, setAutopilotJob] = useState<AutopilotJob | null>(null);
+  const autopilotPollRef = useRef<number | null>(null);
+
+  const clearAutopilotPoll = () => {
+    if (autopilotPollRef.current !== null) {
+      window.clearTimeout(autopilotPollRef.current);
+      autopilotPollRef.current = null;
+    }
+  };
+
+  const nextAutopilotPollDelay = (phase?: string) => {
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+      return 10000;
+    }
+    if (phase === "extracting_document" || phase === "writing_json" || phase === "indexing_document") {
+      return 5000;
+    }
+    return 2500;
+  };
+
+  useEffect(() => () => clearAutopilotPoll(), []);
 
   const handleAIVerifyChecklist = async (clId: string) => {
+    clearAutopilotPoll();
     setVerifyingCl(clId);
     try {
       const job = await startAutopilot(clId);
@@ -234,12 +301,12 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
   };
 
   const pollAutopilotJob = (jobId: string, _clId: string) => {
-    const poll = setInterval(async () => {
+    const tick = async () => {
       try {
         const job = await getAutopilotJob(jobId);
         setAutopilotJob(job);
         if (job.status === "completed") {
-          clearInterval(poll);
+          clearAutopilotPoll();
           setVerifyingCl(null);
           setAutopilotJob(null);
           if (job.verified === 0 && job.skipped > 0) {
@@ -258,17 +325,25 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
           }
           await reload();
         } else if (job.status === "failed") {
-          clearInterval(poll);
+          clearAutopilotPoll();
           setVerifyingCl(null);
           toast.error(`AI Autopilot fallo: ${job.error_message || "error desconocido"}`);
           setAutopilotJob(null);
+        } else {
+          autopilotPollRef.current = window.setTimeout(() => {
+            void tick();
+          }, nextAutopilotPollDelay(job.phase));
         }
       } catch {
-        clearInterval(poll);
+        clearAutopilotPoll();
         setVerifyingCl(null);
         setAutopilotJob(null);
       }
-    }, 2000);
+    };
+
+    autopilotPollRef.current = window.setTimeout(() => {
+      void tick();
+    }, nextAutopilotPollDelay("loading_questions"));
   };
 
   // ── QC Semantic Query state ──
@@ -342,6 +417,16 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
       setShowPresetMenuFor(null);
       await reload();
     } catch { toast.error("Error al aplicar preset"); }
+  };
+
+  const handleAutoLinkSections = async (clId: string) => {
+    try {
+      await autoLinkQCSections(caseId, clId);
+      toast.success("Auto-mapeo ejecutado");
+      await reload();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Error al auto-mapear secciones");
+    }
   };
 
   const handleDeleteLinkPreset = async (presetId: string) => {
@@ -428,6 +513,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
                   className={`inline-flex items-center gap-1 text-[9px] px-2 py-1 rounded-full font-semibold transition ${
                     q.ai_answer === "yes" ? "bg-green-100 text-green-700" :
                     q.ai_answer === "no" ? "bg-red-100 text-red-700" :
+                    q.ai_answer === "insufficient" ? "bg-amber-100 text-amber-700" :
                     "bg-gray-100 text-gray-500"
                   } hover:ring-1 hover:ring-purple-300`}
                   title="Ver resultado AI"
@@ -441,7 +527,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
 
           {/* Segmented Control for manual answering */}
           <div className="shrink-0 flex items-center bg-gray-100 p-0.5 rounded-lg border border-gray-200 mt-0.5">
-            {(["yes", "no", "na"] as const).map((ansKey) => {
+            {(["yes", "no", "na", "insufficient"] as const).map((ansKey) => {
               const isSelected = q.answer === ansKey;
               const style = ANSWER_STYLES[ansKey];
               return (
@@ -474,6 +560,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
               <div className={`p-2 rounded-lg text-[10px] leading-relaxed ${
                 q.ai_answer === "yes" ? "bg-green-50 border border-green-200" :
                 q.ai_answer === "no" ? "bg-red-50 border border-red-200" :
+                q.ai_answer === "insufficient" ? "bg-amber-50 border border-amber-200" :
                 "bg-gray-50 border border-gray-200"
               }`}>
                 <div className="flex items-center gap-1 mb-1 font-semibold">
@@ -694,15 +781,37 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
       {checklists.map((cl) => {
         const isExp = expandedCl[cl.id] !== false;
         const pct = cl.total_questions > 0 ? Math.round((cl.answered_questions / cl.total_questions) * 100) : 0;
+        const activeJob = verifyingCl === cl.id && autopilotJob?.checklist_id === cl.id ? autopilotJob : null;
+        const activeProgress = Math.round(activeJob?.overall_progress_pct ?? 0);
+        const activePhase = autopilotPhaseSummary(activeJob);
         return (
           <GlassSurface filterId="glass-panel" key={cl.id} className="rounded-xl overflow-hidden mb-3">
             {/* Checklist header */}
             <div className="flex items-center gap-2 px-4 py-3 cursor-pointer hover:bg-white/40 transition-colors" onClick={() => toggleCl(cl.id)}>
               {isExp ? <ChevronDown className="w-3.5 h-3.5 text-gray-400" /> : <ChevronRight className="w-3.5 h-3.5 text-gray-400" />}
               <span className="text-sm font-semibold flex-1">{cl.name}</span>
-              <span className="text-[10px] text-gray-400">{cl.answered_questions}/{cl.total_questions} ({pct}%)</span>
-              <div className="w-20 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                <div className="h-full bg-green-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+              <div className="shrink-0 min-w-[150px]">
+                {activeJob ? (
+                  <div className="flex flex-col items-end gap-1">
+                    <span className="text-[10px] text-purple-600">{activePhase.detail}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-gray-400">{activeProgress}%</span>
+                      <div className="w-24 h-1.5 bg-purple-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all"
+                          style={{ width: `${activeProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-gray-400">{cl.answered_questions}/{cl.total_questions} ({pct}%)</span>
+                    <div className="w-20 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                      <div className="h-full bg-green-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                )}
               </div>
               
               {/* AI Verify Checklist — PREMIUM BUTTON */}
@@ -726,10 +835,8 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
                     <AnimatedAIBot className={`w-4 h-4 ${geminiOk ? "text-purple-400" : "text-gray-400"}`} />
                   )}
                   <span className={`tracking-wide ${geminiOk ? "text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400" : ""}`}>
-                    {verifyingCl === cl.id && autopilotJob
-                      ? autopilotJob.phase === "extracting_ocr"
-                        ? "EXTRAYENDO OCR..."
-                        : `${Math.round(autopilotJob.progress_pct)}% (${autopilotJob.processed_questions}/${autopilotJob.total_questions})`
+                    {activeJob
+                      ? activePhase.title
                       : verifyingCl === cl.id
                         ? "INICIANDO…"
                         : "AI AUTOPILOT"}
@@ -769,6 +876,11 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
               <Tooltip content="Aplicar preset de vinculación">
                 <button onClick={(e) => { e.stopPropagation(); handleShowPresets(cl.id, cl.source_template_id); }} className={`p-0.5 transition ${showPresetMenuFor === cl.id ? "text-teal-600" : "text-gray-400 hover:text-teal-600"}`}>
                   <Link2 className="w-3.5 h-3.5" />
+                </button>
+              </Tooltip>
+              <Tooltip content="Auto-mapear secciones desde Where to verify">
+                <button onClick={(e) => { e.stopPropagation(); handleAutoLinkSections(cl.id); }} className="p-0.5 text-gray-400 hover:text-amber-600 transition">
+                  <Sparkles className="w-3.5 h-3.5" />
                 </button>
               </Tooltip>
               <Tooltip content="Agregar parte raíz">

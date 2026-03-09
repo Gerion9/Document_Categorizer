@@ -16,7 +16,6 @@ import {
   Upload,
   X,
   Tag,
-  Sparkles,
   Table2,
   Type,
   Loader2,
@@ -53,9 +52,6 @@ import {
   markExtra,
   addPageSectionLink,
   removePageSectionLink,
-  extractPage,
-  getExtraction,
-  extractBatch,
   getExtractionStatus,
   reindexPage,
   reindexCase,
@@ -92,7 +88,6 @@ export default function CaseWorkspace() {
   const [geminiConfigured, setGeminiConfigured] = useState<boolean | null>(null);
   const [pineconeConfigured, setPineconeConfigured] = useState(false);
   const [indexingConfigured, setIndexingConfigured] = useState(false);
-  const [extracting, setExtracting] = useState(false);
   const [showOcrText, setShowOcrText] = useState(false);
   const [reindexing, setReindexing] = useState(false);
 
@@ -280,75 +275,6 @@ export default function CaseWorkspace() {
       } catch {
         toast.error("Error al clasificar");
       }
-    }
-  };
-
-  // ── Extraction handlers ────────────────────────────────────────────
-  const handleExtractPage = async (page: Page) => {
-    setExtracting(true);
-    try {
-      await extractPage(page.id);
-      toast.success("Extracción iniciada...");
-
-      // Poll for result
-      const pollInterval = setInterval(async () => {
-        try {
-          const result = await getExtraction(page.id);
-          if (result.extraction_status === "done" || result.extraction_status === "error") {
-            clearInterval(pollInterval);
-            setExtracting(false);
-            // Update the preview page with the new data
-            if (previewPage?.id === page.id) {
-              setPreviewPage((prev) =>
-                prev
-                  ? {
-                      ...prev,
-                      ocr_text: result.ocr_text,
-                      extraction_status: result.extraction_status as Page["extraction_status"],
-                      extraction_method: result.extraction_method,
-                    }
-                  : null
-              );
-            }
-            refresh();
-            if (result.extraction_status === "done") {
-              toast.success("Texto extraído exitosamente");
-              setShowOcrText(true);
-            } else {
-              toast.error("Error en la extracción");
-            }
-          }
-        } catch {
-          clearInterval(pollInterval);
-          setExtracting(false);
-        }
-      }, 2000);
-    } catch (err: any) {
-      setExtracting(false);
-      const msg = err?.response?.data?.detail || "Error al iniciar extracción";
-      toast.error(msg);
-    }
-  };
-
-  const handleExtractSection = async (sectionId: string) => {
-    if (!caseId) return;
-    const sectionPgs = sectionPages(sectionId);
-    if (sectionPgs.length === 0) return;
-
-    try {
-      const result = await extractBatch(
-        caseId,
-        sectionPgs.map((p) => p.id)
-      );
-      toast.success(`${result.queued} páginas en cola de extracción`);
-
-      // Simple polling to refresh when done
-      setTimeout(() => refresh(), 5000);
-      setTimeout(() => refresh(), 10000);
-      setTimeout(() => refresh(), 20000);
-    } catch (err: any) {
-      const msg = err?.response?.data?.detail || "Error al iniciar extracción batch";
-      toast.error(msg);
     }
   };
 
@@ -639,8 +565,6 @@ export default function CaseWorkspace() {
             setPreviewPage(p);
           }}
           selectedPageId={selectedPage?.id}
-          showExtract={!!geminiConfigured}
-          onExtractAll={() => handleExtractSection(sec.id)}
         />
         {/* Render children indented */}
         {hasChildren &&
@@ -886,9 +810,6 @@ export default function CaseWorkspace() {
       {/* ── Full-size page preview modal ──────────────────────────── */}
       <AnimatePresence>
         {previewPage && (() => {
-          const pageDt = getPageDocType(previewPage);
-          const hasTables = pageDt?.has_tables ?? false;
-
           return (
             <motion.div
               initial={{ opacity: 0 }}
@@ -1002,25 +923,11 @@ export default function CaseWorkspace() {
                     </span>
                   )}
 
-                  {previewPage.extraction_status === "processing" || extracting ? (
+                  {previewPage.extraction_status === "processing" ? (
                     <span className="flex items-center gap-1 text-xs text-amber-600">
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      Extrayendo...
+                      Extrayendo desde AI Autopilot...
                     </span>
-                  ) : geminiConfigured ? (
-                    <button
-                      onClick={() => handleExtractPage(previewPage)}
-                      className="flex items-center gap-1 text-xs px-2.5 py-1 rounded-lg bg-gradient-to-r from-purple-500 to-blue-500 text-white hover:from-purple-600 hover:to-blue-600 transition shadow-sm"
-                      title={hasTables ? "Extraer con Gemini Vision (modo tablas)" : "Extraer OCR con Gemini"}
-                    >
-                      <Sparkles className="w-3.5 h-3.5" />
-                      {hasTables ? "Extraer tablas" : "Extraer texto"}
-                      {hasTables ? (
-                        <Table2 className="w-3 h-3 ml-0.5 opacity-70" />
-                      ) : (
-                        <Type className="w-3 h-3 ml-0.5 opacity-70" />
-                      )}
-                    </button>
                   ) : null}
 
                   {/* Reindex / Index status */}

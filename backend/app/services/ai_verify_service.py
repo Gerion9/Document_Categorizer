@@ -18,6 +18,7 @@ from google.genai import types
 from pydantic import BaseModel, Field, ValidationError
 
 from .extraction_service import _get_client
+from .gemini_runtime_service import GeminiTokenTracker, record_usage_from_response
 from .rag_config import get_rag_settings
 from ..prompts import (
     FORM_CONTEXT,
@@ -85,6 +86,9 @@ def _generate_structured_response(
     *,
     model_override: str | None = None,
     schema: type[BaseModel] = VerificationResult,
+    tracker: GeminiTokenTracker | None = None,
+    step_label: str = "verify",
+    rag_mode: bool = False,
 ) -> dict:
     client = _get_client()
     settings = get_rag_settings()
@@ -99,13 +103,14 @@ def _generate_structured_response(
             response_json_schema=schema.model_json_schema(),
         ),
     )
+    record_usage_from_response(tracker, step=step_label, response=response, model=model)
 
     raw_text = (response.text or "").strip()
     try:
         result = schema.model_validate_json(raw_text)
         return result.model_dump()
     except ValidationError:
-        fallback = _default_result()
+        fallback = _default_result(rag_mode=rag_mode)
         fallback["explanation"] = raw_text[:500]
         return fallback
 
@@ -119,6 +124,9 @@ def verify_question(
     where_to_verify: str,
     text_context: str = "",
     form_type: str = "",
+    *,
+    tracker: GeminiTokenTracker | None = None,
+    step_label: str = "verify-image",
 ) -> dict:
     """Send a page image + QC question to Gemini Vision."""
     img = PIL.Image.open(image_path)
@@ -129,7 +137,11 @@ def verify_question(
         form_context=get_form_context(form_type),
         ocr_markers=OCR_MARKERS_INSTRUCTIONS,
     )
-    return _generate_structured_response([prompt, img])
+    return _generate_structured_response(
+        [prompt, img],
+        tracker=tracker,
+        step_label=step_label,
+    )
 
 
 def verify_question_multi_page(
@@ -138,6 +150,9 @@ def verify_question_multi_page(
     where_to_verify: str,
     text_context: str = "",
     form_type: str = "",
+    *,
+    tracker: GeminiTokenTracker | None = None,
+    step_label: str = "verify-image-multi",
 ) -> dict:
     """Verify a question against multiple page images at once."""
     contents: list = [
@@ -151,7 +166,11 @@ def verify_question_multi_page(
     ]
     for path in image_paths[:5]:
         contents.append(PIL.Image.open(path))
-    return _generate_structured_response(contents)
+    return _generate_structured_response(
+        contents,
+        tracker=tracker,
+        step_label=step_label,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -162,6 +181,9 @@ def verify_question_rag(
     where_to_verify: str,
     text_evidence: str,
     form_type: str = "",
+    *,
+    tracker: GeminiTokenTracker | None = None,
+    step_label: str = "verify-rag",
 ) -> dict:
     """Verify a QC question using only OCR text evidence (no images)."""
     settings = get_rag_settings()
@@ -177,6 +199,9 @@ def verify_question_rag(
         [prompt],
         model_override=settings.gemini_model,
         schema=VerificationResult,
+        tracker=tracker,
+        step_label=step_label,
+        rag_mode=True,
     )
 
 
@@ -187,6 +212,9 @@ def verify_question_batch_rag(
     questions: list[dict],
     evidence_by_id: dict[str, str],
     form_type: str = "",
+    *,
+    tracker: GeminiTokenTracker | None = None,
+    step_label: str = "verify-batch-rag",
 ) -> list[dict]:
     """
     Verify multiple QC questions in a single Gemini call.
@@ -226,6 +254,9 @@ def verify_question_batch_rag(
         [prompt],
         model_override=settings.gemini_model,
         schema=BatchVerificationResult,
+        tracker=tracker,
+        step_label=step_label,
+        rag_mode=True,
     )
 
     answers_raw = result.get("answers", [])

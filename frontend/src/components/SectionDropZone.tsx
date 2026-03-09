@@ -3,7 +3,7 @@ import {
   SortableContext,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { Inbox, Sparkles, FolderOpen, FileText, ChevronRight } from "lucide-react";
+import { Inbox, FolderOpen, FileText, ChevronRight } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Page } from "../types";
 import PageThumbnail from "./PageThumbnail";
@@ -61,8 +61,6 @@ interface Props {
   onRemovePage?: (pageId: string) => void;
   onClickPage?: (page: Page) => void;
   selectedPageId?: string | null;
-  onExtractAll?: () => void;
-  showExtract?: boolean;
   /** If true, renders a simpler style (used for special zones like "extra", "unclassified") */
   isSpecialZone?: boolean;
 }
@@ -76,8 +74,6 @@ export default function SectionDropZone({
   onRemovePage,
   onClickPage,
   selectedPageId,
-  onExtractAll,
-  showExtract = false,
   isSpecialZone = false,
 }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: sectionId });
@@ -193,17 +189,6 @@ export default function SectionDropZone({
           )}
         </span>
 
-        {/* Extract all button */}
-        {showExtract && onExtractAll && pages.length > 0 && (
-          <button
-            onClick={onExtractAll}
-            className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-purple-50 text-purple-600 hover:bg-purple-100 transition shrink-0"
-            title="Extraer texto de todas las páginas"
-          >
-            <Sparkles className="w-3 h-3" />
-            Extraer
-          </button>
-        )}
       </div>
 
       {/* Pages grid — adapts to content */}

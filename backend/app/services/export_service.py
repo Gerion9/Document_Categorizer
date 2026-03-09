@@ -291,6 +291,7 @@ def build_qc_compliance_report(db: Session, case_id: str) -> str:
         "yes": "Yes",
         "no": "No",
         "na": "N/A",
+        "insufficient": "Insufficient",
     }
     CONFIDENCE_LABELS = {
         "high": "Alta",
@@ -375,7 +376,12 @@ def build_qc_compliance_report(db: Session, case_id: str) -> str:
                     if q.ai_notes:
                         desc_text += f"<br/><font color='#7c3aed' size='6'>[AI: {q.ai_notes}]</font>"
 
-                    ans_color = "#16a34a" if ans_label == "Yes" else "#dc2626" if ans_label == "No" else "#6b7280"
+                    ans_color = (
+                        "#16a34a" if ans_label == "Yes"
+                        else "#dc2626" if ans_label == "No"
+                        else "#d97706" if ans_label == "Insufficient"
+                        else "#6b7280"
+                    )
 
                     data.append([
                         Paragraph(q.code, cell_style),
