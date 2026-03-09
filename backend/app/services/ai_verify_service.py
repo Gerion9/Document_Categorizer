@@ -18,15 +18,22 @@ from google.genai import types
 from pydantic import BaseModel, Field, ValidationError
 
 from .extraction_service import _get_client
-from .gemini_runtime_service import GeminiTokenTracker, record_usage_from_response
+from .gemini_runtime_service import (
+    GeminiTokenTracker,
+    get_or_create_ocr_prompt_cache,
+    invalidate_ocr_prompt_cache,
+    is_cached_content_error,
+    record_usage_from_response,
+)
 from .rag_config import get_rag_settings
 from ..prompts import (
-    FORM_CONTEXT,
     COMMON_VERIFICATION_SOURCES,
     OCR_MARKERS_INSTRUCTIONS,
+    VERIFY_CACHE_PLACEHOLDER,
     VERIFY_PROMPT,
     RAG_VERIFY_PROMPT,
-    RAG_BATCH_PROMPT,
+    build_rag_batch_request_prompt,
+    build_rag_batch_system_prompt,
     get_form_context,
 )
 
@@ -89,19 +96,23 @@ def _generate_structured_response(
     tracker: GeminiTokenTracker | None = None,
     step_label: str = "verify",
     rag_mode: bool = False,
+    cached_content: str = "",
 ) -> dict:
     client = _get_client()
     settings = get_rag_settings()
     model = model_override or settings.gemini_vision_model or settings.gemini_model
+    config_kwargs: dict[str, object] = {
+        "temperature": 0.1,
+        "max_output_tokens": 4096,
+        "response_mime_type": "application/json",
+        "response_json_schema": schema.model_json_schema(),
+    }
+    if cached_content:
+        config_kwargs["cached_content"] = cached_content
     response = client.models.generate_content(
         model=model,
         contents=contents,
-        config=types.GenerateContentConfig(
-            temperature=0.1,
-            max_output_tokens=4096,
-            response_mime_type="application/json",
-            response_json_schema=schema.model_json_schema(),
-        ),
+        config=types.GenerateContentConfig(**config_kwargs),
     )
     record_usage_from_response(tracker, step=step_label, response=response, model=model)
 
@@ -243,21 +254,47 @@ def verify_question_batch_rag(
         lines.append("")
     questions_block = "\n".join(lines)
 
-    prompt = RAG_BATCH_PROMPT.format(
-        questions_block=questions_block,
-        form_context=get_form_context(form_type),
-        common_sources=COMMON_VERIFICATION_SOURCES,
-        ocr_markers=OCR_MARKERS_INSTRUCTIONS,
+    normalized_form = form_type.strip().lower().replace(" ", "-") if form_type else "default"
+    system_prompt = build_rag_batch_system_prompt(form_type)
+    request_prompt = build_rag_batch_request_prompt(questions_block)
+    client = _get_client()
+    cached_content = get_or_create_ocr_prompt_cache(
+        client,
+        model=settings.gemini_model,
+        prompt_profile=f"verify-batch-rag-{normalized_form}",
+        system_prompt=system_prompt,
+        placeholder_text=VERIFY_CACHE_PLACEHOLDER,
     )
+    contents = [request_prompt] if cached_content else [f"{system_prompt}\n\n{request_prompt}"]
 
-    result = _generate_structured_response(
-        [prompt],
-        model_override=settings.gemini_model,
-        schema=BatchVerificationResult,
-        tracker=tracker,
-        step_label=step_label,
-        rag_mode=True,
-    )
+    try:
+        result = _generate_structured_response(
+            contents,
+            model_override=settings.gemini_model,
+            schema=BatchVerificationResult,
+            tracker=tracker,
+            step_label=step_label,
+            rag_mode=True,
+            cached_content=cached_content,
+        )
+    except Exception as exc:
+        if cached_content and is_cached_content_error(exc):
+            invalidate_ocr_prompt_cache(cached_content)
+            log.warning(
+                "[GEMINI] Verification cached content invalid for form=%s. Retrying without cache: %s",
+                normalized_form,
+                str(exc),
+            )
+            result = _generate_structured_response(
+                [f"{system_prompt}\n\n{request_prompt}"],
+                model_override=settings.gemini_model,
+                schema=BatchVerificationResult,
+                tracker=tracker,
+                step_label=step_label,
+                rag_mode=True,
+            )
+        else:
+            raise
 
     answers_raw = result.get("answers", [])
     if not isinstance(answers_raw, list):

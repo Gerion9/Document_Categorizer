@@ -454,26 +454,26 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
             <button
               onClick={() => deleteQCQuestion(q.id).then(reload)}
               aria-label="Eliminar pregunta"
-              className="shrink-0 p-1 mt-0.5 rounded-md text-gray-300 hover:bg-red-50 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100"
+              className="shrink-0 p-1.5 mt-0.5 rounded-md text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors opacity-40 group-hover:opacity-100 focus:opacity-100 focus-visible:ring-2 focus-visible:ring-red-300 outline-none"
             >
               <Trash2 className="w-3 h-3" />
             </button>
           </Tooltip>
 
           {/* Code */}
-          <span className="shrink-0 font-mono text-[10px] text-gray-400 w-6 text-right mt-1">{q.code}</span>
+          <span className="shrink-0 font-mono text-xs text-gray-400 w-6 text-right mt-1">{q.code}</span>
 
           {/* Description + metadata */}
           <div className="flex-1 min-w-0 mt-0.5">
-            <p className="text-gray-700 leading-snug">{q.description}</p>
+            <p className="text-sm text-gray-800 leading-snug">{q.description}</p>
             {q.where_to_verify && (
-              <p className="text-[10px] text-indigo-500 mt-1 flex items-center gap-0.5">
+              <p className="text-xs text-indigo-500 mt-1 flex items-center gap-0.5">
                 <FileSearch className="w-3 h-3 shrink-0" />
                 {q.where_to_verify}
               </p>
             )}
             {q.correction && (
-              <p className="text-[10px] text-amber-600 mt-0.5 italic">Corrección: {q.correction}</p>
+              <p className="text-xs text-amber-600 mt-0.5 italic">Corrección: {q.correction}</p>
             )}
             {/* Section target chips */}
             {q.target_section_ids && q.target_section_ids.length > 0 && (
@@ -481,7 +481,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
                 {q.target_section_ids.map((sid) => {
                   const sec = allSections.find((s) => s.id === sid);
                   return sec ? (
-                    <span key={sid} className="text-[8px] bg-indigo-50 text-indigo-600 rounded px-1 py-0.5">
+                    <span key={sid} className="text-xs bg-indigo-50 text-indigo-600 rounded px-1 py-0.5">
                       {sec.path_code || sec.name}
                     </span>
                   ) : null;
@@ -493,7 +493,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
               <Tooltip content="Mapear a secciones del documento">
                 <button
                   onClick={() => setMappingQ(mappingQ === q.id ? null : q.id)}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-semibold border transition ${
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${
                     mappingQ === q.id
                       ? "bg-indigo-100 text-indigo-700 border-indigo-300 shadow-sm"
                       : "bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50"
@@ -501,7 +501,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
                 >
                   <MapPin className="w-3.5 h-3.5" />
                   {mappingQ === q.id ? "EDITANDO MAPEO" : "MAPEAR SECCIONES"}
-                  <span className="px-1 py-0.5 rounded bg-indigo-200/70 text-[9px] font-mono">
+                  <span className="px-1 py-0.5 rounded bg-indigo-200/70 text-xs font-mono">
                     {mappedCount}
                   </span>
                 </button>
@@ -510,7 +510,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
               {hasAI && (
                 <button
                   onClick={() => setExpandedAI((p) => ({ ...p, [q.id]: !p[q.id] }))}
-                  className={`inline-flex items-center gap-1 text-[9px] px-2 py-1 rounded-full font-semibold transition ${
+                  className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full font-semibold transition ${
                     q.ai_answer === "yes" ? "bg-green-100 text-green-700" :
                     q.ai_answer === "no" ? "bg-red-100 text-red-700" :
                     q.ai_answer === "insufficient" ? "bg-amber-100 text-amber-700" :
@@ -535,7 +535,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
                   key={ansKey}
                   onClick={() => handleSetAnswer(q, ansKey)}
                   aria-label={isSelected ? "Quitar selección" : `Marcar como ${style.label}`}
-                  className={`w-9 sm:w-10 py-1 rounded-md text-[10px] font-semibold transition-all ${
+                  className={`w-9 sm:w-10 py-2 rounded-md text-xs font-semibold transition-all ${
                     isSelected
                       ? `${style.bg} ${style.text} shadow-sm border border-black/5`
                       : "text-gray-500 hover:bg-gray-200 border border-transparent"
@@ -557,7 +557,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
               exit={{ height: 0, opacity: 0 }}
               className="mx-2 mb-1 overflow-hidden"
             >
-              <div className={`p-2 rounded-lg text-[10px] leading-relaxed ${
+              <div className={`p-2 rounded-lg text-xs leading-relaxed ${
                 q.ai_answer === "yes" ? "bg-green-50 border border-green-200" :
                 q.ai_answer === "no" ? "bg-red-50 border border-red-200" :
                 q.ai_answer === "insufficient" ? "bg-amber-50 border border-amber-200" :
@@ -578,11 +578,11 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
         {mappingQ === q.id && (
           <div className="mx-2 mb-1 p-2 bg-indigo-50 rounded-lg border border-indigo-200 max-h-36 overflow-y-auto custom-scroll">
             <div className="flex items-center justify-between mb-1">
-              <span className="text-[10px] font-semibold text-indigo-700 uppercase">Secciones donde verificar</span>
-              <button onClick={() => setMappingQ(null)} className="text-gray-400 hover:text-gray-600"><XIcon className="w-3 h-3" /></button>
+              <span className="text-xs font-semibold text-indigo-700 uppercase">Secciones donde verificar</span>
+              <button aria-label="Cerrar mapeo" onClick={() => setMappingQ(null)} className="text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 rounded"><XIcon className="w-3 h-3" /></button>
             </div>
             {allSections.length === 0 ? (
-              <p className="text-[10px] text-gray-400 italic">Crea secciones de documento primero</p>
+              <p className="text-xs text-gray-400 italic">Crea secciones de documento primero</p>
             ) : (
               <div className="flex flex-col gap-0.5">
                 {allSections.map((sec) => {
@@ -590,7 +590,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
                   const label = sec.path_code || `${dt?.code || ""}.${sec.code}`;
                   const isTarget = (q.target_section_ids || []).includes(sec.id);
                   return (
-                    <label key={sec.id} className={`flex items-center gap-1.5 text-[10px] px-1.5 py-0.5 rounded cursor-pointer transition ${isTarget ? "bg-indigo-100 text-indigo-800" : "hover:bg-indigo-100/50 text-gray-600"}`} style={{ paddingLeft: `${4 + (sec.depth || 0) * 12}px` }}>
+                    <label key={sec.id} className={`flex items-center gap-1.5 text-xs px-1.5 py-0.5 rounded cursor-pointer transition ${isTarget ? "bg-indigo-100 text-indigo-800" : "hover:bg-indigo-100/50 text-gray-600"}`} style={{ paddingLeft: `${4 + (sec.depth || 0) * 12}px` }}>
                       <input type="checkbox" checked={isTarget} onChange={() => handleToggleSectionTarget(q.id, sec.id, q.target_section_ids || [])} className="rounded border-indigo-300 text-indigo-600 w-3 h-3" />
                       <span className="font-mono">{label}</span>
                       <span className="text-gray-400">{sec.name}</span>
@@ -649,24 +649,24 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
               <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden">
                 <div className={`h-full rounded-full transition-all ${pctColor}`} style={{ width: `${pct}%` }} />
               </div>
-              <span className="text-[10px] text-gray-500 font-mono w-12 text-right">{stats.answered}/{stats.total}</span>
+              <span className="text-xs text-gray-500 font-mono w-12 text-right">{stats.answered}/{stats.total}</span>
             </div>
           )}
 
           {/* Secondary actions */}
-          <div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100 transition shrink-0">
+          <div className="flex items-center gap-0.5 opacity-40 group-hover:opacity-100 focus-within:opacity-100 transition shrink-0">
             <Tooltip content="Agregar subparte">
-              <button onClick={(e) => { e.stopPropagation(); const sib = part.children || []; setNewCode(nextCode(sib)); setNewName(""); setAddingSubpartFor(part.id); setAddingPartFor(clId); }} className="p-0.5 text-gray-400 hover:text-brand-600 transition">
+              <button aria-label="Agregar subparte" onClick={(e) => { e.stopPropagation(); const sib = part.children || []; setNewCode(nextCode(sib)); setNewName(""); setAddingSubpartFor(part.id); setAddingPartFor(clId); }} className="p-1.5 text-gray-400 hover:text-brand-600 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 rounded">
                 <Plus className="w-3.5 h-3.5" />
               </button>
             </Tooltip>
             <Tooltip content="Agregar pregunta">
-              <button onClick={(e) => { e.stopPropagation(); const sib = part.questions || []; setNewCode(nextCode(sib)); setNewDesc(""); setNewVerify(""); setAddingQuestionFor(part.id); }} className="p-0.5 text-gray-400 hover:text-indigo-600 transition">
+              <button aria-label="Agregar pregunta" onClick={(e) => { e.stopPropagation(); const sib = part.questions || []; setNewCode(nextCode(sib)); setNewDesc(""); setNewVerify(""); setAddingQuestionFor(part.id); }} className="p-1.5 text-gray-400 hover:text-indigo-600 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 rounded">
                 <HelpCircle className="w-3.5 h-3.5" />
               </button>
             </Tooltip>
             <Tooltip content="Eliminar parte">
-              <button onClick={(e) => { e.stopPropagation(); deleteQCPart(part.id).then(reload); }} className="p-0.5 text-gray-400 hover:text-red-500 transition">
+              <button aria-label="Eliminar parte" onClick={(e) => { e.stopPropagation(); deleteQCPart(part.id).then(reload); }} className="p-1.5 text-gray-400 hover:text-red-500 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 rounded">
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
             </Tooltip>
@@ -682,13 +682,13 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
             {addingQuestionFor === part.id && (
               <div className="flex flex-col gap-1 p-2 bg-indigo-50 rounded-lg border border-indigo-200 mt-1 mx-2" style={{ marginLeft: `${indent * 16}px` }}>
                 <div className="flex gap-1">
-                  <input className="w-14 text-[10px] font-mono border rounded px-1.5 py-0.5 text-center" value={newCode} onChange={(e) => setNewCode(e.target.value)} placeholder="Código" />
-                  <input className="flex-1 text-xs border rounded px-2 py-0.5" value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="Pregunta exacta" autoFocus />
+                  <input className="w-14 text-xs font-mono border rounded px-1.5 py-0.5 text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300" value={newCode} onChange={(e) => setNewCode(e.target.value)} placeholder="Código" />
+                  <input className="flex-1 text-xs border rounded px-2 py-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300" value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="Pregunta exacta" autoFocus />
                 </div>
-                <input className="text-xs border rounded px-2 py-0.5" value={newVerify} onChange={(e) => setNewVerify(e.target.value)} placeholder="¿Dónde verificar? (ej. Intake; Bio Call; Declaration)" />
+                <input className="text-xs border rounded px-2 py-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300" value={newVerify} onChange={(e) => setNewVerify(e.target.value)} placeholder="¿Dónde verificar? (ej. Intake; Bio Call; Declaration)" />
                 <div className="flex gap-1">
-                  <button onClick={() => handleAddQuestion(part.id)} disabled={!newDesc.trim()} className="flex-1 text-[10px] bg-indigo-600 text-white rounded py-0.5 hover:bg-indigo-700 disabled:opacity-40 transition">Crear pregunta</button>
-                  <button onClick={() => setAddingQuestionFor(null)} className="flex-1 text-[10px] bg-gray-200 rounded py-0.5 hover:bg-gray-300 transition">Cancelar</button>
+                  <button onClick={() => handleAddQuestion(part.id)} disabled={!newDesc.trim()} className="flex-1 text-xs bg-indigo-600 text-white rounded py-0.5 hover:bg-indigo-700 disabled:opacity-40 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">Crear pregunta</button>
+                  <button onClick={() => setAddingQuestionFor(null)} className="flex-1 text-xs bg-gray-200 rounded py-0.5 hover:bg-gray-300 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400">Cancelar</button>
                 </div>
               </div>
             )}
@@ -697,12 +697,12 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
             {addingSubpartFor === part.id && (
               <div className="flex flex-col gap-1 p-2 bg-blue-50 rounded-lg border border-blue-200 mt-1 mx-2" style={{ marginLeft: `${indent * 16}px` }}>
                 <div className="flex gap-1">
-                  <input className="w-14 text-[10px] font-mono border rounded px-1.5 py-0.5 text-center" value={newCode} onChange={(e) => setNewCode(e.target.value)} placeholder="Código" />
-                  <input className="flex-1 text-xs border rounded px-2 py-0.5" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Nombre de la subparte" autoFocus />
+                  <input className="w-14 text-xs font-mono border rounded px-1.5 py-0.5 text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300" value={newCode} onChange={(e) => setNewCode(e.target.value)} placeholder="Código" />
+                  <input className="flex-1 text-xs border rounded px-2 py-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Nombre de la subparte" autoFocus />
                 </div>
                 <div className="flex gap-1">
-                  <button onClick={() => handleAddPart(clId, part.id)} disabled={!newName.trim()} className="flex-1 text-[10px] bg-brand-600 text-white rounded py-0.5 hover:bg-brand-700 disabled:opacity-40 transition">Crear subparte</button>
-                  <button onClick={() => { setAddingSubpartFor(null); setNewName(""); }} className="flex-1 text-[10px] bg-gray-200 rounded py-0.5 hover:bg-gray-300 transition">Cancelar</button>
+                  <button onClick={() => handleAddPart(clId, part.id)} disabled={!newName.trim()} className="flex-1 text-xs bg-brand-600 text-white rounded py-0.5 hover:bg-brand-700 disabled:opacity-40 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">Crear subparte</button>
+                  <button onClick={() => { setAddingSubpartFor(null); setNewName(""); }} className="flex-1 text-xs bg-gray-200 rounded py-0.5 hover:bg-gray-300 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400">Cancelar</button>
                 </div>
               </div>
             )}
@@ -724,12 +724,12 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
         </h3>
         <div className="flex gap-1">
           <Tooltip content="Plantillas QC disponibles">
-            <button onClick={() => setShowTemplates(!showTemplates)} className={`p-1 rounded transition ${showTemplates ? "bg-purple-100 text-purple-600" : "text-gray-500 hover:bg-gray-200"}`}>
+            <button aria-label="Plantillas QC disponibles" onClick={() => setShowTemplates(!showTemplates)} className={`p-1.5 rounded transition focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-300 ${showTemplates ? "bg-purple-100 text-purple-600" : "text-gray-500 hover:bg-gray-200"}`}>
               <Download className="w-4 h-4" />
             </button>
           </Tooltip>
           <Tooltip content="Crear QC checklist nuevo">
-            <button onClick={() => setAddingCl(true)} className="p-1 rounded hover:bg-gray-200 text-brand-600 transition">
+            <button aria-label="Crear QC checklist nuevo" onClick={() => setAddingCl(true)} className="p-1.5 rounded hover:bg-gray-200 text-brand-600 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">
               <Plus className="w-4 h-4" />
             </button>
           </Tooltip>
@@ -739,15 +739,15 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
       {/* Template selector */}
       {showTemplates && (
         <div className="p-2 bg-purple-50 rounded-lg border border-purple-200">
-          <p className="text-[10px] font-semibold text-purple-700 uppercase mb-1">Plantillas QC</p>
+          <p className="text-xs font-semibold text-purple-700 uppercase mb-1">Plantillas QC</p>
           {templates.length === 0 ? (
             <div className="flex flex-col gap-1">
-              <p className="text-[10px] text-gray-400 italic">No hay plantillas. Precarga:</p>
+              <p className="text-xs text-gray-400 italic">No hay plantillas. Precarga:</p>
               <div className="flex gap-1">
-                <button onClick={handleSeedI914} className="text-[10px] bg-purple-600 text-white rounded py-1 px-2 hover:bg-purple-700 transition">
+                <button onClick={handleSeedI914} className="text-xs bg-purple-600 text-white rounded py-1 px-2 hover:bg-purple-700 transition">
                   I-914 QC Checklist
                 </button>
-                <button onClick={handleSeedDocTaxonomy} className="text-[10px] bg-indigo-600 text-white rounded py-1 px-2 hover:bg-indigo-700 transition">
+                <button onClick={handleSeedDocTaxonomy} className="text-xs bg-indigo-600 text-white rounded py-1 px-2 hover:bg-indigo-700 transition">
                   I-914 Documentos
                 </button>
               </div>
@@ -759,7 +759,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
                   <Download className="w-3.5 h-3.5 text-purple-500 shrink-0" />
                   <div className="flex-1">
                     <span className="font-medium text-gray-800">{tpl.name}</span>
-                    <span className="text-[10px] text-gray-400 ml-1">{tpl.total_questions} preguntas</span>
+                    <span className="text-xs text-gray-400 ml-1">{tpl.total_questions} preguntas</span>
                   </div>
                 </button>
               ))}
@@ -771,9 +771,9 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
       {/* New checklist form */}
       {addingCl && (
         <div className="flex gap-1">
-          <input className="flex-1 text-xs border rounded px-2 py-1" placeholder="Nombre del QC Checklist" value={clName} onChange={(e) => setClName(e.target.value)} autoFocus onKeyDown={(e) => e.key === "Enter" && handleCreateChecklist()} />
-          <button onClick={handleCreateChecklist} className="text-xs bg-brand-600 text-white rounded px-2 hover:bg-brand-700">OK</button>
-          <button onClick={() => setAddingCl(false)} className="text-xs bg-gray-200 rounded px-2">X</button>
+          <input className="flex-1 text-xs border rounded px-2 py-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300" placeholder="Nombre del QC Checklist" value={clName} onChange={(e) => setClName(e.target.value)} autoFocus onKeyDown={(e) => e.key === "Enter" && handleCreateChecklist()} />
+          <button onClick={handleCreateChecklist} className="text-xs bg-brand-600 text-white rounded px-2 hover:bg-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">OK</button>
+          <button onClick={() => setAddingCl(false)} className="text-xs bg-gray-200 rounded px-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400">X</button>
         </div>
       )}
 
@@ -793,9 +793,9 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
               <div className="shrink-0 min-w-[150px]">
                 {activeJob ? (
                   <div className="flex flex-col items-end gap-1">
-                    <span className="text-[10px] text-purple-600">{activePhase.detail}</span>
+                    <span className="text-xs text-purple-600">{activePhase.detail}</span>
                     <div className="flex items-center gap-2">
-                      <span className="text-[10px] text-gray-400">{activeProgress}%</span>
+                      <span className="text-xs text-gray-400">{activeProgress}%</span>
                       <div className="w-24 h-1.5 bg-purple-100 rounded-full overflow-hidden">
                         <div
                           className="h-full rounded-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all"
@@ -806,7 +806,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-gray-400">{cl.answered_questions}/{cl.total_questions} ({pct}%)</span>
+                    <span className="text-xs text-gray-400">{cl.answered_questions}/{cl.total_questions} ({pct}%)</span>
                     <div className="w-20 h-1.5 bg-gray-200 rounded-full overflow-hidden">
                       <div className="h-full bg-green-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
                     </div>
@@ -819,7 +819,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
                 <button
                   onClick={(e) => { e.stopPropagation(); geminiOk ? handleAIVerifyChecklist(cl.id) : toast.error("Configura GEMINI_API_KEY en backend/.env"); }}
                   disabled={verifyingCl === cl.id}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-[10px] font-bold transition-all disabled:opacity-50 shrink-0 border relative overflow-hidden group/ai ${
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition-all disabled:opacity-50 shrink-0 border relative overflow-hidden group/ai ${
                     geminiOk
                       ? "bg-[#0B0F19] text-white border-gray-700 shadow-lg hover:shadow-purple-500/25 hover:border-purple-500/50"
                       : "bg-gray-100 text-gray-400 hover:bg-gray-200"
@@ -848,13 +848,14 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
               {indexingOk && !cl.is_template && cl.case_id && (
                 <Tooltip content="Busqueda semantica en respuestas QC">
                   <button
+                    aria-label="Búsqueda semántica en respuestas QC"
                     onClick={(e) => {
                       e.stopPropagation();
                       setSemanticClId(semanticClId === cl.id ? null : cl.id);
                       setSemanticResults([]);
                       setSemanticQ("");
                     }}
-                    className={`p-0.5 transition ${
+                    className={`p-1.5 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-300 rounded ${
                       semanticClId === cl.id ? "text-purple-600" : "text-gray-400 hover:text-purple-600"
                     }`}
                   >
@@ -864,32 +865,32 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
               )}
 
               <Tooltip content="Guardar como plantilla reutilizable">
-                <button onClick={async (e) => { e.stopPropagation(); try { await saveQCAsTemplate(cl.id); toast.success("Guardado como plantilla"); await reload(); } catch { toast.error("Error"); } }} className="p-0.5 text-gray-400 hover:text-purple-600 transition">
+                <button aria-label="Guardar como plantilla" onClick={async (e) => { e.stopPropagation(); try { await saveQCAsTemplate(cl.id); toast.success("Guardado como plantilla"); await reload(); } catch { toast.error("Error"); } }} className="p-1.5 text-gray-400 hover:text-purple-600 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-300 rounded">
                   <Download className="w-3.5 h-3.5" />
                 </button>
               </Tooltip>
               <Tooltip content="Guardar preset de vinculación QC ↔ Doc">
-                <button onClick={(e) => { e.stopPropagation(); handleSaveLinkPreset(cl.id, cl.name); }} className="p-0.5 text-gray-400 hover:text-teal-600 transition">
+                <button aria-label="Guardar preset de vinculación" onClick={(e) => { e.stopPropagation(); handleSaveLinkPreset(cl.id, cl.name); }} className="p-1.5 text-gray-400 hover:text-teal-600 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-300 rounded">
                   <Upload className="w-3.5 h-3.5" />
                 </button>
               </Tooltip>
               <Tooltip content="Aplicar preset de vinculación">
-                <button onClick={(e) => { e.stopPropagation(); handleShowPresets(cl.id, cl.source_template_id); }} className={`p-0.5 transition ${showPresetMenuFor === cl.id ? "text-teal-600" : "text-gray-400 hover:text-teal-600"}`}>
+                <button aria-label="Aplicar preset de vinculación" onClick={(e) => { e.stopPropagation(); handleShowPresets(cl.id, cl.source_template_id); }} className={`p-1.5 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-300 rounded ${showPresetMenuFor === cl.id ? "text-teal-600" : "text-gray-400 hover:text-teal-600"}`}>
                   <Link2 className="w-3.5 h-3.5" />
                 </button>
               </Tooltip>
               <Tooltip content="Auto-mapear secciones desde Where to verify">
-                <button onClick={(e) => { e.stopPropagation(); handleAutoLinkSections(cl.id); }} className="p-0.5 text-gray-400 hover:text-amber-600 transition">
+                <button aria-label="Auto-mapear secciones" onClick={(e) => { e.stopPropagation(); handleAutoLinkSections(cl.id); }} className="p-1.5 text-gray-400 hover:text-amber-600 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 rounded">
                   <Sparkles className="w-3.5 h-3.5" />
                 </button>
               </Tooltip>
               <Tooltip content="Agregar parte raíz">
-                <button onClick={(e) => { e.stopPropagation(); const sib = cl.parts || []; setNewCode(nextCode(sib)); setNewName(""); setAddingPartFor(cl.id); setAddingSubpartFor(null); }} className="p-0.5 text-gray-400 hover:text-brand-600 transition">
+                <button aria-label="Agregar parte raíz" onClick={(e) => { e.stopPropagation(); const sib = cl.parts || []; setNewCode(nextCode(sib)); setNewName(""); setAddingPartFor(cl.id); setAddingSubpartFor(null); }} className="p-1.5 text-gray-400 hover:text-brand-600 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 rounded">
                   <Plus className="w-3.5 h-3.5" />
                 </button>
               </Tooltip>
               <Tooltip content="Eliminar QC checklist">
-                <button onClick={(e) => { e.stopPropagation(); if (confirm("Eliminar QC checklist?")) deleteQCChecklist(cl.id).then(reload); }} className="p-0.5 text-gray-400 hover:text-red-500 transition">
+                <button aria-label="Eliminar QC checklist" onClick={(e) => { e.stopPropagation(); if (confirm("Eliminar QC checklist?")) deleteQCChecklist(cl.id).then(reload); }} className="p-1.5 text-gray-400 hover:text-red-500 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 rounded">
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
               </Tooltip>
@@ -899,11 +900,11 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
             {showPresetMenuFor === cl.id && (
               <div className="px-4 py-2 bg-teal-50 border-t border-teal-200">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-[10px] font-semibold text-teal-700 uppercase">Presets de vinculación</span>
-                  <button onClick={() => setShowPresetMenuFor(null)} className="text-gray-400 hover:text-gray-600"><XIcon className="w-3 h-3" /></button>
+                  <span className="text-xs font-semibold text-teal-700 uppercase">Presets de vinculación</span>
+                  <button aria-label="Cerrar presets" onClick={() => setShowPresetMenuFor(null)} className="text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-300 rounded"><XIcon className="w-3 h-3" /></button>
                 </div>
                 {linkPresets.length === 0 ? (
-                  <p className="text-[10px] text-gray-400 italic">No hay presets guardados para esta plantilla QC.</p>
+                  <p className="text-xs text-gray-400 italic">No hay presets guardados para esta plantilla QC.</p>
                 ) : (
                   <div className="flex flex-col gap-1">
                     {linkPresets.map((preset) => (
@@ -911,10 +912,10 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
                         <button onClick={() => handleApplyLinkPreset(cl.id, preset.id)} className="flex-1 text-left flex items-center gap-1.5">
                           <Link2 className="w-3 h-3 text-teal-500 shrink-0" />
                           <span className="font-medium text-gray-800">{preset.name}</span>
-                          <span className="text-[9px] text-gray-400 ml-auto">{preset.mapping_count} mapeos</span>
+                          <span className="text-xs text-gray-400 ml-auto">{preset.mapping_count} mapeos</span>
                         </button>
                         <Tooltip content="Eliminar preset">
-                          <button onClick={() => handleDeleteLinkPreset(preset.id)} className="p-0.5 text-gray-400 hover:text-red-500 transition shrink-0">
+                          <button aria-label="Eliminar preset" onClick={() => handleDeleteLinkPreset(preset.id)} className="p-1.5 text-gray-400 hover:text-red-500 transition shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 rounded">
                             <Trash2 className="w-3 h-3" />
                           </button>
                         </Tooltip>
@@ -930,8 +931,8 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
               <div className="px-4 py-3 bg-purple-50 border-t border-purple-200">
                 <div className="flex items-center gap-2 mb-2">
                   <Search className="w-3.5 h-3.5 text-purple-500" />
-                  <span className="text-[10px] font-semibold text-purple-700 uppercase">Busqueda Semantica QC</span>
-                  <button onClick={() => { setSemanticClId(null); setSemanticResults([]); }} className="ml-auto text-gray-400 hover:text-gray-600">
+                  <span className="text-xs font-semibold text-purple-700 uppercase">Busqueda Semantica QC</span>
+                  <button aria-label="Cerrar búsqueda semántica" onClick={() => { setSemanticClId(null); setSemanticResults([]); }} className="ml-auto text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-300 rounded">
                     <XIcon className="w-3 h-3" />
                   </button>
                 </div>
@@ -946,7 +947,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
                   <button
                     onClick={() => handleSemanticSearch(cl.id)}
                     disabled={semanticSearching || !semanticQ.trim()}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition disabled:opacity-50 text-[10px] font-semibold"
+                    className="flex items-center gap-1 px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition disabled:opacity-50 text-xs font-semibold"
                   >
                     {semanticSearching ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
                     Buscar
@@ -955,7 +956,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
                 {semanticResults.length > 0 && (
                   <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto custom-scroll">
                     {semanticResults.map((match, i) => (
-                      <div key={match.id} className="p-2 bg-white/70 rounded-lg border border-purple-100 text-[10px]">
+                      <div key={match.id} className="p-2 bg-white/70 rounded-lg border border-purple-100 text-xs">
                         <div className="flex items-center justify-between mb-0.5">
                           <span className="font-semibold text-gray-700">#{i + 1}</span>
                           <span className="text-purple-600 font-mono">score: {match.score.toFixed(3)}</span>
@@ -964,7 +965,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
                           <p className="text-gray-600 whitespace-pre-wrap line-clamp-3">{String(match.metadata.text)}</p>
                         )}
                         {!!match.metadata.question_code && (
-                          <span className="inline-block mt-0.5 text-[9px] bg-indigo-50 text-indigo-600 rounded px-1 py-0.5">
+                          <span className="inline-block mt-0.5 text-xs bg-indigo-50 text-indigo-600 rounded px-1 py-0.5">
                             {String(match.metadata.question_code)}
                           </span>
                         )}
@@ -984,18 +985,18 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
                 {addingPartFor === cl.id && !addingSubpartFor && (
                   <div className="flex flex-col gap-1 p-2 bg-blue-50 rounded-lg border border-blue-200 mt-1 mx-2">
                     <div className="flex gap-1">
-                      <input className="w-14 text-[10px] font-mono border rounded px-1.5 py-0.5 text-center" value={newCode} onChange={(e) => setNewCode(e.target.value)} placeholder="Código" />
-                      <input className="flex-1 text-xs border rounded px-2 py-0.5" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Nombre de la parte (ej. Part 1)" autoFocus />
+                      <input className="w-14 text-xs font-mono border rounded px-1.5 py-0.5 text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300" value={newCode} onChange={(e) => setNewCode(e.target.value)} placeholder="Código" />
+                      <input className="flex-1 text-xs border rounded px-2 py-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Nombre de la parte (ej. Part 1)" autoFocus />
                     </div>
                     <div className="flex gap-1">
-                      <button onClick={() => handleAddPart(cl.id)} disabled={!newName.trim()} className="flex-1 text-[10px] bg-brand-600 text-white rounded py-0.5 hover:bg-brand-700 disabled:opacity-40 transition">Crear parte</button>
-                      <button onClick={() => { setAddingPartFor(null); setNewName(""); }} className="flex-1 text-[10px] bg-gray-200 rounded py-0.5 hover:bg-gray-300 transition">Cancelar</button>
+                      <button onClick={() => handleAddPart(cl.id)} disabled={!newName.trim()} className="flex-1 text-xs bg-brand-600 text-white rounded py-0.5 hover:bg-brand-700 disabled:opacity-40 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">Crear parte</button>
+                      <button onClick={() => { setAddingPartFor(null); setNewName(""); }} className="flex-1 text-xs bg-gray-200 rounded py-0.5 hover:bg-gray-300 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400">Cancelar</button>
                     </div>
                   </div>
                 )}
 
                 {cl.parts.length === 0 && !addingPartFor && (
-                  <p className="text-[10px] text-gray-400 italic text-center py-3">Agrega partes con el botón + del encabezado</p>
+                  <p className="text-xs text-gray-400 italic text-center py-3">Agrega partes con el botón + del encabezado</p>
                 )}
               </div>
             )}

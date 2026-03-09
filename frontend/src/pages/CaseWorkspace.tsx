@@ -56,6 +56,7 @@ import {
   reindexPage,
   reindexCase,
   ragQuery,
+  deletePage,
 } from "../api/client";
 
 import FileUpload from "../components/FileUpload";
@@ -316,6 +317,27 @@ export default function CaseWorkspace() {
     setRagSearching(false);
   };
 
+  const handleDeletePage = async (page: Page) => {
+    const ok = window.confirm(
+      `¿Eliminar definitivamente la página ${page.original_page_number} de "${page.original_filename}"?`
+    );
+    if (!ok) return;
+    try {
+      await deletePage(page.id);
+      if (previewPage?.id === page.id) {
+        setPreviewPage(null);
+        setShowOcrText(false);
+      }
+      if (selectedPage?.id === page.id) {
+        setSelectedPage(null);
+      }
+      toast.success("Página eliminada");
+      refresh();
+    } catch (err: any) {
+      toast.error(err?.response?.data?.detail || "Error al eliminar página");
+    }
+  };
+
   // Get the DocumentType for a page (to check has_tables)
   const getPageDocType = (page: Page): DocumentType | undefined =>
     docTypes.find((dt) => dt.id === page.document_type_id);
@@ -470,6 +492,8 @@ export default function CaseWorkspace() {
               key={page.id}
               page={page}
               selected={selectedPage?.id === page.id}
+              onRemove={() => handleDeletePage(page)}
+              removeTooltip="Eliminar página definitivamente"
               onClick={() => {
                 setSelectedPage(page);
                 setPreviewPage(page);

@@ -12,6 +12,8 @@ interface Props {
   sortable?: boolean;
   /** If provided, show a remove button */
   onRemove?: () => void;
+  /** Tooltip text for remove button */
+  removeTooltip?: string;
   /** Click handler for preview */
   onClick?: () => void;
   /** Whether this page is currently selected */
@@ -29,6 +31,7 @@ export default function PageThumbnail({
   page,
   sortable = false,
   onRemove,
+  removeTooltip = "Quitar página de la sección",
   onClick,
   selected = false,
   compact = false,
@@ -121,7 +124,7 @@ export default function PageThumbnail({
 
       {/* Remove button */}
       {onRemove && (
-        <Tooltip content="Quitar página de la sección">
+        <Tooltip content={removeTooltip}>
           <button
             onClick={(e) => {
               e.stopPropagation();

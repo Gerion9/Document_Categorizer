@@ -61,6 +61,16 @@ def _with_retries(fn, *, max_retries: int | None = None):
     raise last_exc or RuntimeError("Network operation failed")
 
 
+def _is_namespace_not_found_error(exc: Exception) -> bool:
+    status = getattr(exc, "status", None)
+    message = str(exc).lower()
+    if "namespace not found" in message:
+        return True
+    if status == 404 and "namespace" in message:
+        return True
+    return "(404)" in message and "namespace" in message and "not found" in message
+
+
 def _section_scopes_for_page(page: Page) -> list[dict[str, Any]]:
     scopes: list[dict[str, Any]] = []
     document_type = page.document_type
@@ -205,12 +215,29 @@ def delete_case_ocr_chunks(case_id: str) -> None:
     index = get_index()
     namespace = get_namespace(case_id)
     try:
+<<<<<<< HEAD
         index.delete(delete_all=True, namespace=namespace)
     except Exception as exc:
         if "not found" in str(exc).lower() or "404" in str(exc):
             pass
         else:
             raise
+=======
+        _with_retries(
+            lambda: index.delete(delete_all=True, namespace=namespace)
+        )
+    except Exception as exc:
+        # First-time indexing can hit a 404 when the namespace does not exist yet.
+        # Treat it as an empty namespace and continue with upsert.
+        if _is_namespace_not_found_error(exc):
+            log.info(
+                "Indexing [%s]: namespace %s not found; skipping clear step",
+                str(case_id)[:8],
+                namespace,
+            )
+            return
+        raise
+>>>>>>> checklist
 
 
 def upsert_page_ocr_chunks(
@@ -461,11 +488,12 @@ def query_ocr_chunks(
     section_ids: list[str] | None = None,
     document_type_ids: list[str] | None = None,
     top_k: int | None = None,
+    query_vector: list[float] | None = None,
     tracker: GeminiTokenTracker | None = None,
     step_label: str = "ocr-query",
 ) -> list[dict[str, Any]]:
     settings = get_rag_settings()
-    if not question or not question.strip():
+    if (not question or not question.strip()) and not query_vector:
         return []
 
     filter_payload: dict[str, Any] = {"record_type": {"$eq": "ocr-chunk"}}
@@ -478,7 +506,7 @@ def query_ocr_chunks(
     if document_type_ids:
         filter_payload["document_type_id"] = {"$in": [str(doc_id) for doc_id in document_type_ids]}
 
-    vector = get_embedding(
+    vector = query_vector or get_embedding(
         question,
         task_type=settings.embedding_task_type_query,
         tracker=tracker,
@@ -486,14 +514,24 @@ def query_ocr_chunks(
     )
     index = get_index()
     namespace = get_namespace(case_id)
-    result = _with_retries(
-        lambda: index.query(
-            namespace=namespace,
-            vector=vector,
-            top_k=max(1, top_k or settings.retrieval_top_k),
-            include_metadata=True,
-            include_values=False,
-            filter=filter_payload,
+    try:
+        result = _with_retries(
+            lambda: index.query(
+                namespace=namespace,
+                vector=vector,
+                top_k=max(1, top_k or settings.retrieval_top_k),
+                include_metadata=True,
+                include_values=False,
+                filter=filter_payload,
+            )
         )
-    )
+    except Exception as exc:
+        if _is_namespace_not_found_error(exc):
+            log.info(
+                "Query [%s]: namespace %s not found; returning 0 matches",
+                step_label,
+                namespace,
+            )
+            return []
+        raise
     return _normalize_matches(result)
