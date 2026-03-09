@@ -3,7 +3,7 @@ Persists extraction results and token usage as JSON files under /storage/exports
 
 Two files per case extraction run:
   1. extraction_<case_id>.json  -- full OCR text extracted from every page
-  2. token_usage_<case_id>.json -- per-page token breakdown + global totals
+  2. token_usage_<case_id>.json -- concise global + per-phase token summary
 """
 
 from __future__ import annotations
@@ -22,6 +22,15 @@ EXPORTS_DIR = STORAGE_DIR / "exports"
 
 _write_lock = threading.Lock()
 
+_ZERO_TOKENS: dict[str, int] = {
+    "input": 0,
+    "output": 0,
+    "cached": 0,
+    "thoughts": 0,
+    "embedding": 0,
+    "grand_total": 0,
+}
+
 
 def _ensure_exports_dir() -> Path:
     EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
@@ -34,17 +43,18 @@ def _write_json(path: Path, data: Any) -> None:
     log.info("Wrote %s (%d bytes)", path.name, path.stat().st_size)
 
 
+def _sum_tokens(a: dict, b: dict) -> dict[str, int]:
+    return {
+        key: int(a.get(key, 0) or 0) + int(b.get(key, 0) or 0)
+        for key in _ZERO_TOKENS
+    }
+
+
 # ---------------------------------------------------------------------------
 # 1) Extraction result JSON
 # ---------------------------------------------------------------------------
 
 def save_extraction_json(case_id: str, pages: list[dict]) -> Path:
-    """
-    Write a JSON with all extracted text for a case.
-
-    Expected page dict keys: page_id, page_number, original_filename,
-    extraction_method, extraction_status, ocr_text, chars.
-    """
     out_dir = _ensure_exports_dir()
     path = out_dir / f"extraction_{case_id}.json"
 
@@ -59,7 +69,44 @@ def save_extraction_json(case_id: str, pages: list[dict]) -> Path:
 
 
 # ---------------------------------------------------------------------------
-# 2) Token usage JSON
+# 2) Token usage JSON -- concise, written ONCE at end of pipeline
+# ---------------------------------------------------------------------------
+
+def save_final_token_summary(
+    case_id: str,
+    *,
+    phases: dict[str, dict],
+    total_pages: int = 0,
+) -> Path:
+    """Write a concise token summary with global totals and per-phase breakdown.
+
+    phases: {"ocr": {"token_summary": {...}, ...}, "indexing": {...}, "autopilot": {...}}
+    No per-page detail is stored -- just phases and a single global roll-up.
+    """
+    out_dir = _ensure_exports_dir()
+    path = out_dir / f"token_usage_{case_id}.json"
+
+    global_totals = dict(_ZERO_TOKENS)
+    for phase_data in phases.values():
+        if not isinstance(phase_data, dict):
+            continue
+        ts = phase_data.get("token_summary")
+        if isinstance(ts, dict):
+            global_totals = _sum_tokens(global_totals, ts)
+
+    payload = {
+        "case_id": case_id,
+        "generated_at": datetime.now(timezone.utc).isoformat(),
+        "total_pages": total_pages,
+        "global_totals": global_totals,
+        "phases": phases,
+    }
+    _write_json(path, payload)
+    return path
+
+
+# ---------------------------------------------------------------------------
+# Legacy helpers kept for backward compat (extraction router, etc.)
 # ---------------------------------------------------------------------------
 
 def save_token_usage_json(
@@ -68,26 +115,14 @@ def save_token_usage_json(
     page_summaries: list[dict],
     global_totals: dict,
 ) -> Path:
-    """
-    Write a JSON with per-page token usage and global totals.
-
-    page_summaries: list of {page_id, page_number, tokens: {input, output, cached, ...}}
-    global_totals:  {input, output, cached, thoughts, embedding, grand_total}
-    """
     out_dir = _ensure_exports_dir()
     path = out_dir / f"token_usage_{case_id}.json"
-
     payload = {
         "case_id": case_id,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "total_pages": len(page_summaries),
         "global_totals": global_totals,
-        "pages": page_summaries,
-        "phases": {
-            "ocr": {
-                "token_summary": global_totals,
-            }
-        },
+        "phases": {"ocr": {"token_summary": global_totals}},
     }
     _write_json(path, payload)
     return path
@@ -106,37 +141,24 @@ def merge_token_usage_json(
         "case_id": case_id,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "total_pages": 0,
-        "global_totals": {
-            "input": 0,
-            "output": 0,
-            "cached": 0,
-            "thoughts": 0,
-            "embedding": 0,
-            "grand_total": 0,
-        },
-        "pages": [],
+        "global_totals": dict(_ZERO_TOKENS),
         "phases": {},
     }
-
+    payload.pop("pages", None)
     payload.setdefault("phases", {})
-    previous_token_summary = (
-        payload["phases"].get(phase_name, {}).get("token_summary", {})
-        if isinstance(payload["phases"].get(phase_name), dict)
-        else {}
-    )
     payload["generated_at"] = datetime.now(timezone.utc).isoformat()
     payload["phases"][phase_name] = {
         "token_summary": token_summary,
         **(extra_payload or {}),
     }
-    global_totals = payload.setdefault("global_totals", {})
-    for key in ("input", "output", "cached", "thoughts", "embedding", "grand_total"):
-        global_totals[key] = (
-            int(global_totals.get(key, 0) or 0)
-            - int(previous_token_summary.get(key, 0) or 0)
-            + int(token_summary.get(key, 0) or 0)
-        )
-
+    global_totals = dict(_ZERO_TOKENS)
+    for phase_data in payload["phases"].values():
+        if not isinstance(phase_data, dict):
+            continue
+        ts = phase_data.get("token_summary")
+        if isinstance(ts, dict):
+            global_totals = _sum_tokens(global_totals, ts)
+    payload["global_totals"] = global_totals
     _write_json(path, payload)
     return path
 
@@ -147,65 +169,12 @@ def merge_ocr_token_usage_json(
     page_summaries: list[dict],
     global_totals: dict,
 ) -> Path:
-    out_dir = _ensure_exports_dir()
-    path = out_dir / f"token_usage_{case_id}.json"
-    payload = read_token_usage_json(case_id) or {
-        "case_id": case_id,
-        "generated_at": datetime.now(timezone.utc).isoformat(),
-        "total_pages": 0,
-        "global_totals": {
-            "input": 0,
-            "output": 0,
-            "cached": 0,
-            "thoughts": 0,
-            "embedding": 0,
-            "grand_total": 0,
-        },
-        "pages": [],
-        "phases": {},
-    }
-
-    existing_pages = {
-        str(page.get("page_id", "") or ""): page
-        for page in payload.get("pages", [])
-        if isinstance(page, dict)
-    }
-    for page_summary in page_summaries:
-        page_id = str(page_summary.get("page_id", "") or "")
-        if page_id:
-            existing_pages[page_id] = page_summary
-
-    payload["pages"] = sorted(
-        existing_pages.values(),
-        key=lambda page: int(page.get("page_number", 0) or 0),
+    return merge_token_usage_json(
+        case_id,
+        phase_name="ocr",
+        token_summary=global_totals,
+        extra_payload={"ocr_pages_extracted": len(page_summaries)},
     )
-    payload["total_pages"] = len(payload["pages"])
-    payload["generated_at"] = datetime.now(timezone.utc).isoformat()
-
-    ocr_totals = (
-        payload.get("phases", {})
-        .get("ocr", {})
-        .get("token_summary", {})
-    )
-    merged_ocr_totals = {}
-    for key in ("input", "output", "cached", "thoughts", "embedding", "grand_total"):
-        merged_ocr_totals[key] = int(ocr_totals.get(key, 0) or 0) + int(global_totals.get(key, 0) or 0)
-
-    phases = payload.setdefault("phases", {})
-    phases["ocr"] = {"token_summary": merged_ocr_totals}
-
-    payload["global_totals"] = merged_ocr_totals
-    for phase_name, phase_payload in phases.items():
-        if phase_name == "ocr" or not isinstance(phase_payload, dict):
-            continue
-        token_summary = phase_payload.get("token_summary", {})
-        if not isinstance(token_summary, dict):
-            continue
-        for key in ("input", "output", "cached", "thoughts", "embedding", "grand_total"):
-            payload["global_totals"][key] = int(payload["global_totals"].get(key, 0) or 0) + int(token_summary.get(key, 0) or 0)
-
-    _write_json(path, payload)
-    return path
 
 
 # ---------------------------------------------------------------------------

@@ -7,7 +7,7 @@ from typing import Callable
 from ..database import SessionLocal
 from ..models import DocumentType, Page
 from .indexing_service import process_page_extraction
-from .json_export_service import merge_ocr_token_usage_json, save_extraction_json, save_token_usage_json
+from .json_export_service import save_extraction_json
 
 log = logging.getLogger("extraction")
 
@@ -69,9 +69,12 @@ def extract_case_pages(
             query = query.filter(Page.id.in_([str(page_id) for page_id in page_ids]))
         pages = query.order_by(Page.original_page_number.asc(), Page.created_at.asc()).all()
 
+        total_case_pages = len(pages)
+        already_done = 0
         page_configs: list[dict[str, object]] = []
         for page in pages:
             if only_missing and (page.ocr_text or "").strip():
+                already_done += 1
                 continue
             page_configs.append(
                 {
@@ -91,8 +94,8 @@ def extract_case_pages(
         progress_callback(
             {
                 "phase": "extracting_document",
-                "ocr_total_pages": total,
-                "ocr_processed_pages": 0,
+                "ocr_total_pages": total_case_pages,
+                "ocr_processed_pages": already_done,
                 "ocr_error_pages": 0,
             }
         )
@@ -119,8 +122,8 @@ def extract_case_pages(
                     progress_callback(
                         {
                             "phase": "extracting_document",
-                            "ocr_total_pages": total,
-                            "ocr_processed_pages": done,
+                            "ocr_total_pages": total_case_pages,
+                            "ocr_processed_pages": already_done + done,
                             "ocr_error_pages": failed,
                         }
                     )
@@ -135,44 +138,25 @@ def extract_case_pages(
     extraction_pages = _build_extraction_pages(case_id)
     save_extraction_json(case_id, extraction_pages)
 
-    global_totals = {
-        "input": 0,
-        "output": 0,
-        "cached": 0,
-        "thoughts": 0,
-        "embedding": 0,
-        "grand_total": 0,
+    ocr_token_totals = {
+        "input": 0, "output": 0, "cached": 0,
+        "thoughts": 0, "embedding": 0, "grand_total": 0,
     }
-    token_pages = []
     for row in page_results:
-        token_summary = row.get("token_summary", {}) or {}
-        token_pages.append(
-            {
-                "page_id": row["page_id"],
-                "page_number": row["page_number"],
-                "original_filename": row["original_filename"],
-                "tokens": token_summary,
-            }
-        )
-        for key in global_totals:
-            global_totals[key] += int(token_summary.get(key, 0) or 0)
+        ts = row.get("token_summary", {}) or {}
+        for key in ocr_token_totals:
+            ocr_token_totals[key] += int(ts.get(key, 0) or 0)
 
-    if only_missing:
-        merge_ocr_token_usage_json(
-            case_id,
-            page_summaries=token_pages,
-            global_totals=global_totals,
-        )
-    else:
-        save_token_usage_json(
-            case_id,
-            page_summaries=token_pages,
-            global_totals=global_totals,
-        )
-
-    return {
+    result = {
         "queued": total,
         "processed": done,
         "errors": failed,
         "written_pages": len(extraction_pages),
+        "total_case_pages": total_case_pages,
+        "already_done": already_done,
+        "ocr_token_summary": ocr_token_totals,
     }
+    # region agent log
+    import json as _json; open("debug-efc156.log", "a").write(_json.dumps({"sessionId":"efc156","hypothesisId":"H-B","runId":"post-fix","location":"case_extraction_service.py:result","message":"extraction result","data":{"total_case_pages":total_case_pages,"already_done":already_done,"queued":total,"processed":done},"timestamp":int(__import__("time").time()*1000)}) + "\n")
+    # endregion
+    return result

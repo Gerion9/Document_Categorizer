@@ -348,7 +348,7 @@ def get_or_create_ocr_prompt_cache(
         key = _cache_key(normalized_model, normalized_profile)
         current = _OCR_PROMPT_CACHE_BY_KEY.get(key)
         if current and current.expires_at_ms - int(time.time() * 1000) > settings.gemini_cache_refresh_buffer_ms:
-            if _should_log_cache_reuse(key):
+            if settings.gemini_log_token_details and _should_log_cache_reuse(key):
                 log.info(
                     "[GEMINI] OCR prompt cache reused model=%s profile=%s cache=%s ttl_ms=%d",
                     normalized_model,

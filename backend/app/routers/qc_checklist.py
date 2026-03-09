@@ -1183,9 +1183,11 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
         qc_autopilot_jobs.set_total_questions(job_id, len(questions))
         qc_autopilot_jobs.set_evidence_total(job_id, len(questions))
 
+        phase_summaries: dict[str, dict] = {}
+        total_case_pages = 0
+
         if case_id:
             from ..services.case_extraction_service import extract_case_pages
-            from ..services.json_export_service import merge_token_usage_json
             from ..services.ocr_index_service import index_case_ocr_json
             from ..services.indexing_service import is_indexing_available
 
@@ -1215,14 +1217,21 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                 only_missing=True,
                 progress_callback=_autopilot_progress,
             )
+            total_case_pages = extraction_summary.get("total_case_pages", extraction_summary.get("written_pages", 0))
             log.info(
-                "Autopilot %s extraction summary: queued=%d processed=%d errors=%d written_pages=%d",
+                "Autopilot %s OCR done: %d extracted, %d already done, %d total pages, %d errors",
                 job_id[:8],
-                extraction_summary.get("queued", 0),
                 extraction_summary.get("processed", 0),
+                extraction_summary.get("already_done", 0),
+                total_case_pages,
                 extraction_summary.get("errors", 0),
-                extraction_summary.get("written_pages", 0),
             )
+            phase_summaries["ocr"] = {
+                "token_summary": extraction_summary.get("ocr_token_summary", {}),
+                "pages_extracted": extraction_summary.get("processed", 0),
+                "pages_already_done": extraction_summary.get("already_done", 0),
+                "pages_total": total_case_pages,
+            }
 
             if extraction_summary.get("written_pages", 0) > 0 and is_indexing_available():
                 index_tracker = create_token_tracker(label=f"qc-index-{job_id[:8]}")
@@ -1231,21 +1240,17 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                     tracker=index_tracker,
                     progress_callback=_autopilot_progress,
                 )
-                merge_token_usage_json(
-                    case_id,
-                    phase_name="indexing",
-                    token_summary=_compact_tracker_summary(index_tracker.get_summary()),
-                    extra_payload={
-                        "vectors_count": index_summary.get("vectors_count", 0),
-                        "total_chunks": index_summary.get("total_chunks", 0),
-                    },
-                )
                 log.info(
-                    "Autopilot %s indexing summary: vectors=%d chunks=%d",
+                    "Autopilot %s indexing done: %d vectors, %d chunks",
                     job_id[:8],
                     index_summary.get("vectors_count", 0),
                     index_summary.get("total_chunks", 0),
                 )
+                phase_summaries["indexing"] = {
+                    "token_summary": _compact_tracker_summary(index_tracker.get_summary()),
+                    "vectors_count": index_summary.get("vectors_count", 0),
+                    "total_chunks": index_summary.get("total_chunks", 0),
+                }
 
         # 1) Gather per-question evidence (like OCRDocPinecone collectEvidence)
         qc_autopilot_jobs.mark_running(job_id, phase="gathering_evidence")
@@ -1358,19 +1363,23 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
         if case_id:
             try:
                 tracker_summary = tracker.get_summary()
-                from ..services.json_export_service import merge_token_usage_json
+                from ..services.json_export_service import save_final_token_summary
 
-                merge_token_usage_json(
+                phase_summaries["autopilot"] = {
+                    "token_summary": _compact_tracker_summary(tracker_summary),
+                    "verified": verified,
+                    "skipped": skipped,
+                    "errors": errors,
+                    "total_questions": len(questions),
+                }
+                save_final_token_summary(
                     case_id,
-                    phase_name="autopilot",
-                    token_summary=_compact_tracker_summary(tracker_summary),
-                    extra_payload={
-                        "verified": verified,
-                        "skipped": skipped,
-                        "errors": errors,
-                        "total_questions": len(questions),
-                    },
+                    phases=phase_summaries,
+                    total_pages=total_case_pages,
                 )
+                # region agent log
+                import json as _json; open("debug-efc156.log", "a").write(_json.dumps({"sessionId":"efc156","hypothesisId":"ALL","runId":"post-fix","location":"qc_checklist.py:token_json_write","message":"final token JSON written","data":{"phases":list(phase_summaries.keys()),"total_pages":total_case_pages,"verified":verified,"skipped":skipped},"timestamp":int(__import__("time").time()*1000)}) + "\n")
+                # endregion
                 db.add(
                     AuditLog(
                         case_id=case_id,

@@ -1,0 +1,1 @@
+{"sessionId": "efc156", "hypothesisId": "H-B", "runId": "post-fix", "location": "case_extraction_service.py:result", "message": "extraction result", "data": {"total_case_pages": 332, "already_done": 0, "queued": 332, "processed": 332}, "timestamp": 1773078564756}

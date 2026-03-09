@@ -1,13 +1,15 @@
 from __future__ import annotations
 
+import logging
 import random
 import time
 from datetime import datetime, timezone
-from typing import Any
-from typing import Callable
+from typing import Any, Callable
 
 from ..database import SessionLocal
 from ..models import IndexStatus, Page
+
+log = logging.getLogger("qc_autopilot")
 from .chunking_service import (
     chunk_text,
     extract_section_label,
@@ -176,24 +178,34 @@ def _build_chunk_records_for_page(page: Page) -> list[dict[str, Any]]:
 
 
 def delete_page_ocr_chunks(page_id: str, case_id: str | None = None) -> None:
+    """Delete vectors for a single page by listing IDs with prefix match.
+
+    Pinecone Starter/Serverless does not support filter-based delete,
+    so we list vectors whose ID starts with the page_id and delete by ID.
+    """
     index = get_index()
     namespace = get_namespace(case_id)
-    _with_retries(
-        lambda: index.delete(
-            namespace=namespace,
-            filter={"page_id": {"$eq": str(page_id)}},
-        )
-    )
+    prefix = str(page_id)
+    try:
+        listed = index.list(namespace=namespace, prefix=prefix)
+        ids_to_delete: list[str] = []
+        if hasattr(listed, "__iter__"):
+            for batch in listed:
+                if isinstance(batch, list):
+                    ids_to_delete.extend(batch)
+                elif isinstance(batch, str):
+                    ids_to_delete.append(batch)
+        if ids_to_delete:
+            _with_retries(lambda: index.delete(ids=ids_to_delete, namespace=namespace))
+    except Exception:
+        pass
 
 
 def delete_case_ocr_chunks(case_id: str) -> None:
     index = get_index()
     namespace = get_namespace(case_id)
     _with_retries(
-        lambda: index.delete(
-            namespace=namespace,
-            filter={"record_type": {"$eq": "ocr-chunk"}},
-        )
+        lambda: index.delete(delete_all=True, namespace=namespace)
     )
 
 
@@ -295,6 +307,7 @@ def index_case_ocr_json(
     namespace = get_namespace(case_id)
     records = _build_chunk_records_for_case_json(case_id)
     total_chunks = len(records)
+    log.info("Indexing [%s]: %d chunks from extraction JSON", str(case_id)[:8], total_chunks)
 
     if progress_callback is not None:
         progress_callback(
@@ -320,6 +333,7 @@ def index_case_ocr_json(
     finally:
         db.close()
 
+    log.info("Indexing [%s]: clearing previous vectors", str(case_id)[:8])
     delete_case_ocr_chunks(case_id)
 
     if not records:
@@ -331,6 +345,7 @@ def index_case_ocr_json(
             "total_chunks": 0,
         }
 
+    log.info("Indexing [%s]: embedding %d chunks...", str(case_id)[:8], total_chunks)
     embeddings = get_embedding_batch(
         [record["text"] for record in records],
         task_type=settings.embedding_task_type_document,
@@ -362,6 +377,7 @@ def index_case_ocr_json(
             }
         )
 
+    log.info("Indexing [%s]: upserting %d vectors to Pinecone...", str(case_id)[:8], len(vectors))
     batch_size = settings.upsert_batch_size
     processed_vectors = 0
     for start in range(0, len(vectors), batch_size):
@@ -402,6 +418,7 @@ def index_case_ocr_json(
     finally:
         db.close()
 
+    log.info("Indexing [%s]: complete -- %d vectors in namespace=%s", str(case_id)[:8], len(vectors), namespace)
     return {
         "vectors_count": len(vectors),
         "document_id": str(case_id),
