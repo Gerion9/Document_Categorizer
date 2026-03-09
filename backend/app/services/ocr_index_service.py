@@ -4,8 +4,10 @@ import random
 import time
 from datetime import datetime, timezone
 from typing import Any
+from typing import Callable
 
-from ..models import Page
+from ..database import SessionLocal
+from ..models import IndexStatus, Page
 from .chunking_service import (
     chunk_text,
     extract_section_label,
@@ -14,6 +16,7 @@ from .chunking_service import (
 )
 from .embedding_service import get_embedding, get_embedding_batch
 from .gemini_runtime_service import GeminiTokenTracker
+from .json_export_service import read_extraction_json
 from .pinecone_client import get_index, get_namespace
 from .rag_config import get_rag_settings
 
@@ -100,16 +103,22 @@ def _section_scopes_for_page(page: Page) -> list[dict[str, Any]]:
     ]
 
 
-def _build_chunk_records_for_page(page: Page) -> list[dict[str, Any]]:
+def _build_chunk_records_for_page_text(
+    page: Page,
+    text: str,
+    *,
+    source_type: str | None = None,
+    document_id: str | None = None,
+) -> list[dict[str, Any]]:
     settings = get_rag_settings()
-    if not page.ocr_text or not page.ocr_text.strip():
+    if not text or not text.strip():
         return []
 
     chunk_size = max(400, settings.ocr_chunk_size)
     chunk_overlap = max(0, min(chunk_size - 50, settings.ocr_chunk_overlap))
-    source_type = page.extraction_method or "gemini_ocr"
+    resolved_source_type = source_type or page.extraction_method or "gemini_ocr"
     created_at = datetime.now(timezone.utc).isoformat()
-    base_chunks = chunk_text(page.ocr_text, chunk_size=chunk_size, overlap=chunk_overlap)
+    base_chunks = chunk_text(text, chunk_size=chunk_size, overlap=chunk_overlap)
     valid_chunks = [chunk for chunk in base_chunks if chunk.strip() and not is_garbage_chunk(chunk)]
     if not valid_chunks:
         return []
@@ -129,7 +138,8 @@ def _build_chunk_records_for_page(page: Page) -> list[dict[str, Any]]:
             if part
         )
         for idx, chunk in enumerate(valid_chunks, start=1):
-            chunk_id = f"{page.id}-{scope['scope_id']}-c{idx}"
+            base_document_id = sanitize_identifier(document_id or page.id, 40) or str(page.id)
+            chunk_id = f"{base_document_id}-{page.id}-{scope['scope_id']}-c{idx}"
             records.append(
                 {
                     "id": chunk_id,
@@ -148,7 +158,8 @@ def _build_chunk_records_for_page(page: Page) -> list[dict[str, Any]]:
                         "section_name": str(scope["section_name"] or ""),
                         "is_primary_section": bool(scope["is_primary_section"]),
                         "chunk_order": idx,
-                        "source_type": source_type,
+                        "source_type": resolved_source_type,
+                        "document_id": str(document_id or page.id),
                         "document_title": document_title[:500],
                         "section_label": extract_section_label(chunk),
                         "created_at": created_at,
@@ -160,6 +171,10 @@ def _build_chunk_records_for_page(page: Page) -> list[dict[str, Any]]:
     return records
 
 
+def _build_chunk_records_for_page(page: Page) -> list[dict[str, Any]]:
+    return _build_chunk_records_for_page_text(page, page.ocr_text or "")
+
+
 def delete_page_ocr_chunks(page_id: str, case_id: str | None = None) -> None:
     index = get_index()
     namespace = get_namespace(case_id)
@@ -167,6 +182,17 @@ def delete_page_ocr_chunks(page_id: str, case_id: str | None = None) -> None:
         lambda: index.delete(
             namespace=namespace,
             filter={"page_id": {"$eq": str(page_id)}},
+        )
+    )
+
+
+def delete_case_ocr_chunks(case_id: str) -> None:
+    index = get_index()
+    namespace = get_namespace(case_id)
+    _with_retries(
+        lambda: index.delete(
+            namespace=namespace,
+            filter={"record_type": {"$eq": "ocr-chunk"}},
         )
     )
 
@@ -218,6 +244,170 @@ def upsert_page_ocr_chunks(
         "document_id": str(page.id),
         "index_name": settings.pinecone_index_ocr,
         "namespace": namespace,
+    }
+
+
+def _build_chunk_records_for_case_json(case_id: str) -> list[dict[str, Any]]:
+    payload = read_extraction_json(case_id) or {}
+    page_payloads = payload.get("pages", []) or []
+    if not isinstance(page_payloads, list):
+        return []
+
+    db = SessionLocal()
+    try:
+        pages = db.query(Page).filter(Page.case_id == case_id).all()
+        pages_by_id = {str(page.id): page for page in pages}
+        records: list[dict[str, Any]] = []
+        document_id = f"case-{case_id}"
+
+        for page_payload in page_payloads:
+            if not isinstance(page_payload, dict):
+                continue
+            page_id = str(page_payload.get("page_id", "") or "")
+            text = str(page_payload.get("ocr_text", "") or "").strip()
+            status = str(page_payload.get("extraction_status", "") or "")
+            if not page_id or not text or status == "error":
+                continue
+            page = pages_by_id.get(page_id)
+            if page is None:
+                continue
+            records.extend(
+                _build_chunk_records_for_page_text(
+                    page,
+                    text,
+                    source_type=str(page_payload.get("extraction_method", "") or page.extraction_method or "gemini_ocr"),
+                    document_id=document_id,
+                )
+            )
+        return records
+    finally:
+        db.close()
+
+
+def index_case_ocr_json(
+    case_id: str,
+    *,
+    tracker: GeminiTokenTracker | None = None,
+    progress_callback: Callable[[dict[str, int | str]], None] | None = None,
+) -> dict[str, Any]:
+    index = get_index()
+    settings = get_rag_settings()
+    namespace = get_namespace(case_id)
+    records = _build_chunk_records_for_case_json(case_id)
+    total_chunks = len(records)
+
+    if progress_callback is not None:
+        progress_callback(
+            {
+                "phase": "indexing_document",
+                "index_total_chunks": total_chunks,
+                "index_processed_chunks": 0,
+                "index_error_chunks": 0,
+            }
+        )
+
+    db = SessionLocal()
+    try:
+        pages = db.query(Page).filter(Page.case_id == case_id).all()
+        for page in pages:
+            if not (page.ocr_text or "").strip():
+                continue
+            page.index_status = IndexStatus.PROCESSING.value
+            page.index_method = "gemini_embedding_pinecone"
+            page.indexed_vector_count = 0
+            page.pinecone_document_id = None
+        db.commit()
+    finally:
+        db.close()
+
+    delete_case_ocr_chunks(case_id)
+
+    if not records:
+        return {
+            "vectors_count": 0,
+            "document_id": str(case_id),
+            "index_name": settings.pinecone_index_ocr,
+            "namespace": namespace,
+            "total_chunks": 0,
+        }
+
+    embeddings = get_embedding_batch(
+        [record["text"] for record in records],
+        task_type=settings.embedding_task_type_document,
+        tracker=tracker,
+        step_label=f"ocr-case-upsert-{str(case_id)[:8]}",
+        progress_callback=(
+            None
+            if progress_callback is None
+            else lambda processed, total: progress_callback(
+                {
+                    "phase": "indexing_document",
+                    "index_total_chunks": total,
+                    "index_processed_chunks": processed,
+                    "index_error_chunks": 0,
+                }
+            )
+        ),
+    )
+
+    vectors = []
+    for record, embedding in zip(records, embeddings, strict=False):
+        if not embedding:
+            continue
+        vectors.append(
+            {
+                "id": record["id"],
+                "values": embedding,
+                "metadata": record["metadata"],
+            }
+        )
+
+    batch_size = settings.upsert_batch_size
+    processed_vectors = 0
+    for start in range(0, len(vectors), batch_size):
+        batch = vectors[start:start + batch_size]
+        _with_retries(lambda batch=batch: index.upsert(vectors=batch, namespace=namespace))
+        processed_vectors += len(batch)
+        if progress_callback is not None:
+            progress_callback(
+                {
+                    "phase": "indexing_document",
+                    "index_total_chunks": len(vectors),
+                    "index_processed_chunks": processed_vectors,
+                    "index_error_chunks": 0,
+                }
+            )
+
+    db = SessionLocal()
+    try:
+        vectors_by_page: dict[str, int] = {}
+        for vector in vectors:
+            metadata = vector.get("metadata", {}) or {}
+            page_id = str(metadata.get("page_id", "") or "")
+            if not page_id:
+                continue
+            vectors_by_page[page_id] = vectors_by_page.get(page_id, 0) + 1
+
+        pages = db.query(Page).filter(Page.case_id == case_id).all()
+        now = datetime.now(timezone.utc)
+        for page in pages:
+            if not (page.ocr_text or "").strip():
+                continue
+            page.index_status = IndexStatus.DONE.value
+            page.index_method = "gemini_embedding_pinecone"
+            page.indexed_vector_count = vectors_by_page.get(str(page.id), 0)
+            page.pinecone_document_id = str(case_id)
+            page.indexed_at = now
+        db.commit()
+    finally:
+        db.close()
+
+    return {
+        "vectors_count": len(vectors),
+        "document_id": str(case_id),
+        "index_name": settings.pinecone_index_ocr,
+        "namespace": namespace,
+        "total_chunks": total_chunks,
     }
 
 

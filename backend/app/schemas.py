@@ -457,11 +457,21 @@ class QCAutopilotJobOut(BaseModel):
     case_id: Optional[str] = None
     status: str
     phase: str = "queued"
+    ocr_total_pages: int = 0
+    ocr_processed_pages: int = 0
+    ocr_error_pages: int = 0
+    index_total_chunks: int = 0
+    index_processed_chunks: int = 0
+    index_error_chunks: int = 0
+    evidence_total_questions: int = 0
+    evidence_processed_questions: int = 0
     total_questions: int = 0
     processed_questions: int = 0
     verified: int = 0
     skipped: int = 0
     errors: int = 0
+    phase_progress_pct: float = 0.0
+    overall_progress_pct: float = 0.0
     progress_pct: float = 0.0
     error_message: Optional[str] = None
     created_at: datetime

@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import random
 import time
+from typing import Callable
 from typing import Any
 
 from google.genai import types
@@ -116,7 +117,7 @@ def _embed_batch(
                     texts,
                     model=settings.embedding_model,
                 )
-                if settings.gemini_log_token_usage:
+                if settings.gemini_log_token_usage and settings.gemini_log_token_details:
                     log.info(
                         "[GEMINI] %s model=%s embedding_tokens=%d estimated=%s",
                         step_label,
@@ -146,6 +147,7 @@ def get_embedding_batch(
     *,
     tracker: GeminiTokenTracker | None = None,
     step_label: str = "embedding",
+    progress_callback: Callable[[int, int], None] | None = None,
 ) -> list[list[float]]:
     clean_texts = [str(text or "").strip() for text in texts]
     if not clean_texts:
@@ -170,6 +172,8 @@ def get_embedding_batch(
                     step_label=f"{step_label}-{index}",
                 )
             )
+            if progress_callback is not None:
+                progress_callback(index, len(clean_texts))
         return all_embeddings
 
     for start in range(0, len(clean_texts), batch_size):
@@ -183,6 +187,8 @@ def get_embedding_batch(
                 step_label=f"{step_label}-{batch_number}",
             )
         )
+        if progress_callback is not None:
+            progress_callback(min(len(clean_texts), start + len(batch)), len(clean_texts))
 
     return all_embeddings
 

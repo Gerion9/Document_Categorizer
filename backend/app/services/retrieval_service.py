@@ -51,7 +51,9 @@ def _dedup_matches(matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return list(seen.values())
 
 
-def format_match_context(matches: list[dict[str, Any]], *, max_chars: int = 4000) -> str:
+def format_match_context(matches: list[dict[str, Any]], *, max_chars: int | None = None) -> str:
+    if max_chars is None:
+        max_chars = get_rag_settings().evidence_context_max_chars
     ranked = sorted(matches, key=_evidence_rank_score, reverse=True)
     blocks: list[str] = []
     remaining = max_chars
@@ -129,8 +131,10 @@ def _query_best_stage_matches(
     return None, []
 
 
-def _ocr_text_from_db(case_id: str, *, max_chars: int = 6000) -> str:
+def _ocr_text_from_db(case_id: str, *, max_chars: int | None = None) -> str:
     """Fallback: gather Gemini OCR text directly from the DB when Pinecone is not available."""
+    if max_chars is None:
+        max_chars = get_rag_settings().db_fallback_max_chars
     from ..database import SessionLocal
     from ..models import Page
 

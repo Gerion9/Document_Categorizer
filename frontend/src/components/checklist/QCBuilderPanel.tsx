@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   Plus,
   Trash2,
@@ -92,6 +92,50 @@ const ANSWER_STYLES: Record<string, { bg: string; text: string; label: string }>
   na: { bg: "bg-gray-200", text: "text-gray-600", label: "N/A" },
   insufficient: { bg: "bg-amber-100", text: "text-amber-700", label: "Ins." },
 };
+
+function autopilotPhaseSummary(job: AutopilotJob | null): { title: string; detail: string } {
+  if (!job) return { title: "AI AUTOPILOT", detail: "" };
+
+  if (job.phase === "extracting_document") {
+    const processed = (job.ocr_processed_pages || 0) + (job.ocr_error_pages || 0);
+    return {
+      title: `OCR ${processed}/${job.ocr_total_pages || 0}`,
+      detail: `Extrayendo OCR ${processed}/${job.ocr_total_pages || 0} páginas`,
+    };
+  }
+  if (job.phase === "writing_json") {
+    return {
+      title: "JSON",
+      detail: "Escribiendo archivos JSON del documento",
+    };
+  }
+  if (job.phase === "indexing_document") {
+    const processed = (job.index_processed_chunks || 0) + (job.index_error_chunks || 0);
+    return {
+      title: `INDEX ${processed}/${job.index_total_chunks || 0}`,
+      detail: `Indexando ${processed}/${job.index_total_chunks || 0} chunks`,
+    };
+  }
+  if (job.phase === "gathering_evidence") {
+    return {
+      title: `EVID ${job.evidence_processed_questions || 0}/${job.evidence_total_questions || 0}`,
+      detail: `Reuniendo evidencia ${job.evidence_processed_questions || 0}/${job.evidence_total_questions || 0} preguntas`,
+    };
+  }
+  if (job.phase === "verifying_questions") {
+    return {
+      title: `QC ${job.processed_questions || 0}/${job.total_questions || 0}`,
+      detail: `Verificando ${job.processed_questions || 0}/${job.total_questions || 0} preguntas`,
+    };
+  }
+  if (job.phase === "completed") {
+    return {
+      title: "COMPLETADO",
+      detail: "AI Autopilot completado",
+    };
+  }
+  return { title: "PREPARANDO", detail: "Preparando AI Autopilot" };
+}
 
 export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Props) {
   const [checklists, setChecklists] = useState<QCChecklist[]>([]);
@@ -219,8 +263,29 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
 
   // ── AI Autopilot (real backend endpoint) ──
   const [autopilotJob, setAutopilotJob] = useState<AutopilotJob | null>(null);
+  const autopilotPollRef = useRef<number | null>(null);
+
+  const clearAutopilotPoll = () => {
+    if (autopilotPollRef.current !== null) {
+      window.clearTimeout(autopilotPollRef.current);
+      autopilotPollRef.current = null;
+    }
+  };
+
+  const nextAutopilotPollDelay = (phase?: string) => {
+    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
+      return 10000;
+    }
+    if (phase === "extracting_document" || phase === "writing_json" || phase === "indexing_document") {
+      return 5000;
+    }
+    return 2500;
+  };
+
+  useEffect(() => () => clearAutopilotPoll(), []);
 
   const handleAIVerifyChecklist = async (clId: string) => {
+    clearAutopilotPoll();
     setVerifyingCl(clId);
     try {
       const job = await startAutopilot(clId);
@@ -236,12 +301,12 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
   };
 
   const pollAutopilotJob = (jobId: string, _clId: string) => {
-    const poll = setInterval(async () => {
+    const tick = async () => {
       try {
         const job = await getAutopilotJob(jobId);
         setAutopilotJob(job);
         if (job.status === "completed") {
-          clearInterval(poll);
+          clearAutopilotPoll();
           setVerifyingCl(null);
           setAutopilotJob(null);
           if (job.verified === 0 && job.skipped > 0) {
@@ -260,17 +325,25 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
           }
           await reload();
         } else if (job.status === "failed") {
-          clearInterval(poll);
+          clearAutopilotPoll();
           setVerifyingCl(null);
           toast.error(`AI Autopilot fallo: ${job.error_message || "error desconocido"}`);
           setAutopilotJob(null);
+        } else {
+          autopilotPollRef.current = window.setTimeout(() => {
+            void tick();
+          }, nextAutopilotPollDelay(job.phase));
         }
       } catch {
-        clearInterval(poll);
+        clearAutopilotPoll();
         setVerifyingCl(null);
         setAutopilotJob(null);
       }
-    }, 2000);
+    };
+
+    autopilotPollRef.current = window.setTimeout(() => {
+      void tick();
+    }, nextAutopilotPollDelay("loading_questions"));
   };
 
   // ── QC Semantic Query state ──
@@ -708,15 +781,37 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
       {checklists.map((cl) => {
         const isExp = expandedCl[cl.id] !== false;
         const pct = cl.total_questions > 0 ? Math.round((cl.answered_questions / cl.total_questions) * 100) : 0;
+        const activeJob = verifyingCl === cl.id && autopilotJob?.checklist_id === cl.id ? autopilotJob : null;
+        const activeProgress = Math.round(activeJob?.overall_progress_pct ?? 0);
+        const activePhase = autopilotPhaseSummary(activeJob);
         return (
           <GlassSurface filterId="glass-panel" key={cl.id} className="rounded-xl overflow-hidden mb-3">
             {/* Checklist header */}
             <div className="flex items-center gap-2 px-4 py-3 cursor-pointer hover:bg-white/40 transition-colors" onClick={() => toggleCl(cl.id)}>
               {isExp ? <ChevronDown className="w-3.5 h-3.5 text-gray-400" /> : <ChevronRight className="w-3.5 h-3.5 text-gray-400" />}
               <span className="text-sm font-semibold flex-1">{cl.name}</span>
-              <span className="text-[10px] text-gray-400">{cl.answered_questions}/{cl.total_questions} ({pct}%)</span>
-              <div className="w-20 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                <div className="h-full bg-green-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+              <div className="shrink-0 min-w-[150px]">
+                {activeJob ? (
+                  <div className="flex flex-col items-end gap-1">
+                    <span className="text-[10px] text-purple-600">{activePhase.detail}</span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] text-gray-400">{activeProgress}%</span>
+                      <div className="w-24 h-1.5 bg-purple-100 rounded-full overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all"
+                          style={{ width: `${activeProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-gray-400">{cl.answered_questions}/{cl.total_questions} ({pct}%)</span>
+                    <div className="w-20 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                      <div className="h-full bg-green-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                )}
               </div>
               
               {/* AI Verify Checklist — PREMIUM BUTTON */}
@@ -740,8 +835,8 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
                     <AnimatedAIBot className={`w-4 h-4 ${geminiOk ? "text-purple-400" : "text-gray-400"}`} />
                   )}
                   <span className={`tracking-wide ${geminiOk ? "text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400" : ""}`}>
-                    {verifyingCl === cl.id && autopilotJob
-                      ? `${Math.round(autopilotJob.progress_pct)}% (${autopilotJob.processed_questions}/${autopilotJob.total_questions})`
+                    {activeJob
+                      ? activePhase.title
                       : verifyingCl === cl.id
                         ? "INICIANDO…"
                         : "AI AUTOPILOT"}

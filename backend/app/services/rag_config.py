@@ -47,6 +47,7 @@ class RagSettings:
     gemini_cache_refresh_buffer_ms: int
     gemini_cache_reuse_log_cooldown_ms: int
     gemini_log_token_usage: bool
+    gemini_log_token_details: bool
     gemini_embedding_char_estimate_divisor: int
     embedding_model: str
     embedding_dimension: int
@@ -61,6 +62,8 @@ class RagSettings:
     upsert_batch_size: int
     upsert_max_retries: int
     upsert_retry_base_ms: int
+    evidence_context_max_chars: int
+    db_fallback_max_chars: int
     pinecone_api_key: str
     pinecone_index_ocr: str
     pinecone_namespace_prefix: str
@@ -90,6 +93,7 @@ def get_rag_settings() -> RagSettings:
         gemini_cache_refresh_buffer_ms=max(0, _env_int("GEMINI_CACHE_REFRESH_BUFFER_MS", 45000)),
         gemini_cache_reuse_log_cooldown_ms=max(0, _env_int("GEMINI_CACHE_REUSE_LOG_COOLDOWN_MS", 60000)),
         gemini_log_token_usage=_env_bool("GEMINI_LOG_TOKEN_USAGE", True),
+        gemini_log_token_details=_env_bool("GEMINI_LOG_TOKEN_DETAILS", False),
         gemini_embedding_char_estimate_divisor=max(1, _env_int("GEMINI_EMBEDDING_CHAR_ESTIMATE_DIVISOR", 4)),
         embedding_model=_env_str("EMBEDDING_MODEL", "gemini-embedding-001"),
         embedding_dimension=max(0, _env_int("EMBEDDING_DIMENSION", 1024)),
@@ -100,10 +104,12 @@ def get_rag_settings() -> RagSettings:
         embedding_retry_base_ms=max(100, _env_int("EMBEDDING_RETRY_BASE_MS", 1200)),
         ocr_chunk_size=max(200, _env_int("OCR_CHUNK_SIZE", 1200)),
         ocr_chunk_overlap=max(0, _env_int("OCR_CHUNK_OVERLAP", 200)),
-        retrieval_top_k=max(1, _env_int("RETRIEVAL_TOP_K", 6)),
+        retrieval_top_k=max(1, _env_int("RETRIEVAL_TOP_K", 12)),
         upsert_batch_size=max(1, _env_int("UPSERT_BATCH_SIZE", 30)),
         upsert_max_retries=max(1, _env_int("UPSERT_MAX_RETRIES", 5)),
         upsert_retry_base_ms=max(100, _env_int("UPSERT_RETRY_BASE_MS", 2000)),
+        evidence_context_max_chars=max(2000, _env_int("EVIDENCE_CONTEXT_MAX_CHARS", 12000)),
+        db_fallback_max_chars=max(4000, _env_int("DB_FALLBACK_MAX_CHARS", 30000)),
         pinecone_api_key=_env_str("PINECONE_API_KEY"),
         pinecone_index_ocr=_env_str("PINECONE_INDEX_OCR", "document-categorizer-ocr"),
         pinecone_namespace_prefix=_env_str("PINECONE_NAMESPACE_PREFIX", "case"),

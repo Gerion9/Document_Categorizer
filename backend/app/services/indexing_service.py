@@ -9,7 +9,7 @@ from ..models import AuditLog, ExtractionStatus, IndexStatus, Page
 from .embedding_service import is_embeddings_configured
 from .extraction_service import extract_text
 from .gemini_runtime_service import create_token_tracker, log_token_summary
-from .ocr_index_service import upsert_page_ocr_chunks
+from .ocr_index_service import index_case_ocr_json, upsert_page_ocr_chunks
 from .pinecone_client import is_pinecone_configured
 
 
@@ -125,16 +125,17 @@ def index_existing_page_ocr(page_id: str) -> None:
         db.close()
 
 
-def process_page_extraction(page_id: str, has_tables: bool) -> None:
+def process_page_extraction(page_id: str, has_tables: bool) -> dict | None:
+    """Extract a single page and persist OCR text. Returns a summary dict or None on skip."""
     db = SessionLocal()
     tracker = create_token_tracker(label=f"page-extraction-{page_id[:8]}")
     try:
         page = db.query(Page).filter(Page.id == page_id).first()
         if not page:
-            return
+            return None
 
         page.extraction_status = ExtractionStatus.PROCESSING.value
-        _set_page_index_state(page, status=IndexStatus.PROCESSING.value, method=INDEX_METHOD, vectors_count=0)
+        _set_page_index_state(page, status=IndexStatus.PENDING.value, method=INDEX_METHOD, vectors_count=0)
         db.commit()
 
         abs_path = str(STORAGE_DIR / page.file_path)
@@ -175,71 +176,51 @@ def process_page_extraction(page_id: str, has_tables: bool) -> None:
                 details={"method": method, "error": str(exc), "index_method": INDEX_METHOD},
             )
             db.commit()
-            return
+            return None
 
-        try:
-            if is_indexing_available():
-                result = upsert_page_ocr_chunks(page, tracker=tracker)
-                tracker_summary = _compact_token_summary(tracker.get_summary())
-                _set_page_index_state(
-                    page,
-                    status=IndexStatus.DONE.value,
-                    method=INDEX_METHOD,
-                    vectors_count=result["vectors_count"],
-                    pinecone_document_id=result["document_id"],
-                )
-                _audit(
-                    db,
-                    case_id=page.case_id,
-                    action="indexed_ocr",
-                    entity_id=page.id,
-                    details={
-                        "vectors": result["vectors_count"],
-                        "index_name": result["index_name"],
-                        "index_method": INDEX_METHOD,
-                        "token_summary": tracker_summary,
-                    },
-                )
-            else:
-                _set_page_index_state(
-                    page,
-                    status=IndexStatus.SKIPPED.value,
-                    method=INDEX_METHOD,
-                    vectors_count=0,
-                    pinecone_document_id=page.id,
-                )
-                _audit(
-                    db,
-                    case_id=page.case_id,
-                    action="index_skipped",
-                    entity_id=page.id,
-                    details={"reason": "Pinecone or embeddings not configured", "index_method": INDEX_METHOD},
-                )
-        except Exception as exc:
-            _set_page_index_state(page, status=IndexStatus.ERROR.value, method=INDEX_METHOD, vectors_count=0)
+        if is_indexing_available():
+            _set_page_index_state(
+                page,
+                status=IndexStatus.PENDING.value,
+                method=INDEX_METHOD,
+                vectors_count=0,
+            )
+        else:
+            _set_page_index_state(
+                page,
+                status=IndexStatus.SKIPPED.value,
+                method=INDEX_METHOD,
+                vectors_count=0,
+                pinecone_document_id=page.id,
+            )
             _audit(
                 db,
                 case_id=page.case_id,
-                action="index_error",
+                action="index_skipped",
                 entity_id=page.id,
-                details={"error": str(exc), "index_method": INDEX_METHOD},
+                details={"reason": "Pinecone or embeddings not configured", "index_method": INDEX_METHOD},
             )
 
         db.commit()
-        log_token_summary(tracker, label=f"Extract/index page {page.id[:8]}", logger=log)
+
+        return {
+            "page_id": page.id,
+            "page_number": page.original_page_number or 0,
+            "original_filename": page.original_filename or "",
+            "extraction_method": page.extraction_method or method,
+            "extraction_status": page.extraction_status,
+            "ocr_text": page.ocr_text or "",
+            "chars": len(page.ocr_text or ""),
+            "token_summary": _compact_token_summary(tracker.get_summary()),
+        }
     finally:
         db.close()
 
 
 def reindex_case_pages(case_id: str) -> None:
-    db = SessionLocal()
+    tracker = create_token_tracker(label=f"case-reindex-{case_id[:8]}")
     try:
-        page_ids = [
-            page_id
-            for (page_id,) in db.query(Page.id).filter(Page.case_id == case_id).all()
-        ]
-    finally:
-        db.close()
-
-    for page_id in page_ids:
-        index_existing_page_ocr(page_id)
+        index_case_ocr_json(case_id, tracker=tracker)
+        log_token_summary(tracker, label=f"Reindex case {case_id[:8]}", logger=log)
+    except Exception:
+        log.exception("Case reindex failed for %s", case_id[:8])

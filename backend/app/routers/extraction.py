@@ -1,4 +1,4 @@
-"""Router – AI text extraction, indexing, and RAG query helpers."""
+"""Router -- AI text extraction, indexing, and RAG query helpers."""
 
 from typing import Optional
 
@@ -7,8 +7,8 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from ..database import get_db
-from ..models import AuditLog, DocumentType, ExtractionStatus, Page
-from ..schemas import PageOut
+from ..models import DocumentType, ExtractionStatus, Page
+from ..services.case_extraction_service import extract_case_pages
 from ..services.extraction_service import is_configured
 from ..services.indexing_service import (
     index_existing_page_ocr,
@@ -39,7 +39,7 @@ class ExtractionResult(BaseModel):
 
 class BatchExtractRequest(BaseModel):
     page_ids: list[str]
-    has_tables: Optional[bool] = None  # override; if None, infer from DocumentType
+    has_tables: Optional[bool] = None
 
 
 class ReindexResult(BaseModel):
@@ -65,6 +65,16 @@ class RagQueryResponse(BaseModel):
     question: str
     total_matches: int
     matches: list[RagMatchOut]
+
+
+class BatchExtractionStatusResponse(BaseModel):
+    case_id: str
+    total_pages: int
+    done: int
+    processing: int
+    pending: int
+    error: int
+    all_complete: bool
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────
@@ -158,13 +168,16 @@ def extract_batch(
     db: Session = Depends(get_db),
 ):
     """
-    Trigger extraction on multiple pages at once.
-    Pages are queued in background tasks.
+    Trigger extraction on multiple pages.
+    All pages are processed in a single background task with controlled
+    concurrency so the full document is OCR'd and persisted before
+    downstream AI flows run.
     """
     if not is_configured():
         raise HTTPException(503, "GEMINI_API_KEY not configured. Add it to backend/.env")
 
     results = []
+    page_ids: list[str] = []
     for pid in body.page_ids:
         page = db.query(Page).filter(Page.id == pid, Page.case_id == case_id).first()
         if not page:
@@ -174,12 +187,15 @@ def extract_batch(
         page.extraction_status = ExtractionStatus.PROCESSING.value
         db.commit()
 
-        background_tasks.add_task(process_page_extraction, pid, use_tables)
+        page_ids.append(pid)
         results.append({
             "page_id": pid,
             "extraction_status": "processing",
             "method": "gemini_tables" if use_tables else "gemini_ocr",
         })
+
+    if page_ids:
+        background_tasks.add_task(extract_case_pages, case_id, page_ids=page_ids)
 
     return {"queued": len(results), "pages": results}
 
@@ -226,6 +242,49 @@ def reindex_case(
 
     background_tasks.add_task(reindex_case_pages, case_id)
     return ReindexResult(queued=len(page_ids), page_ids=page_ids)
+
+
+@router.get("/cases/{case_id}/extraction-status", response_model=BatchExtractionStatusResponse)
+def get_case_extraction_status(case_id: str, db: Session = Depends(get_db)):
+    """Check how many pages in a case have completed OCR extraction."""
+    pages = db.query(Page).filter(Page.case_id == case_id).all()
+    total = len(pages)
+    done = sum(1 for p in pages if (p.extraction_status or "") == ExtractionStatus.DONE.value)
+    processing = sum(1 for p in pages if (p.extraction_status or "") == ExtractionStatus.PROCESSING.value)
+    error = sum(1 for p in pages if (p.extraction_status or "") == ExtractionStatus.ERROR.value)
+    pending = total - done - processing - error
+
+    return BatchExtractionStatusResponse(
+        case_id=case_id,
+        total_pages=total,
+        done=done,
+        processing=processing,
+        pending=pending,
+        error=error,
+        all_complete=(done + error) == total and total > 0,
+    )
+
+
+@router.get("/cases/{case_id}/extraction-json")
+def get_extraction_json(case_id: str):
+    """Return the full OCR extraction JSON for a case (generated after batch extraction)."""
+    from ..services.json_export_service import read_extraction_json
+
+    data = read_extraction_json(case_id)
+    if data is None:
+        raise HTTPException(404, "Extraction JSON not found. Run batch extraction first.")
+    return data
+
+
+@router.get("/cases/{case_id}/token-usage-json")
+def get_token_usage_json(case_id: str):
+    """Return the per-page + global token usage JSON for a case."""
+    from ..services.json_export_service import read_token_usage_json
+
+    data = read_token_usage_json(case_id)
+    if data is None:
+        raise HTTPException(404, "Token usage JSON not found. Run batch extraction first.")
+    return data
 
 
 @router.post("/cases/{case_id}/rag/query", response_model=RagQueryResponse)

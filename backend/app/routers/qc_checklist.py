@@ -784,6 +784,31 @@ def save_qc_as_template(cl_id: str, db: Session = Depends(get_db)):
 STORAGE_DIR = __import__("pathlib").Path(__file__).resolve().parent.parent.parent / "storage"
 
 
+def _compact_tracker_summary(summary: dict) -> dict[str, int]:
+    return {
+        "input": int(summary.get("input", 0)),
+        "output": int(summary.get("output", 0)),
+        "cached": int(summary.get("cached", 0)),
+        "thoughts": int(summary.get("thoughts", 0)),
+        "embedding": int(summary.get("embedding", 0)),
+        "grand_total": int(summary.get("grand_total", 0)),
+    }
+
+
+def _sample_case_pages(case_id: str, db: Session, *, limit: int) -> list[Page]:
+    """Return a spread of pages across the whole document instead of just the first N."""
+    all_pages = (
+        db.query(Page)
+        .filter(Page.case_id == case_id, Page.file_path.isnot(None))
+        .order_by(Page.original_page_number.asc())
+        .all()
+    )
+    if len(all_pages) <= limit:
+        return all_pages
+    step = max(1, len(all_pages) // limit)
+    return [all_pages[i] for i in range(0, len(all_pages), step)][:limit]
+
+
 def _part_sort_key(part: QCPart) -> tuple[int, str]:
     return (part.order or 0, part.code or "")
 
@@ -876,16 +901,9 @@ def _collect_question_image_paths(
                 if pg.file_path:
                     image_paths.append(str(STORAGE_DIR / pg.file_path))
 
-    # 3) Case-level fallback: use any pages in the case (max 5)
+    # 3) Case-level fallback: sample pages spread across the document
     if not image_paths and case_id:
-        case_pages = (
-            db.query(Page)
-            .filter(Page.case_id == case_id)
-            .filter(Page.file_path.isnot(None))
-            .order_by(Page.created_at.asc())
-            .limit(5)
-            .all()
-        )
+        case_pages = _sample_case_pages(case_id, db, limit=5)
         log.debug("    case fallback -> %d pages from case", len(case_pages))
         for pg in case_pages:
             image_paths.append(str(STORAGE_DIR / pg.file_path))
@@ -917,15 +935,7 @@ def _collect_question_page_ids(
                 page_ids.append(pg.id)
 
     if not page_ids and case_id:
-        case_pages = (
-            db.query(Page)
-            .filter(Page.case_id == case_id)
-            .filter(Page.file_path.isnot(None))
-            .order_by(Page.created_at.asc())
-            .limit(5)
-            .all()
-        )
-        for pg in case_pages:
+        for pg in _sample_case_pages(case_id, db, limit=10):
             page_ids.append(pg.id)
 
     seen: set[str] = set()
@@ -1171,6 +1181,71 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
         questions = _ordered_questions_for_checklist(checklist)
         log.info("Autopilot %s: %d questions, case=%s", job_id[:8], len(questions), (case_id or "?")[:8])
         qc_autopilot_jobs.set_total_questions(job_id, len(questions))
+        qc_autopilot_jobs.set_evidence_total(job_id, len(questions))
+
+        if case_id:
+            from ..services.case_extraction_service import extract_case_pages
+            from ..services.json_export_service import merge_token_usage_json
+            from ..services.ocr_index_service import index_case_ocr_json
+            from ..services.indexing_service import is_indexing_available
+
+            def _autopilot_progress(event: dict[str, int | str]) -> None:
+                phase = str(event.get("phase", "") or "")
+                if phase == "extracting_document":
+                    qc_autopilot_jobs.set_ocr_total(job_id, int(event.get("ocr_total_pages", 0) or 0), phase=phase)
+                    qc_autopilot_jobs.update_ocr_progress(
+                        job_id,
+                        processed_pages=int(event.get("ocr_processed_pages", 0) or 0),
+                        error_pages=int(event.get("ocr_error_pages", 0) or 0),
+                        phase=phase,
+                    )
+                elif phase == "writing_json":
+                    qc_autopilot_jobs.mark_running(job_id, phase=phase)
+                elif phase == "indexing_document":
+                    qc_autopilot_jobs.set_index_total(job_id, int(event.get("index_total_chunks", 0) or 0), phase=phase)
+                    qc_autopilot_jobs.update_index_progress(
+                        job_id,
+                        processed_chunks=int(event.get("index_processed_chunks", 0) or 0),
+                        error_chunks=int(event.get("index_error_chunks", 0) or 0),
+                        phase=phase,
+                    )
+
+            extraction_summary = extract_case_pages(
+                case_id,
+                only_missing=True,
+                progress_callback=_autopilot_progress,
+            )
+            log.info(
+                "Autopilot %s extraction summary: queued=%d processed=%d errors=%d written_pages=%d",
+                job_id[:8],
+                extraction_summary.get("queued", 0),
+                extraction_summary.get("processed", 0),
+                extraction_summary.get("errors", 0),
+                extraction_summary.get("written_pages", 0),
+            )
+
+            if extraction_summary.get("written_pages", 0) > 0 and is_indexing_available():
+                index_tracker = create_token_tracker(label=f"qc-index-{job_id[:8]}")
+                index_summary = index_case_ocr_json(
+                    case_id,
+                    tracker=index_tracker,
+                    progress_callback=_autopilot_progress,
+                )
+                merge_token_usage_json(
+                    case_id,
+                    phase_name="indexing",
+                    token_summary=_compact_tracker_summary(index_tracker.get_summary()),
+                    extra_payload={
+                        "vectors_count": index_summary.get("vectors_count", 0),
+                        "total_chunks": index_summary.get("total_chunks", 0),
+                    },
+                )
+                log.info(
+                    "Autopilot %s indexing summary: vectors=%d chunks=%d",
+                    job_id[:8],
+                    index_summary.get("vectors_count", 0),
+                    index_summary.get("total_chunks", 0),
+                )
 
         # 1) Gather per-question evidence (like OCRDocPinecone collectEvidence)
         qc_autopilot_jobs.mark_running(job_id, phase="gathering_evidence")
@@ -1192,6 +1267,11 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                 evidence_map[qid] = evidence
                 if evidence.strip():
                     has_any_evidence = True
+                qc_autopilot_jobs.update_evidence_progress(
+                    job_id,
+                    processed_questions=idx,
+                    phase="gathering_evidence",
+                )
                 if idx % 20 == 0:
                     log.info("  Evidence collected: %d/%d questions", idx, len(questions))
 
@@ -1278,6 +1358,19 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
         if case_id:
             try:
                 tracker_summary = tracker.get_summary()
+                from ..services.json_export_service import merge_token_usage_json
+
+                merge_token_usage_json(
+                    case_id,
+                    phase_name="autopilot",
+                    token_summary=_compact_tracker_summary(tracker_summary),
+                    extra_payload={
+                        "verified": verified,
+                        "skipped": skipped,
+                        "errors": errors,
+                        "total_questions": len(questions),
+                    },
+                )
                 db.add(
                     AuditLog(
                         case_id=case_id,
@@ -1290,14 +1383,7 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                             "skipped": skipped,
                             "errors": errors,
                             "total_questions": len(questions),
-                            "token_summary": {
-                                "input": tracker_summary["input"],
-                                "output": tracker_summary["output"],
-                                "cached": tracker_summary["cached"],
-                                "thoughts": tracker_summary["thoughts"],
-                                "embedding": tracker_summary["embedding"],
-                                "grand_total": tracker_summary["grand_total"],
-                            },
+                            "token_summary": _compact_tracker_summary(tracker_summary),
                         },
                     )
                 )
@@ -1330,6 +1416,10 @@ def start_checklist_ai_autopilot(
         raise HTTPException(404, "QC Checklist not found")
     if cl.is_template or not cl.case_id:
         raise HTTPException(400, "AI Autopilot is only available for case-bound checklists")
+
+    case_pages = db.query(Page).filter(Page.case_id == cl.case_id).all()
+    if not case_pages:
+        raise HTTPException(400, "No hay paginas cargadas en este caso")
 
     active_job = qc_autopilot_jobs.get_active_job_for_checklist(cl.id)
     if active_job:

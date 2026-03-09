@@ -207,7 +207,7 @@ def record_usage_from_response(
         tracker.record(step, usage_metadata, model=model)
 
     settings = get_rag_settings()
-    if not settings.gemini_log_token_usage or usage_metadata is None:
+    if not settings.gemini_log_token_usage or not settings.gemini_log_token_details or usage_metadata is None:
         return
 
     log.info(
