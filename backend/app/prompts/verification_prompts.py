@@ -60,10 +60,94 @@ OCR_MARKERS_INSTRUCTIONS = (
     "esos son marcadores de contenido ilegible/no-texto."
 )
 
+VERIFY_CACHE_PLACEHOLDER = (
+    "Contexto compartido de verificacion QC para ejecucion por lotes."
+)
+
+BATCH_VERIFICATION_STYLE_GUIDE = """
+REFERENCE STYLE EXAMPLES (format guidance only; never treat these as case evidence):
+
+Example A:
+Question id: 1.2
+Question: Is the applicant full legal name present and complete?
+Where to verify: I-914 Part 1, Passport, Birth Certificate
+Evidence:
+- [PAGE 2] Family Name (Last Name): DOE
+- [PAGE 2] Given Name (First Name): JANE
+- [PAGE 2] Middle Name: MARIA
+Expected answer shape:
+{"id":"1.2","answer":"yes","confidence":"high","explanation":"Family/Given/Middle names are present on Page 2.","correction":""}
+
+Example B:
+Question id: 2.4
+Question: Is Date of Birth correctly filled?
+Where to verify: I-914 Part 2 item 10, Passport
+Evidence:
+- [PAGE 3] Date of Birth (mm/dd/yyyy): 07/21/1990
+- [PAGE 9] Passport DOB: 07/12/1990
+Expected answer shape:
+{"id":"2.4","answer":"no","confidence":"high","explanation":"DOB mismatch between I-914 (07/21/1990) and passport (07/12/1990).","correction":"Update DOB to match the authoritative identity document after manual confirmation."}
+
+Example C:
+Question id: 3.1
+Question: Is A-Number present?
+Where to verify: I-914 header, USCIS notices
+Evidence:
+- [PAGE 1] A-Number: A123456789
+Expected answer shape:
+{"id":"3.1","answer":"yes","confidence":"high","explanation":"A-Number A123456789 is explicitly listed on Page 1.","correction":""}
+
+Example D:
+Question id: 4.6
+Question: Is there enough evidence of interpreter details?
+Where to verify: Interpreter section
+Evidence:
+- [PAGE 7] Interpreter section header present
+- [PAGE 7] Name fields blank
+- [PAGE 7] Signature line unreadable [SIGNATURE]
+Expected answer shape:
+{"id":"4.6","answer":"insufficient","confidence":"medium","explanation":"Interpreter section exists but required identifying fields are blank or unreadable.","correction":""}
+""".strip()
+
 
 def get_form_context(form_type: str = "") -> str:
     key = form_type.strip().lower().replace(" ", "-") if form_type else ""
     return FORM_CONTEXT.get(key, "")
+
+
+def build_rag_batch_system_prompt(form_type: str = "") -> str:
+    form_context = get_form_context(form_type)
+    return f"""You are a legal document QC specialist for immigration case review.
+
+You are given OCR-extracted text evidence from USCIS forms and supporting documents.
+The evidence was obtained via Gemini Vision OCR.
+
+{form_context}
+{COMMON_VERIFICATION_SOURCES}
+
+TASK: Answer ALL of the following verification questions using ONLY the evidence provided for each question.
+
+INSTRUCTIONS:
+1. For each question, analyze ONLY its associated evidence for relevant information.
+{OCR_MARKERS_INSTRUCTIONS}
+2. Return a JSON object with an "answers" array, one entry per question, in the same order.
+3. Use exactly the id received for each question; do not invent or modify ids.
+4. In explanation, indicate briefly what specific evidence you used and from which page/section.
+5. In correction, indicate what value the field should have if the decision is "no".
+
+{BATCH_VERIFICATION_STYLE_GUIDE}
+
+RULES:
+- "yes" = The evidence confirms the field/information is correct/complete.
+- "no" = The evidence shows an error, omission, or inconsistency.
+- "insufficient" = Not enough evidence to determine correctness.
+- Be specific: reference exact text from the evidence in each explanation.
+- Respond in English.""".strip()
+
+
+def build_rag_batch_request_prompt(questions_block: str) -> str:
+    return f"""QUESTIONS AND EVIDENCE:
+{questions_block}""".strip()
 
 
 # ---------------------------------------------------------------------------

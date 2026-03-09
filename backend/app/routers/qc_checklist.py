@@ -1,5 +1,6 @@
 """Router – Complex QC Checklists (hierarchical builder, manual-only)."""
 
+import os
 from datetime import datetime, timezone
 import re
 from typing import Optional
@@ -939,21 +940,8 @@ def _collect_question_page_ids(
             for pg in sec_pages:
                 page_ids.append(pg.id)
 
-<<<<<<< HEAD
     if include_case_fallback and not page_ids and case_id:
-        case_pages = (
-            db.query(Page)
-            .filter(Page.case_id == case_id)
-            .filter(Page.file_path.isnot(None))
-            .order_by(Page.created_at.asc())
-            .limit(5)
-            .all()
-        )
-        for pg in case_pages:
-=======
-    if not page_ids and case_id:
         for pg in _sample_case_pages(case_id, db, limit=10):
->>>>>>> pinecone
             page_ids.append(pg.id)
 
     seen: set[str] = set()
@@ -1154,12 +1142,8 @@ def _verify_question_with_ai(
                 source_page_ids = _collect_question_page_ids(q, db, case_id=case_id)
             upsert_qc_question_answer(
                 checklist, q,
-<<<<<<< HEAD
                 source_page_ids=source_page_ids,
-=======
-                source_page_ids=_collect_question_page_ids(q, db, case_id=case_id),
                 tracker=tracker,
->>>>>>> pinecone
             )
         except Exception:
             pass
@@ -1180,6 +1164,8 @@ def _int_env(name: str, default: int) -> int:
 
 
 BATCH_SIZE = max(1, _int_env("QC_AUTOPILOT_BATCH_SIZE", 8))
+AUTOPILOT_EVIDENCE_TOP_K = max(1, _int_env("QC_AUTOPILOT_EVIDENCE_TOP_K", 4))
+AUTOPILOT_EVIDENCE_MAX_CHARS = max(1200, _int_env("QC_AUTOPILOT_EVIDENCE_MAX_CHARS", 3500))
 
 
 def _group_questions_for_autopilot_batches(
@@ -1223,8 +1209,9 @@ def _run_autopilot_batch_rag(
     log = logging.getLogger("qc_autopilot")
 
     from ..services.ai_verify_service import verify_question_batch_rag
-    from ..services.checklist_index_service import upsert_qc_question_answer
+    from ..services.checklist_index_service import upsert_qc_question_answers
     from ..services.indexing_service import is_indexing_available
+    should_index_answers = bool(checklist.case_id) and is_indexing_available()
 
     batch_input = [
         {
@@ -1254,8 +1241,9 @@ def _run_autopilot_batch_rag(
 
     verified = 0
     errors_count = 0
+    answers_to_index: list[tuple[QCQuestion, list[str]]] = []
     for q, ans in zip(questions, answers):
-        qid = q.code or q.id
+        qid = _question_internal_key(q)
         source_pages = evidence_source_map.get(qid, [])
         try:
             _save_ai_result(q, ans, source_pages=source_pages)
@@ -1263,26 +1251,25 @@ def _run_autopilot_batch_rag(
             verified += 1
             log.info("  [%s] -> %s (confidence=%s)", q.code, ans.get("answer"), ans.get("confidence"))
 
-            if checklist.case_id and is_indexing_available():
-                try:
-                    source_page_ids = _source_page_ids(source_pages)
-                    if not source_page_ids:
-                        source_page_ids = _collect_question_page_ids(q, db, case_id=checklist.case_id)
-                    upsert_qc_question_answer(
-                        checklist, q,
-<<<<<<< HEAD
-                        source_page_ids=source_page_ids,
-=======
-                        source_page_ids=_collect_question_page_ids(q, db, case_id=checklist.case_id),
-                        tracker=tracker,
->>>>>>> pinecone
-                    )
-                except Exception:
-                    pass
+            if should_index_answers and checklist.case_id:
+                source_page_ids = _source_page_ids(source_pages)
+                if not source_page_ids:
+                    source_page_ids = _collect_question_page_ids(q, db, case_id=checklist.case_id)
+                answers_to_index.append((q, source_page_ids))
         except Exception as exc:
             db.rollback()
             errors_count += 1
             log.error("  [%s] save failed: %s", q.code, exc)
+
+    if should_index_answers and answers_to_index:
+        try:
+            upsert_qc_question_answers(
+                checklist,
+                answers_to_index,
+                tracker=tracker,
+            )
+        except Exception:
+            pass
 
     return verified, 0, errors_count
 
@@ -1355,17 +1342,6 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
             "skipped_pages": 0,
             "error_pages": 0,
         }
-        if case_id:
-            qc_autopilot_jobs.mark_running(job_id, phase="extracting_ocr")
-            ocr_stats = _ensure_case_ocr_for_autopilot(case_id, db)
-            log.info(
-                "Autopilot %s OCR pre-pass: total=%d extracted=%d skipped=%d errors=%d",
-                job_id[:8],
-                ocr_stats["total_pages"],
-                ocr_stats["extracted_pages"],
-                ocr_stats["skipped_pages"],
-                ocr_stats["error_pages"],
-            )
 
         qc_autopilot_jobs.mark_running(job_id, phase="loading_questions")
         questions = _ordered_questions_for_checklist(checklist)
@@ -1402,28 +1378,40 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                         phase=phase,
                     )
 
+            qc_autopilot_jobs.mark_running(job_id, phase="extracting_ocr")
             extraction_summary = extract_case_pages(
                 case_id,
                 only_missing=True,
                 progress_callback=_autopilot_progress,
             )
             total_case_pages = extraction_summary.get("total_case_pages", extraction_summary.get("written_pages", 0))
+            extracted_success = max(
+                0,
+                int(extraction_summary.get("processed", 0) or 0)
+                - int(extraction_summary.get("errors", 0) or 0),
+            )
+            ocr_stats = {
+                "total_pages": int(total_case_pages or 0),
+                "extracted_pages": extracted_success,
+                "skipped_pages": int(extraction_summary.get("already_done", 0) or 0),
+                "error_pages": int(extraction_summary.get("errors", 0) or 0),
+            }
             log.info(
                 "Autopilot %s OCR done: %d extracted, %d already done, %d total pages, %d errors",
                 job_id[:8],
-                extraction_summary.get("processed", 0),
+                extracted_success,
                 extraction_summary.get("already_done", 0),
                 total_case_pages,
                 extraction_summary.get("errors", 0),
             )
             phase_summaries["ocr"] = {
                 "token_summary": extraction_summary.get("ocr_token_summary", {}),
-                "pages_extracted": extraction_summary.get("processed", 0),
+                "pages_extracted": extracted_success,
                 "pages_already_done": extraction_summary.get("already_done", 0),
                 "pages_total": total_case_pages,
             }
 
-            if extraction_summary.get("written_pages", 0) > 0 and is_indexing_available():
+            if extracted_success > 0 and is_indexing_available():
                 index_tracker = create_token_tracker(label=f"qc-index-{job_id[:8]}")
                 index_summary = index_case_ocr_json(
                     case_id,
@@ -1444,15 +1432,39 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
 
         # 1) Gather per-question evidence (like OCRDocPinecone collectEvidence)
         qc_autopilot_jobs.mark_running(job_id, phase="gathering_evidence")
+        from ..services.embedding_service import get_embedding_batch
+        from ..services.rag_config import get_rag_settings
         from ..services.retrieval_service import collect_evidence_bundle_for_question
 
         evidence_map: dict[str, str] = {}
         evidence_source_map: dict[str, list[dict]] = {}
+        question_query_vectors: dict[str, list[float]] = {}
         has_any_evidence = False
         if case_id:
+            try:
+                question_ids: list[str] = []
+                question_texts: list[str] = []
+                for q in questions:
+                    text = str(q.description or "").strip()
+                    if not text:
+                        continue
+                    question_ids.append(_question_internal_key(q))
+                    question_texts.append(text)
+                if question_texts:
+                    query_embeddings = get_embedding_batch(
+                        question_texts,
+                        task_type=get_rag_settings().embedding_task_type_query,
+                        tracker=tracker,
+                        step_label=f"autopilot-evidence-embeddings-{job_id[:8]}",
+                    )
+                    for qid, vector in zip(question_ids, query_embeddings, strict=False):
+                        if vector:
+                            question_query_vectors[qid] = vector
+            except Exception as exc:
+                log.warning("Autopilot %s query embedding batch fallback: %s", job_id[:8], exc)
+
             for idx, q in enumerate(questions, start=1):
-<<<<<<< HEAD
-                qid = q.code or q.id
+                qid = _question_internal_key(q)
                 page_ids = _collect_question_page_ids(
                     q,
                     db,
@@ -1460,15 +1472,13 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                     include_case_fallback=False,
                 )
                 evidence_bundle = collect_evidence_bundle_for_question(
-=======
-                qid = _question_internal_key(q)
-                page_ids = _collect_question_page_ids(q, db, case_id=case_id)
-                evidence = collect_evidence_for_question(
->>>>>>> pinecone
                     q.description,
                     case_id=case_id,
                     evidence_page_ids=page_ids,
                     target_section_ids=q.target_section_ids or [],
+                    top_k=AUTOPILOT_EVIDENCE_TOP_K,
+                    query_vector=question_query_vectors.get(qid),
+                    max_context_chars=AUTOPILOT_EVIDENCE_MAX_CHARS,
                     tracker=tracker,
                 )
                 evidence = str(evidence_bundle.get("text_context", "") or "")
@@ -1513,16 +1523,11 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                     bv, bs, be = _run_autopilot_batch_rag(
                         batch,
                         evidence_map,
-<<<<<<< HEAD
                         evidence_source_map,
-                        db,
-                        checklist,
-=======
                         db,
                         checklist,
                         form_type=batch_form_type,
                         tracker=tracker,
->>>>>>> pinecone
                     )
                     verified += bv
                     skipped += bs
@@ -1603,14 +1608,11 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                             "skipped": skipped,
                             "errors": errors,
                             "total_questions": len(questions),
-<<<<<<< HEAD
                             "ocr_total_pages": ocr_stats["total_pages"],
                             "ocr_extracted_pages": ocr_stats["extracted_pages"],
                             "ocr_skipped_pages": ocr_stats["skipped_pages"],
                             "ocr_error_pages": ocr_stats["error_pages"],
-=======
                             "token_summary": _compact_tracker_summary(tracker_summary),
->>>>>>> pinecone
                         },
                     )
                 )
