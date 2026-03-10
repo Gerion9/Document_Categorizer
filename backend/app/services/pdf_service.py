@@ -25,7 +25,9 @@ for d in (UPLOADS_DIR, PAGES_DIR, THUMBNAILS_DIR):
     d.mkdir(parents=True, exist_ok=True)
 
 THUMBNAIL_SIZE = (280, 360)
-PAGE_DPI = 150  # resolution for full-page render
+PAGE_DPI = int(os.getenv("PAGE_DPI", "150"))
+PAGE_IMAGE_QUALITY = int(os.getenv("PAGE_IMAGE_QUALITY", "85"))
+PAGE_IMAGE_FORMAT = os.getenv("PAGE_IMAGE_FORMAT", "JPEG").upper()
 
 
 def _render_page_image(page: fitz.Page, dpi: int = PAGE_DPI) -> Image.Image:
@@ -34,6 +36,17 @@ def _render_page_image(page: fitz.Page, dpi: int = PAGE_DPI) -> Image.Image:
     mat = fitz.Matrix(zoom, zoom)
     pix = page.get_pixmap(matrix=mat, alpha=False)
     return Image.frombytes("RGB", (pix.width, pix.height), pix.samples)
+
+
+def _page_ext() -> str:
+    return ".jpg" if PAGE_IMAGE_FORMAT == "JPEG" else ".png"
+
+
+def _save_page_image(img: Image.Image, path: Path) -> None:
+    if PAGE_IMAGE_FORMAT == "JPEG":
+        img.save(str(path), "JPEG", quality=PAGE_IMAGE_QUALITY, optimize=True)
+    else:
+        img.save(str(path), "PNG")
 
 
 def save_uploaded_file(content: bytes, filename: str) -> str:
@@ -56,21 +69,20 @@ def split_pdf(upload_path: str) -> list[dict]:
     doc = fitz.open(str(abs_path))
     results: list[dict] = []
 
+    ext = _page_ext()
     for page_num in range(len(doc)):
         page = doc[page_num]
         img = _render_page_image(page)
 
-        # Full-size page image
-        page_filename = f"{uuid.uuid4().hex}.png"
+        page_filename = f"{uuid.uuid4().hex}{ext}"
         page_path = PAGES_DIR / page_filename
-        img.save(str(page_path), "PNG")
+        _save_page_image(img, page_path)
 
-        # Thumbnail
         thumb = img.copy()
         thumb.thumbnail(THUMBNAIL_SIZE, Image.LANCZOS)
         thumb_filename = f"thumb_{page_filename}"
         thumb_path = THUMBNAILS_DIR / thumb_filename
-        thumb.save(str(thumb_path), "PNG")
+        _save_page_image(thumb, thumb_path)
 
         results.append(
             {
@@ -93,17 +105,16 @@ def process_image(upload_path: str) -> dict:
     abs_path = STORAGE_DIR / upload_path
     img = Image.open(str(abs_path)).convert("RGB")
 
-    # Full-size page image (copy into pages/ for uniformity)
-    page_filename = f"{uuid.uuid4().hex}.png"
+    ext = _page_ext()
+    page_filename = f"{uuid.uuid4().hex}{ext}"
     page_path = PAGES_DIR / page_filename
-    img.save(str(page_path), "PNG")
+    _save_page_image(img, page_path)
 
-    # Thumbnail
     thumb = img.copy()
     thumb.thumbnail(THUMBNAIL_SIZE, Image.LANCZOS)
     thumb_filename = f"thumb_{page_filename}"
     thumb_path = THUMBNAILS_DIR / thumb_filename
-    thumb.save(str(thumb_path), "PNG")
+    _save_page_image(thumb, thumb_path)
 
     return {
         "page_number": 1,

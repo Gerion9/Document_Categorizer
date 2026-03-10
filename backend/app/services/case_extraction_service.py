@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable
 
@@ -11,7 +12,7 @@ from .json_export_service import save_extraction_json
 
 log = logging.getLogger("extraction")
 
-MAX_EXTRACTION_WORKERS = 3
+MAX_EXTRACTION_WORKERS = int(os.getenv("MAX_EXTRACTION_WORKERS", "6"))
 
 
 def _determine_has_tables(page: Page, db) -> bool:

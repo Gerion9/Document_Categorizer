@@ -877,6 +877,50 @@ def _ordered_questions_for_part(part: QCPart, all_parts: list[QCPart]) -> list[Q
     return ordered_questions
 
 
+def _collect_question_image_paths(
+    q: QCQuestion, db: Session, *, case_id: str | None = None
+) -> list[str]:
+    import logging
+    log = logging.getLogger("qc_autopilot")
+    image_paths: list[str] = []
+
+    ev_list = list(q.evidence) if q.evidence else []
+    log.debug("    collect_images [%s]: evidence=%d, target_sections=%s",
+              q.code, len(ev_list), q.target_section_ids)
+
+    # 1) Explicit evidence links
+    for ev in ev_list:
+        page = db.query(Page).filter(Page.id == ev.page_id).first()
+        if page and page.file_path:
+            image_paths.append(str(STORAGE_DIR / page.file_path))
+
+    # 2) Mapped target sections
+    if not image_paths and q.target_section_ids:
+        for sid in q.target_section_ids:
+            sec_pages = _pages_for_target_section(sid, db, limit=3)
+            log.debug("    section %s -> %d pages", sid[:8], len(sec_pages))
+            for pg in sec_pages:
+                if pg.file_path:
+                    image_paths.append(str(STORAGE_DIR / pg.file_path))
+
+    # 3) Case-level fallback: sample pages spread across the document
+    if not image_paths and case_id:
+        case_pages = _sample_case_pages(case_id, db, limit=5)
+        log.debug("    case fallback -> %d pages from case", len(case_pages))
+        for pg in case_pages:
+            image_paths.append(str(STORAGE_DIR / pg.file_path))
+
+    seen: set[str] = set()
+    unique_paths: list[str] = []
+    for path in image_paths:
+        if path in seen:
+            continue
+        seen.add(path)
+        unique_paths.append(path)
+    log.debug("    -> %d unique image paths", len(unique_paths))
+    return unique_paths
+
+
 def _collect_question_page_ids(
     q: QCQuestion,
     db: Session,
