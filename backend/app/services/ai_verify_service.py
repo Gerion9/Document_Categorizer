@@ -31,9 +31,12 @@ from ..prompts import (
     OCR_MARKERS_INSTRUCTIONS,
     VERIFY_CACHE_PLACEHOLDER,
     VERIFY_PROMPT,
-    RAG_VERIFY_PROMPT,
+    build_rag_batch_toon_payload,
     build_rag_batch_request_prompt,
     build_rag_batch_system_prompt,
+    build_rag_verify_request_prompt,
+    build_rag_verify_system_prompt,
+    build_rag_verify_toon_payload,
     get_form_context,
 )
 
@@ -198,16 +201,16 @@ def verify_question_rag(
 ) -> dict:
     """Verify a QC question using only OCR text evidence (no images)."""
     settings = get_rag_settings()
-    prompt = RAG_VERIFY_PROMPT.format(
-        question=question_text,
-        where_to_verify=where_to_verify or "Not specified",
-        text_evidence=text_evidence,
-        form_context=get_form_context(form_type),
-        common_sources=COMMON_VERIFICATION_SOURCES,
-        ocr_markers=OCR_MARKERS_INSTRUCTIONS,
+    system_prompt = build_rag_verify_system_prompt(form_type)
+    request_prompt = build_rag_verify_request_prompt(
+        build_rag_verify_toon_payload(
+            question_text=question_text,
+            where_to_verify=where_to_verify,
+            text_evidence=text_evidence,
+        )
     )
     return _generate_structured_response(
-        [prompt],
+        [f"{system_prompt}\n\n{request_prompt}"],
         model_override=settings.gemini_model,
         schema=VerificationResult,
         tracker=tracker,
@@ -235,33 +238,16 @@ def verify_question_batch_rag(
     Returns a list of dicts with keys: id, answer, confidence, explanation, correction.
     """
     settings = get_rag_settings()
-
-    lines: list[str] = []
-    for q in questions:
-        qid = q.get("id", "")
-        desc = q.get("description", "")
-        where = q.get("where_to_verify", "")
-        evidence = evidence_by_id.get(qid, "")
-        lines.append(f"[{qid}] {desc}")
-        if where:
-            lines.append(f"    Where to verify: {where}")
-        lines.append("    Evidence:")
-        if evidence.strip():
-            for ev_line in evidence.strip().splitlines():
-                lines.append(f"    {ev_line}")
-        else:
-            lines.append("    (no evidence available)")
-        lines.append("")
-    questions_block = "\n".join(lines)
-
     normalized_form = form_type.strip().lower().replace(" ", "-") if form_type else "default"
     system_prompt = build_rag_batch_system_prompt(form_type)
-    request_prompt = build_rag_batch_request_prompt(questions_block)
+    request_prompt = build_rag_batch_request_prompt(
+        build_rag_batch_toon_payload(questions, evidence_by_id)
+    )
     client = _get_client()
     cached_content = get_or_create_ocr_prompt_cache(
         client,
         model=settings.gemini_model,
-        prompt_profile=f"verify-batch-rag-{normalized_form}",
+        prompt_profile=f"verify-batch-rag-toon-{normalized_form}",
         system_prompt=system_prompt,
         placeholder_text=VERIFY_CACHE_PLACEHOLDER,
     )

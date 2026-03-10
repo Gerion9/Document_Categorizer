@@ -60,6 +60,14 @@ OCR_MARKERS_INSTRUCTIONS = (
     "esos son marcadores de contenido ilegible/no-texto."
 )
 
+TOON_RAG_INSTRUCTIONS = (
+    "The request payload is encoded in TOON (Token-Oriented Object Notation), "
+    "a compact structured format similar to JSON.\n"
+    "- Parse the TOON payload as structured data, not as prose.\n"
+    "- Use only the values under question/question(s), where_to_verify, and evidence.\n"
+    "- Do not treat keys, brackets, row counts, delimiters, or quotes as evidence."
+)
+
 VERIFY_CACHE_PLACEHOLDER = (
     "Contexto compartido de verificacion QC para ejecucion por lotes."
 )
@@ -124,6 +132,7 @@ The evidence was obtained via Gemini Vision OCR.
 
 {form_context}
 {COMMON_VERIFICATION_SOURCES}
+{TOON_RAG_INSTRUCTIONS}
 
 TASK: Answer ALL of the following verification questions using ONLY the evidence provided for each question.
 
@@ -145,9 +154,44 @@ RULES:
 - Respond in English.""".strip()
 
 
-def build_rag_batch_request_prompt(questions_block: str) -> str:
-    return f"""QUESTIONS AND EVIDENCE:
-{questions_block}""".strip()
+def build_rag_batch_request_prompt(questions_payload: str) -> str:
+    return f"""TOON REQUEST PAYLOAD:
+{questions_payload}""".strip()
+
+
+def build_rag_verify_system_prompt(form_type: str = "") -> str:
+    form_context = get_form_context(form_type)
+    return f"""You are a legal document QC specialist for immigration case review.
+
+You are given OCR-extracted text evidence from USCIS forms and supporting documents.
+The evidence was obtained via Gemini Vision OCR.
+
+{form_context}
+{COMMON_VERIFICATION_SOURCES}
+{TOON_RAG_INSTRUCTIONS}
+
+TASK: Using ONLY the structured request payload provided, answer the verification question.
+
+INSTRUCTIONS:
+1. Analyze the evidence for information relevant to the question.
+{OCR_MARKERS_INSTRUCTIONS}
+2. Determine if the information is present, correct, and complete.
+3. Return a JSON object that strictly follows the response schema.
+4. In explanation, indicate briefly what specific evidence you used and from which page/section.
+5. In correction, indicate what value the field should have if the decision is "no".
+
+RULES:
+- "yes" = The evidence shows the field/information was verified/completed correctly.
+- "no" = The evidence shows the field has an error, is incomplete, or contradicts another source.
+- "insufficient" = There is not enough evidence in the provided text to determine correctness.
+- Be specific: reference exact text, checkbox states, or field values from the evidence.
+- If the evidence does not contain information about this question, answer "insufficient".
+- Respond in English.""".strip()
+
+
+def build_rag_verify_request_prompt(request_payload: str) -> str:
+    return f"""TOON REQUEST PAYLOAD:
+{request_payload}""".strip()
 
 
 # ---------------------------------------------------------------------------
@@ -196,20 +240,15 @@ The evidence was obtained via Gemini Vision OCR.
 
 {form_context}
 {common_sources}
+{toon_instructions}
 
-TASK: Using ONLY the text evidence provided, answer the verification question.
+TASK: Using ONLY the structured request payload provided, answer the verification question.
 
-VERIFICATION QUESTION:
-{question}
-
-WHERE TO VERIFY (expected sources):
-{where_to_verify}
-
-OCR TEXT EVIDENCE:
-{text_evidence}
+TOON REQUEST PAYLOAD:
+{request_payload}
 
 INSTRUCTIONS:
-1. Analyze the OCR text evidence for information relevant to the question.
+1. Analyze the evidence for information relevant to the question.
 {ocr_markers}
 2. Determine if the information is present, correct, and complete.
 3. Return a JSON object that strictly follows the response schema.
@@ -234,10 +273,11 @@ The evidence was obtained via Gemini Vision OCR.
 
 {form_context}
 {common_sources}
+{toon_instructions}
 
 TASK: Answer ALL of the following verification questions using ONLY the evidence provided for each question.
 
-QUESTIONS AND EVIDENCE:
+TOON REQUEST PAYLOAD:
 {questions_block}
 
 INSTRUCTIONS:
