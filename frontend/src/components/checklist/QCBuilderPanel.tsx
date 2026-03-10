@@ -26,6 +26,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Tooltip } from "../ui/Tooltip";
 import { EmptyState } from "../ui/EmptyState";
 import { AnimatedAIBot } from "../ui/AnimatedAIBot";
+import { AnimatedReport } from "../ui/AnimatedReport";
 import { GlassSurface } from "../glass/GlassSurface";
 import type { QCChecklist, QCPart, QCQuestion, QCLinkPreset, DocumentType, Section } from "../../types";
 import {
@@ -55,6 +56,7 @@ import {
   startAutopilot,
   getAutopilotJob,
   qcSemanticQuery,
+  exportQCReport,
 } from "../../api/client";
 import type { AutopilotJob, RagMatch } from "../../types";
 
@@ -718,21 +720,38 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
   return (
     <div className="flex flex-col gap-3">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between mb-2">
         <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
           <ClipboardList className="w-4 h-4" /> QC Checklists
         </h3>
-        <div className="flex gap-1">
-          <Tooltip content="Plantillas QC disponibles">
-            <button aria-label="Plantillas QC disponibles" onClick={() => setShowTemplates(!showTemplates)} className={`p-1.5 rounded transition focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-300 ${showTemplates ? "bg-purple-100 text-purple-600" : "text-gray-500 hover:bg-gray-200"}`}>
-              <Download className="w-4 h-4" />
-            </button>
-          </Tooltip>
-          <Tooltip content="Crear QC checklist nuevo">
-            <button aria-label="Crear QC checklist nuevo" onClick={() => setAddingCl(true)} className="p-1.5 rounded hover:bg-gray-200 text-brand-600 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">
-              <Plus className="w-4 h-4" />
-            </button>
-          </Tooltip>
+        <div className="flex gap-2 items-center">
+          {checklists.length > 0 && (
+            <Tooltip content="Descargar reporte de QC en PDF">
+              <motion.a
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                href={exportQCReport(caseId)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition shadow-sm mr-2"
+              >
+                <AnimatedReport className="w-4 h-4" />
+                <span className="text-xs font-semibold">Descargar Reporte</span>
+              </motion.a>
+            </Tooltip>
+          )}
+          <div className="flex gap-1">
+            <Tooltip content="Plantillas QC disponibles">
+              <button aria-label="Plantillas QC disponibles" onClick={() => setShowTemplates(!showTemplates)} className={`p-1.5 rounded transition focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-300 ${showTemplates ? "bg-purple-100 text-purple-600" : "text-gray-500 hover:bg-gray-200"}`}>
+                <Download className="w-4 h-4" />
+              </button>
+            </Tooltip>
+            <Tooltip content="Crear QC checklist nuevo">
+              <button aria-label="Crear QC checklist nuevo" onClick={() => setAddingCl(true)} className="p-1.5 rounded hover:bg-gray-200 text-brand-600 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">
+                <Plus className="w-4 h-4" />
+              </button>
+            </Tooltip>
+          </div>
         </div>
       </div>
 

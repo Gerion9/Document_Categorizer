@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
 import re
 from typing import Any
 
 from .checklist_index_service import query_checklist_answers
+from .embedding_service import get_embedding
 from .gemini_runtime_service import GeminiTokenTracker
 from .ocr_index_service import query_ocr_chunks
 from .pinecone_client import is_pinecone_configured
@@ -146,22 +148,61 @@ def _query_best_stage_matches(
         evidence_page_ids=evidence_page_ids,
         target_section_ids=target_section_ids,
     )
-    for stage_name, extra_filters in stages:
+    resolved_query_vector = query_vector
+    if resolved_query_vector is None:
         try:
-            matches = query_ocr_chunks(
+            settings = get_rag_settings()
+            resolved_query_vector = get_embedding(
                 question,
-                case_id=case_id,
-                top_k=top_k,
-                query_vector=query_vector,
+                task_type=settings.embedding_task_type_query,
                 tracker=tracker,
-                step_label=f"{step_prefix}-{stage_name}",
-                **extra_filters,
+                step_label=f"{step_prefix}-embedding",
             )
-            ranked_matches = _rank_matches(matches, top_k=top_k)
-            if ranked_matches and format_match_context(ranked_matches, max_chars=context_max_chars):
-                return stage_name, ranked_matches
         except Exception as exc:
-            log.warning("Evidence query failed (stage=%s): %s", stage_name, exc)
+            log.warning("Evidence embedding generation failed: %s", exc)
+
+    def _query_stage(stage_name: str, extra_filters: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
+        matches = query_ocr_chunks(
+            question,
+            case_id=case_id,
+            top_k=top_k,
+            query_vector=resolved_query_vector,
+            # query_vector is precomputed once to avoid repeated embeddings and tracker races.
+            tracker=None,
+            step_label=f"{step_prefix}-{stage_name}",
+            **extra_filters,
+        )
+        ranked_matches = _rank_matches(matches, top_k=top_k)
+        if ranked_matches and format_match_context(ranked_matches, max_chars=context_max_chars):
+            return stage_name, ranked_matches
+        return stage_name, []
+
+    stage_results: dict[str, list[dict[str, Any]]] = {}
+    if len(stages) <= 1:
+        for stage_name, extra_filters in stages:
+            try:
+                _, ranked_matches = _query_stage(stage_name, extra_filters)
+                stage_results[stage_name] = ranked_matches
+            except Exception as exc:
+                log.warning("Evidence query failed (stage=%s): %s", stage_name, exc)
+    else:
+        with ThreadPoolExecutor(max_workers=len(stages)) as pool:
+            future_to_stage = {
+                pool.submit(_query_stage, stage_name, extra_filters): stage_name
+                for stage_name, extra_filters in stages
+            }
+            for future in as_completed(future_to_stage):
+                stage_name = future_to_stage[future]
+                try:
+                    _, ranked_matches = future.result()
+                    stage_results[stage_name] = ranked_matches
+                except Exception as exc:
+                    log.warning("Evidence query failed (stage=%s): %s", stage_name, exc)
+
+    for stage_name, _ in stages:
+        ranked_matches = stage_results.get(stage_name) or []
+        if ranked_matches:
+            return stage_name, ranked_matches
     return None, []
 
 
@@ -188,8 +229,7 @@ def _ocr_text_from_db(case_id: str, *, max_chars: int | None = None) -> str:
             text = (pg.ocr_text or "").strip()
             if not text:
                 continue
-            label = pg.original_filename or pg.id[:8]
-            block = f"--- Page {pg.original_page_number} ({label}) ---\n{text}"
+            block = f"--- Page {pg.original_page_number} ---\n{text}"
             if len(block) > remaining:
                 block = block[:remaining].rstrip()
             if not block:

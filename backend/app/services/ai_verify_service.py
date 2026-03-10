@@ -10,6 +10,7 @@ Supports three modes:
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Literal
 
@@ -40,6 +41,29 @@ from ..prompts import (
 log = logging.getLogger("qc_autopilot")
 
 STORAGE_DIR = Path(__file__).resolve().parent.parent.parent / "storage"
+_TRUE_VALUES = {"1", "true", "yes", "on"}
+
+
+def _env_bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    return str(raw).strip().lower() in _TRUE_VALUES
+
+
+def _env_int(name: str, default: int) -> int:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return int(str(raw).strip())
+    except ValueError:
+        return default
+
+
+FAST_BATCH_PROMPT = _env_bool("QC_AUTOPILOT_FAST_BATCH_PROMPT", True)
+BATCH_MAX_OUTPUT_TOKENS = max(512, _env_int("QC_AUTOPILOT_BATCH_MAX_OUTPUT_TOKENS", 1800))
+BATCH_MODEL_OVERRIDE = str(os.getenv("QC_AUTOPILOT_BATCH_MODEL", "")).strip()
 
 
 # ---------------------------------------------------------------------------
@@ -97,13 +121,14 @@ def _generate_structured_response(
     step_label: str = "verify",
     rag_mode: bool = False,
     cached_content: str = "",
+    max_output_tokens: int = 4096,
 ) -> dict:
     client = _get_client()
     settings = get_rag_settings()
     model = model_override or settings.gemini_vision_model or settings.gemini_model
     config_kwargs: dict[str, object] = {
         "temperature": 0.1,
-        "max_output_tokens": 4096,
+        "max_output_tokens": max(128, int(max_output_tokens or 4096)),
         "response_mime_type": "application/json",
         "response_json_schema": schema.model_json_schema(),
     }
@@ -255,13 +280,25 @@ def verify_question_batch_rag(
     questions_block = "\n".join(lines)
 
     normalized_form = form_type.strip().lower().replace(" ", "-") if form_type else "default"
-    system_prompt = build_rag_batch_system_prompt(form_type)
+    if FAST_BATCH_PROMPT:
+        system_prompt = (
+            "You are an immigration QC assistant. "
+            "For each question, use ONLY its own evidence. "
+            "Return JSON: {\"answers\":[...]}, preserving question order and ids exactly. "
+            "Allowed answer: yes/no/insufficient. "
+            "Allowed confidence: high/medium/low. "
+            "explanation must be concise (max 20 words). "
+            "correction must be empty unless answer is no."
+        )
+    else:
+        system_prompt = build_rag_batch_system_prompt(form_type)
     request_prompt = build_rag_batch_request_prompt(questions_block)
     client = _get_client()
+    batch_model = BATCH_MODEL_OVERRIDE or settings.gemini_model
     cached_content = get_or_create_ocr_prompt_cache(
         client,
-        model=settings.gemini_model,
-        prompt_profile=f"verify-batch-rag-{normalized_form}",
+        model=batch_model,
+        prompt_profile=f"verify-batch-rag-{normalized_form}-fast{1 if FAST_BATCH_PROMPT else 0}-v2",
         system_prompt=system_prompt,
         placeholder_text=VERIFY_CACHE_PLACEHOLDER,
     )
@@ -270,12 +307,13 @@ def verify_question_batch_rag(
     try:
         result = _generate_structured_response(
             contents,
-            model_override=settings.gemini_model,
+            model_override=batch_model,
             schema=BatchVerificationResult,
             tracker=tracker,
             step_label=step_label,
             rag_mode=True,
             cached_content=cached_content,
+            max_output_tokens=BATCH_MAX_OUTPUT_TOKENS,
         )
     except Exception as exc:
         if cached_content and is_cached_content_error(exc):
@@ -287,11 +325,12 @@ def verify_question_batch_rag(
             )
             result = _generate_structured_response(
                 [f"{system_prompt}\n\n{request_prompt}"],
-                model_override=settings.gemini_model,
+                model_override=batch_model,
                 schema=BatchVerificationResult,
                 tracker=tracker,
                 step_label=step_label,
                 rag_mode=True,
+                max_output_tokens=BATCH_MAX_OUTPUT_TOKENS,
             )
         else:
             raise

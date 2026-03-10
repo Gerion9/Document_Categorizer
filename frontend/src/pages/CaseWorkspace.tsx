@@ -57,6 +57,7 @@ import {
   reindexCase,
   ragQuery,
   deletePage,
+  exportPdf,
 } from "../api/client";
 
 import FileUpload from "../components/FileUpload";
@@ -64,12 +65,10 @@ import PageThumbnail from "../components/PageThumbnail";
 import DocumentTree from "../components/DocumentTree";
 import SectionDropZone from "../components/SectionDropZone";
 import QCBuilderPanel from "../components/checklist/QCBuilderPanel";
-import ExportDialog from "../components/ExportDialog";
-import AuditLogView from "../components/AuditLog";
 import { GlassSurface } from "../components/glass/GlassSurface";
-import { GlassButton } from "../components/glass/GlassButton";
+import { AnimatedPDF } from "../components/ui/AnimatedPDF";
 
-type Tab = "pages" | "organize" | "qc" | "export";
+type Tab = "pages" | "organize" | "qc";
 
 export default function CaseWorkspace() {
   const { caseId } = useParams<{ caseId: string }>();
@@ -585,18 +584,40 @@ export default function CaseWorkspace() {
     >
       <div className="grid grid-cols-12 gap-5 h-[calc(100vh-200px)]">
         {/* Left: Document tree */}
-        <GlassSurface filterId="glass-panel" className="col-span-3 rounded-2xl p-4 overflow-y-auto custom-scroll">
-          <DocumentTree
-            caseId={caseId}
-            docTypes={docTypes}
-            selectedSectionId={selectedSectionId}
-            onSelectSection={(secId, dtId) => {
-              setSelectedSectionId(secId);
-              setSelectedDocTypeId(dtId);
-            }}
-            onRefresh={refresh}
-          />
-        </GlassSurface>
+        <div className="col-span-3 flex flex-col gap-4">
+          <GlassSurface filterId="glass-panel" className="rounded-2xl p-4 flex-1 overflow-y-auto custom-scroll">
+            <DocumentTree
+              caseId={caseId}
+              docTypes={docTypes}
+              selectedSectionId={selectedSectionId}
+              onSelectSection={(secId, dtId) => {
+                setSelectedSectionId(secId);
+                setSelectedDocTypeId(dtId);
+              }}
+              onRefresh={refresh}
+            />
+          </GlassSurface>
+
+          {/* PDF Download Button */}
+          <motion.a
+            whileHover={{ scale: 1.02 }}
+            whileTap={{ scale: 0.98 }}
+            href={exportPdf(caseId)}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="flex items-center gap-3 p-3 rounded-2xl border border-white/40 bg-white/30 hover:bg-white/50 shadow-sm hover:shadow-md transition-all group"
+          >
+            <div className="p-2 rounded-lg bg-red-50 group-hover:bg-red-100 transition shrink-0">
+              <AnimatedPDF className="w-6 h-6" />
+            </div>
+            <div>
+              <p className="font-semibold text-xs text-gray-800">Descargar PDF</p>
+              <p className="text-[10px] text-gray-500 leading-tight mt-0.5">
+                Consolidado con marcadores navegables
+              </p>
+            </div>
+          </motion.a>
+        </div>
 
         {/* Center: Section content / Drop zones — hierarchical */}
         <div className="col-span-6 flex flex-col gap-5 overflow-y-auto custom-scroll pr-2">
@@ -723,19 +744,11 @@ export default function CaseWorkspace() {
     </DndContext>
   );
 
-  const renderExportTab = () => (
-    <div className="flex flex-col gap-4">
-      <ExportDialog caseId={caseId} caseName={caseData.name} />
-      <AuditLogView caseId={caseId} refreshKey={refreshKey} />
-    </div>
-  );
-
   // ── Tabs definition ──────────────────────────────────────────────────
   const tabs: { key: Tab; label: string; icon: React.ReactNode }[] = [
     { key: "pages", label: "Paginas", icon: <Upload className="w-4 h-4" /> },
     { key: "organize", label: "Organizar", icon: <LayoutGrid className="w-4 h-4" /> },
     { key: "qc", label: "QC Checklist", icon: <CheckCircle2 className="w-4 h-4" /> },
-    { key: "export", label: "Exportar", icon: <FileDown className="w-4 h-4" /> },
   ];
 
   return (
@@ -805,7 +818,6 @@ export default function CaseWorkspace() {
           </div>
         </div>
       )}
-      {tab === "export" && renderExportTab()}
 
       {/* ── Full-size page preview modal ──────────────────────────── */}
       <AnimatePresence>

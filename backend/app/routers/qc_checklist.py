@@ -1,5 +1,6 @@
 """Router – Complex QC Checklists (hierarchical builder, manual-only)."""
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 from datetime import datetime, timezone
 import re
@@ -1170,10 +1171,13 @@ def _bool_env(name: str, default: bool) -> bool:
     return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
 
-BATCH_SIZE = max(1, _int_env("QC_AUTOPILOT_BATCH_SIZE", 16))
+BATCH_SIZE = max(1, _int_env("QC_AUTOPILOT_BATCH_SIZE", 25))
 AUTOPILOT_EVIDENCE_TOP_K = max(1, _int_env("QC_AUTOPILOT_EVIDENCE_TOP_K", 2))
 AUTOPILOT_EVIDENCE_MAX_CHARS = max(1200, _int_env("QC_AUTOPILOT_EVIDENCE_MAX_CHARS", 1600))
+AUTOPILOT_EVIDENCE_WORKERS = max(1, _int_env("QC_AUTOPILOT_EVIDENCE_WORKERS", 8))
 AUTOPILOT_SKIP_PREVERIFIED = _bool_env("QC_AUTOPILOT_SKIP_PREVERIFIED", True)
+AUTOPILOT_FORCE_BATCH_ON_NO_EVIDENCE = _bool_env("QC_AUTOPILOT_FORCE_BATCH_ON_NO_EVIDENCE", True)
+AUTOPILOT_INDEX_ANSWERS = _bool_env("QC_AUTOPILOT_INDEX_ANSWERS", False)
 
 
 def _is_question_preverified(q: QCQuestion) -> bool:
@@ -1227,7 +1231,7 @@ def _run_autopilot_batch_rag(
     from ..services.ai_verify_service import verify_question_batch_rag
     from ..services.checklist_index_service import upsert_qc_question_answers
     from ..services.indexing_service import is_indexing_available
-    should_index_answers = bool(checklist.case_id) and is_indexing_available()
+    should_index_answers = AUTOPILOT_INDEX_ANSWERS and bool(checklist.case_id) and is_indexing_available()
 
     batch_input = [
         {
@@ -1263,7 +1267,6 @@ def _run_autopilot_batch_rag(
         source_pages = evidence_source_map.get(qid, [])
         try:
             _save_ai_result(q, ans, source_pages=source_pages)
-            db.commit()
             verified += 1
             log.info("  [%s] -> %s (confidence=%s)", q.code, ans.get("answer"), ans.get("confidence"))
 
@@ -1273,9 +1276,16 @@ def _run_autopilot_batch_rag(
                     source_page_ids = _collect_question_page_ids(q, db, case_id=checklist.case_id)
                 answers_to_index.append((q, source_page_ids))
         except Exception as exc:
-            db.rollback()
             errors_count += 1
             log.error("  [%s] save failed: %s", q.code, exc)
+
+    if verified > 0:
+        try:
+            db.commit()
+        except Exception as exc:
+            db.rollback()
+            log.error("  Batch DB commit failed: %s", exc)
+            return 0, 0, len(questions)
 
     if should_index_answers and answers_to_index:
         try:
@@ -1488,7 +1498,8 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
             except Exception as exc:
                 log.warning("Autopilot %s query embedding batch fallback: %s", job_id[:8], exc)
 
-            for idx, q in enumerate(questions, start=1):
+            question_targets: list[tuple[QCQuestion, str, list[str]]] = []
+            for q in questions:
                 qid = _question_internal_key(q)
                 page_ids = _collect_question_page_ids(
                     q,
@@ -1496,29 +1507,75 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                     case_id=case_id,
                     include_case_fallback=False,
                 )
+                question_targets.append((q, qid, page_ids))
+
+            def _collect_single_question_evidence(
+                question: QCQuestion,
+                qid: str,
+                page_ids: list[str],
+            ) -> tuple[str, str, list[dict]]:
                 evidence_bundle = collect_evidence_bundle_for_question(
-                    q.description,
+                    question.description,
                     case_id=case_id,
                     evidence_page_ids=page_ids,
-                    target_section_ids=q.target_section_ids or [],
+                    target_section_ids=question.target_section_ids or [],
                     top_k=AUTOPILOT_EVIDENCE_TOP_K,
                     query_vector=question_query_vectors.get(qid),
                     max_context_chars=AUTOPILOT_EVIDENCE_MAX_CHARS,
-                    tracker=tracker,
+                    # Keep tracker in the main pipeline to avoid cross-thread token accounting races.
+                    tracker=None,
                 )
-                evidence = str(evidence_bundle.get("text_context", "") or "")
-                evidence_map[qid] = evidence
+                evidence_text = str(evidence_bundle.get("text_context", "") or "")
                 raw_sources = evidence_bundle.get("source_pages")
-                evidence_source_map[qid] = raw_sources if isinstance(raw_sources, list) else []
-                if evidence.strip():
-                    has_any_evidence = True
-                qc_autopilot_jobs.update_evidence_progress(
-                    job_id,
-                    processed_questions=idx,
-                    phase="gathering_evidence",
-                )
-                if idx % 20 == 0:
-                    log.info("  Evidence collected: %d/%d questions", idx, len(questions))
+                evidence_sources = raw_sources if isinstance(raw_sources, list) else []
+                return qid, evidence_text, evidence_sources
+
+            processed_questions = 0
+            if AUTOPILOT_EVIDENCE_WORKERS <= 1 or len(question_targets) <= 1:
+                for q, qid, page_ids in question_targets:
+                    try:
+                        out_qid, evidence_text, evidence_sources = _collect_single_question_evidence(q, qid, page_ids)
+                    except Exception as exc:
+                        log.warning("  Evidence collection failed for [%s]: %s", q.code, exc)
+                        out_qid, evidence_text, evidence_sources = qid, "", []
+                    evidence_map[out_qid] = evidence_text
+                    evidence_source_map[out_qid] = evidence_sources
+                    if evidence_text.strip():
+                        has_any_evidence = True
+                    processed_questions += 1
+                    qc_autopilot_jobs.update_evidence_progress(
+                        job_id,
+                        processed_questions=processed_questions,
+                        phase="gathering_evidence",
+                    )
+                    if processed_questions % 20 == 0:
+                        log.info("  Evidence collected: %d/%d questions", processed_questions, len(questions))
+            else:
+                workers = min(AUTOPILOT_EVIDENCE_WORKERS, len(question_targets))
+                with ThreadPoolExecutor(max_workers=workers) as pool:
+                    future_to_question: dict = {
+                        pool.submit(_collect_single_question_evidence, q, qid, page_ids): q
+                        for q, qid, page_ids in question_targets
+                    }
+                    for future in as_completed(future_to_question):
+                        q = future_to_question[future]
+                        try:
+                            out_qid, evidence_text, evidence_sources = future.result()
+                        except Exception as exc:
+                            log.warning("  Evidence collection failed for [%s]: %s", q.code, exc)
+                            out_qid, evidence_text, evidence_sources = _question_internal_key(q), "", []
+                        evidence_map[out_qid] = evidence_text
+                        evidence_source_map[out_qid] = evidence_sources
+                        if evidence_text.strip():
+                            has_any_evidence = True
+                        processed_questions += 1
+                        qc_autopilot_jobs.update_evidence_progress(
+                            job_id,
+                            processed_questions=processed_questions,
+                            phase="gathering_evidence",
+                        )
+                        if processed_questions % 20 == 0:
+                            log.info("  Evidence collected: %d/%d questions", processed_questions, len(questions))
 
         log.info("  Evidence collection done: %d questions, has_evidence=%s",
                  len(evidence_map), has_any_evidence)
@@ -1538,7 +1595,9 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
 
         if not questions:
             log.info("  No pending questions to verify (preverified=%d)", preverified_skipped)
-        elif has_any_evidence:
+        elif has_any_evidence or AUTOPILOT_FORCE_BATCH_ON_NO_EVIDENCE:
+            if not has_any_evidence:
+                log.info("  No evidence found; forcing batch RAG mode with empty evidence")
             grouped_batches = _group_questions_for_autopilot_batches(questions, db)
             processed_offset = 0
             for batch_form_type, batch in grouped_batches:
