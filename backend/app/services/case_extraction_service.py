@@ -7,6 +7,7 @@ from typing import Callable
 
 from ..database import SessionLocal
 from ..models import DocumentType, Page
+from .gemini_runtime_service import ZERO_TOKEN_SUMMARY, sum_token_summaries
 from .indexing_service import process_page_extraction
 from .json_export_service import save_extraction_json
 
@@ -139,16 +140,12 @@ def extract_case_pages(
     extraction_pages = _build_extraction_pages(case_id)
     save_extraction_json(case_id, extraction_pages)
 
-    ocr_token_totals = {
-        "input": 0, "output": 0, "cached": 0,
-        "thoughts": 0, "embedding": 0, "grand_total": 0,
-    }
+    ocr_token_totals = dict(ZERO_TOKEN_SUMMARY)
     for row in page_results:
         ts = row.get("token_summary", {}) or {}
-        for key in ocr_token_totals:
-            ocr_token_totals[key] += int(ts.get(key, 0) or 0)
+        ocr_token_totals = sum_token_summaries(ocr_token_totals, ts)
 
-    result = {
+    return {
         "queued": total,
         "processed": done,
         "errors": failed,
@@ -157,7 +154,3 @@ def extract_case_pages(
         "already_done": already_done,
         "ocr_token_summary": ocr_token_totals,
     }
-    # region agent log
-    import json as _json; open("debug-efc156.log", "a").write(_json.dumps({"sessionId":"efc156","hypothesisId":"H-B","runId":"post-fix","location":"case_extraction_service.py:result","message":"extraction result","data":{"total_case_pages":total_case_pages,"already_done":already_done,"queued":total,"processed":done},"timestamp":int(__import__("time").time()*1000)}) + "\n")
-    # endregion
-    return result

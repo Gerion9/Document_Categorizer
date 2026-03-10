@@ -38,9 +38,7 @@ from ..models import (
     Section,
 )
 
-STORAGE_DIR = Path(__file__).resolve().parent.parent.parent / "storage"
-EXPORTS_DIR = STORAGE_DIR / "exports"
-EXPORTS_DIR.mkdir(parents=True, exist_ok=True)
+from .paths import EXPORTS_DIR, STORAGE_DIR
 
 # ── Helpers ───────────────────────────────────────────────────────────────
 

@@ -190,7 +190,7 @@ def _query_best_stage_matches(
     return None, []
 
 
-def _ocr_text_from_db(case_id: str, *, max_chars: int | None = None) -> str:
+def _ocr_text_from_db(case_id: str, *, max_chars: int | None = None) -> tuple[str, list[dict[str, Any]]]:
     """Fallback: gather Gemini OCR text directly from the DB when Pinecone is not available."""
     if max_chars is None:
         max_chars = get_rag_settings().db_fallback_max_chars
@@ -330,40 +330,21 @@ def retrieve_qc_text_context(
 ) -> dict[str, Any]:
     """
     Get text context for a QC question.
-    Priority: Pinecone semantic search -> DB ocr_text fallback.
+    Delegates to collect_evidence_bundle_for_question and maps the result.
     """
-    if is_pinecone_configured():
-        evidence_page_ids = [str(pid) for pid in (evidence_page_ids or []) if pid]
-        target_section_ids = [str(sid) for sid in (target_section_ids or []) if sid]
-        settings = get_rag_settings()
-        resolved_top_k = max(1, top_k or settings.retrieval_top_k)
-        stage_name, ranked_matches = _query_best_stage_matches(
-            question,
-            case_id=case_id,
-            top_k=resolved_top_k,
-            tracker=tracker,
-            step_prefix="qc-context",
-            evidence_page_ids=evidence_page_ids,
-            target_section_ids=target_section_ids,
-        )
-        if ranked_matches:
-            return {
-                "stage": stage_name or "unknown",
-                "matches": ranked_matches,
-                "text_context": format_match_context(ranked_matches),
-            }
-
-    # Fallback: read Gemini OCR text directly from DB
-    db_text, _ = _ocr_text_from_db(case_id)
-    if db_text:
-        log.debug("Using DB ocr_text fallback (%d chars)", len(db_text))
-        return {
-            "stage": "db_ocr_text",
-            "matches": [],
-            "text_context": db_text,
-        }
-
-    return {"stage": "no_matches", "matches": [], "text_context": ""}
+    bundle = collect_evidence_bundle_for_question(
+        question,
+        case_id=case_id,
+        evidence_page_ids=evidence_page_ids,
+        target_section_ids=target_section_ids,
+        top_k=top_k,
+        tracker=tracker,
+    )
+    return {
+        "stage": bundle.get("stage", "no_matches"),
+        "matches": bundle.get("matches", []),
+        "text_context": bundle.get("text_context", ""),
+    }
 
 
 def query_case_rag(

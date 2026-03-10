@@ -39,9 +39,9 @@ from ..prompts import (
     get_form_context,
 )
 
-log = logging.getLogger("qc_autopilot")
+from .paths import STORAGE_DIR
 
-STORAGE_DIR = Path(__file__).resolve().parent.parent.parent / "storage"
+log = logging.getLogger("qc_autopilot")
 
 
 # ---------------------------------------------------------------------------

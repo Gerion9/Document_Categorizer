@@ -62,7 +62,7 @@ def _get_client() -> genai.Client:
     return _CLIENT
 
 
-STORAGE_DIR = Path(__file__).resolve().parent.parent.parent / "storage"
+from .paths import STORAGE_DIR
 
 OCR_IMAGE_MAX_LONG_EDGE = int(os.getenv("OCR_IMAGE_MAX_LONG_EDGE", "1600"))
 OCR_IMAGE_JPEG_QUALITY = int(os.getenv("OCR_IMAGE_JPEG_QUALITY", "80"))

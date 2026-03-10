@@ -8,12 +8,12 @@ from ..database import SessionLocal
 from ..models import AuditLog, ExtractionStatus, IndexStatus, Page
 from .embedding_service import is_embeddings_configured
 from .extraction_service import extract_text
-from .gemini_runtime_service import create_token_tracker, log_token_summary
+from .gemini_runtime_service import compact_token_summary, create_token_tracker, log_token_summary
 from .ocr_index_service import index_case_ocr_json, upsert_page_ocr_chunks
 from .pinecone_client import is_pinecone_configured
 
 
-STORAGE_DIR = Path(__file__).resolve().parent.parent.parent / "storage"
+from .paths import STORAGE_DIR
 INDEX_METHOD = "gemini_embedding_pinecone"
 log = logging.getLogger("gemini_usage")
 
@@ -53,15 +53,7 @@ def _audit(db, *, case_id: str, action: str, entity_id: str, details: dict) -> N
     )
 
 
-def _compact_token_summary(summary: dict) -> dict[str, int]:
-    return {
-        "input": int(summary.get("input", 0)),
-        "output": int(summary.get("output", 0)),
-        "cached": int(summary.get("cached", 0)),
-        "thoughts": int(summary.get("thoughts", 0)),
-        "embedding": int(summary.get("embedding", 0)),
-        "grand_total": int(summary.get("grand_total", 0)),
-    }
+_compact_token_summary = compact_token_summary
 
 
 def index_existing_page_ocr(page_id: str) -> None:

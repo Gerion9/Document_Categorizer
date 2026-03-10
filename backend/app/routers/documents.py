@@ -4,6 +4,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..db_utils import get_or_404, reorder_entities
 from ..models import AuditLog, Case, DocumentType, Section
 from ..schemas import (
     DocumentTypeCreate,
@@ -121,9 +122,7 @@ def list_document_types(case_id: str, db: Session = Depends(get_db)):
 
 @router.post("/cases/{case_id}/document-types", response_model=DocumentTypeOut, status_code=201)
 def create_document_type(case_id: str, body: DocumentTypeCreate, db: Session = Depends(get_db)):
-    case = db.query(Case).filter(Case.id == case_id).first()
-    if not case:
-        raise HTTPException(404, "Case not found")
+    get_or_404(db, Case, case_id)
     dt = DocumentType(case_id=case_id, name=body.name, code=body.code, order=body.order, has_tables=body.has_tables)
     db.add(dt)
     db.flush()
@@ -141,9 +140,7 @@ def update_document_type(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    dt = db.query(DocumentType).filter(DocumentType.id == dt_id).first()
-    if not dt:
-        raise HTTPException(404, "DocumentType not found")
+    dt = get_or_404(db, DocumentType, dt_id)
     should_refresh_sections = False
     if body.name is not None:
         dt.name = body.name
@@ -167,9 +164,7 @@ def update_document_type(
 
 @router.delete("/document-types/{dt_id}", status_code=204)
 def delete_document_type(dt_id: str, db: Session = Depends(get_db)):
-    dt = db.query(DocumentType).filter(DocumentType.id == dt_id).first()
-    if not dt:
-        raise HTTPException(404, "DocumentType not found")
+    dt = get_or_404(db, DocumentType, dt_id)
     db.add(AuditLog(case_id=dt.case_id, action="deleted", entity_type="document_type", entity_id=dt.id,
                     details={"name": dt.name}))
     db.delete(dt)
@@ -178,12 +173,7 @@ def delete_document_type(dt_id: str, db: Session = Depends(get_db)):
 
 @router.put("/document-types/reorder", status_code=200)
 def reorder_document_types(body: ReorderRequest, db: Session = Depends(get_db)):
-    for item in body.items:
-        dt = db.query(DocumentType).filter(DocumentType.id == item.id).first()
-        if dt:
-            dt.order = item.order
-    db.commit()
-    return {"ok": True}
+    return reorder_entities(db, DocumentType, body.items)
 
 
 # ── Section endpoints (multi-level) ──────────────────────────────────────
@@ -201,9 +191,7 @@ def list_all_sections_flat(case_id: str, db: Session = Depends(get_db)):
 
 @router.post("/document-types/{dt_id}/sections", response_model=SectionOut, status_code=201)
 def create_section(dt_id: str, body: SectionCreate, db: Session = Depends(get_db)):
-    dt = db.query(DocumentType).filter(DocumentType.id == dt_id).first()
-    if not dt:
-        raise HTTPException(404, "DocumentType not found")
+    dt = get_or_404(db, DocumentType, dt_id)
 
     # Validate parent belongs to same doc type
     if body.parent_section_id:
@@ -240,9 +228,7 @@ def update_section(
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
 ):
-    sec = db.query(Section).filter(Section.id == sec_id).first()
-    if not sec:
-        raise HTTPException(404, "Section not found")
+    sec = get_or_404(db, Section, sec_id)
     if body.name is not None:
         sec.name = body.name
     if body.code is not None:
@@ -265,18 +251,11 @@ def update_section(
 
 @router.delete("/sections/{sec_id}", status_code=204)
 def delete_section(sec_id: str, db: Session = Depends(get_db)):
-    sec = db.query(Section).filter(Section.id == sec_id).first()
-    if not sec:
-        raise HTTPException(404, "Section not found")
+    sec = get_or_404(db, Section, sec_id)
     db.delete(sec)
     db.commit()
 
 
 @router.put("/sections/reorder", status_code=200)
 def reorder_sections(body: ReorderRequest, db: Session = Depends(get_db)):
-    for item in body.items:
-        sec = db.query(Section).filter(Section.id == item.id).first()
-        if sec:
-            sec.order = item.order
-    db.commit()
-    return {"ok": True}
+    return reorder_entities(db, Section, body.items)

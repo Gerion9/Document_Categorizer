@@ -42,6 +42,7 @@ from ..schemas import (
     QCAutopilotJobOut,
     ReorderRequest,
 )
+from ..db_utils import get_or_404, reorder_entities
 from ..services import qc_autopilot_jobs
 from ..services.gemini_runtime_service import GeminiTokenTracker, create_token_tracker, log_token_summary
 
@@ -637,12 +638,7 @@ def delete_qc_part(part_id: str, db: Session = Depends(get_db)):
 
 @router.put("/qc-parts/reorder", status_code=200)
 def reorder_qc_parts(body: ReorderRequest, db: Session = Depends(get_db)):
-    for item in body.items:
-        p = db.query(QCPart).filter(QCPart.id == item.id).first()
-        if p:
-            p.order = item.order
-    db.commit()
-    return {"ok": True}
+    return reorder_entities(db, QCPart, body.items)
 
 
 # ── QC Question CRUD ──────────────────────────────────────────────────────
@@ -704,12 +700,7 @@ def delete_qc_question(q_id: str, db: Session = Depends(get_db)):
 
 @router.put("/qc-questions/reorder", status_code=200)
 def reorder_qc_questions(body: ReorderRequest, db: Session = Depends(get_db)):
-    for item in body.items:
-        q = db.query(QCQuestion).filter(QCQuestion.id == item.id).first()
-        if q:
-            q.order = item.order
-    db.commit()
-    return {"ok": True}
+    return reorder_entities(db, QCQuestion, body.items)
 
 
 # ── QC Question Evidence ──────────────────────────────────────────────────
