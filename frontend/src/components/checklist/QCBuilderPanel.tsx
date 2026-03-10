@@ -20,6 +20,10 @@ import {
   Upload,
   Search,
   Send,
+  Library,
+  Save,
+  FilePlus,
+  Bookmark,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
@@ -743,7 +747,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
           <div className="flex gap-1">
             <Tooltip content="Plantillas QC disponibles">
               <button aria-label="Plantillas QC disponibles" onClick={() => setShowTemplates(!showTemplates)} className={`p-1.5 rounded transition focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-300 ${showTemplates ? "bg-purple-100 text-purple-600" : "text-gray-500 hover:bg-gray-200"}`}>
-                <Download className="w-4 h-4" />
+                <Library className="w-4 h-4" />
               </button>
             </Tooltip>
             <Tooltip content="Crear QC checklist nuevo">
@@ -775,7 +779,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
             <div className="flex flex-col gap-1">
               {templates.map((tpl) => (
                 <button key={tpl.id} onClick={() => handleApplyTemplate(tpl.id)} className="flex items-center gap-1.5 text-xs text-left px-2 py-1.5 rounded hover:bg-purple-100 transition">
-                  <Download className="w-3.5 h-3.5 text-purple-500 shrink-0" />
+                  <FilePlus className="w-3.5 h-3.5 text-purple-500 shrink-0" />
                   <div className="flex-1">
                     <span className="font-medium text-gray-800">{tpl.name}</span>
                     <span className="text-xs text-gray-400 ml-1">{tpl.total_questions} preguntas</span>
@@ -885,12 +889,12 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
 
               <Tooltip content="Guardar como plantilla reutilizable">
                 <button aria-label="Guardar como plantilla" onClick={async (e) => { e.stopPropagation(); try { await saveQCAsTemplate(cl.id); toast.success("Guardado como plantilla"); await reload(); } catch { toast.error("Error"); } }} className="p-1.5 text-gray-400 hover:text-purple-600 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-300 rounded">
-                  <Download className="w-3.5 h-3.5" />
+                  <Save className="w-3.5 h-3.5" />
                 </button>
               </Tooltip>
               <Tooltip content="Guardar preset de vinculación QC ↔ Doc">
                 <button aria-label="Guardar preset de vinculación" onClick={(e) => { e.stopPropagation(); handleSaveLinkPreset(cl.id, cl.name); }} className="p-1.5 text-gray-400 hover:text-teal-600 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-300 rounded">
-                  <Upload className="w-3.5 h-3.5" />
+                  <Bookmark className="w-3.5 h-3.5" />
                 </button>
               </Tooltip>
               <Tooltip content="Aplicar preset de vinculación">

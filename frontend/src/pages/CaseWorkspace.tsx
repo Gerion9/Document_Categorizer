@@ -364,21 +364,8 @@ export default function CaseWorkspace() {
         <span className="text-gray-400">{unclassifiedPages.length} sin clasificar</span>
         <span className="text-amber-500">{extraPages.length} extras</span>
 
-        {indexingConfigured && (
-          <span className="flex items-center gap-1 text-indigo-600">
-            <Database className="w-3.5 h-3.5" />
-            {indexedPages.length} indexadas
-          </span>
-        )}
-
         {/* Service status pills */}
         <div className="ml-auto flex items-center gap-2">
-          {pineconeConfigured && (
-            <span className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-600 border border-indigo-200">
-              <Database className="w-3 h-3" /> Pinecone
-            </span>
-          )}
-
           {indexingConfigured && pages.some((p) => p.extraction_status === "done") && (
             <Tooltip content="Re-indexar todas las paginas extraidas en Pinecone">
               <button
@@ -766,12 +753,6 @@ export default function CaseWorkspace() {
           {caseData.description && (
             <p className="text-xs text-gray-400">{caseData.description}</p>
           )}
-        </div>
-        <div className="flex items-center gap-4 text-xs text-gray-500">
-          <span>{pages.length} paginas</span>
-          <span className="text-green-600">
-            {classifiedPages.length} clasificadas
-          </span>
         </div>
       </div>
 
