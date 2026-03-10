@@ -14,24 +14,7 @@ from .json_export_service import save_extraction_json
 
 log = logging.getLogger("extraction")
 
-<<<<<<< HEAD
-
-def _int_env(name: str, default: int) -> int:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    try:
-        return int(str(raw).strip())
-    except ValueError:
-        return default
-
-
-MAX_EXTRACTION_WORKERS = max(1, _int_env("CASE_EXTRACTION_MAX_WORKERS", 3))
-EXTRACTION_BATCH_SIZE = max(0, _int_env("CASE_EXTRACTION_BATCH_SIZE", 0))
-PARALLEL_BATCHES = max(1, _int_env("CASE_EXTRACTION_PARALLEL_BATCHES", 3))
-=======
 MAX_EXTRACTION_WORKERS = int(os.getenv("MAX_EXTRACTION_WORKERS", "6"))
->>>>>>> pinecone
 
 
 def _determine_has_tables(page: Page, db) -> bool:

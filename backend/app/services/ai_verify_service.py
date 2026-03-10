@@ -44,39 +44,6 @@ from .paths import STORAGE_DIR
 
 log = logging.getLogger("qc_autopilot")
 
-<<<<<<< HEAD
-STORAGE_DIR = Path(__file__).resolve().parent.parent.parent / "storage"
-_TRUE_VALUES = {"1", "true", "yes", "on"}
-
-
-def _env_bool(name: str, default: bool) -> bool:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    return str(raw).strip().lower() in _TRUE_VALUES
-
-
-def _env_int(name: str, default: int) -> int:
-    raw = os.getenv(name)
-    if raw is None:
-        return default
-    try:
-        return int(str(raw).strip())
-    except ValueError:
-        return default
-
-
-def _batch_runtime_options(settings) -> tuple[str, bool, int, bool]:
-    # Note: get_rag_settings() loads .env before this function is called.
-    model_override = str(os.getenv("QC_AUTOPILOT_BATCH_MODEL", "")).strip()
-    batch_model = model_override or settings.gemini_model
-    fast_batch_prompt = _env_bool("QC_AUTOPILOT_FAST_BATCH_PROMPT", False)
-    batch_max_output_tokens = max(512, _env_int("QC_AUTOPILOT_BATCH_MAX_OUTPUT_TOKENS", 2200))
-    use_prompt_cache = _env_bool("QC_AUTOPILOT_BATCH_USE_PROMPT_CACHE", not fast_batch_prompt)
-    return batch_model, fast_batch_prompt, batch_max_output_tokens, use_prompt_cache
-
-=======
->>>>>>> pinecone
 
 # ---------------------------------------------------------------------------
 # Schema models (sent to Gemini as response_json_schema)
@@ -300,50 +267,11 @@ def verify_question_batch_rag(
     Returns a list of dicts with keys: id, answer, confidence, explanation, correction.
     """
     settings = get_rag_settings()
-<<<<<<< HEAD
-    batch_model, fast_batch_prompt, batch_max_output_tokens, use_prompt_cache = _batch_runtime_options(settings)
-
-    lines: list[str] = []
-    for q in questions:
-        qid = q.get("id", "")
-        desc = q.get("description", "")
-        where = q.get("where_to_verify", "")
-        evidence = evidence_by_id.get(qid, "")
-        lines.append(f"[{qid}] {desc}")
-        if where:
-            lines.append(f"    Where to verify: {where}")
-        lines.append("    Evidence:")
-        if evidence.strip():
-            for ev_line in evidence.strip().splitlines():
-                lines.append(f"    {ev_line}")
-        else:
-            lines.append("    (no evidence available)")
-        lines.append("")
-    questions_block = "\n".join(lines)
-
-    normalized_form = form_type.strip().lower().replace(" ", "-") if form_type else "default"
-    if fast_batch_prompt:
-        system_prompt = (
-            "You are an immigration QC assistant. "
-            "For each question, use ONLY its own evidence. "
-            "Return JSON: {\"answers\":[...]}, preserving question order and ids exactly. "
-            "Allowed answer: yes/no/insufficient. "
-            "Allowed confidence: high/medium/low. "
-            "Use yes/no whenever evidence clearly supports or contradicts the field. "
-            "Use insufficient only when evidence is missing/ambiguous. "
-            "explanation must be concise (max 25 words). "
-            "correction must be empty unless answer is no."
-        )
-    else:
-        system_prompt = build_rag_batch_system_prompt(form_type)
-    request_prompt = build_rag_batch_request_prompt(questions_block)
-=======
     normalized_form = form_type.strip().lower().replace(" ", "-") if form_type else "default"
     system_prompt = build_rag_batch_system_prompt(form_type)
     request_prompt = build_rag_batch_request_prompt(
         build_rag_batch_toon_payload(questions, evidence_by_id)
     )
->>>>>>> pinecone
     client = _get_client()
     cached_content = ""
     if use_prompt_cache:

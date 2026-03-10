@@ -1474,59 +1474,6 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                     # Keep tracker in the main pipeline to avoid cross-thread token accounting races.
                     tracker=None,
                 )
-<<<<<<< HEAD
-                evidence_text = str(evidence_bundle.get("text_context", "") or "")
-                raw_sources = evidence_bundle.get("source_pages")
-                evidence_sources = raw_sources if isinstance(raw_sources, list) else []
-                return qid, evidence_text, evidence_sources
-
-            processed_questions = 0
-            if AUTOPILOT_EVIDENCE_WORKERS <= 1 or len(question_targets) <= 1:
-                for q, qid, page_ids in question_targets:
-                    try:
-                        out_qid, evidence_text, evidence_sources = _collect_single_question_evidence(q, qid, page_ids)
-                    except Exception as exc:
-                        log.warning("  Evidence collection failed for [%s]: %s", q.code, exc)
-                        out_qid, evidence_text, evidence_sources = qid, "", []
-                    evidence_map[out_qid] = evidence_text
-                    evidence_source_map[out_qid] = evidence_sources
-                    if evidence_text.strip():
-                        has_any_evidence = True
-                    processed_questions += 1
-                    qc_autopilot_jobs.update_evidence_progress(
-                        job_id,
-                        processed_questions=processed_questions,
-                        phase="gathering_evidence",
-                    )
-                    if processed_questions % 20 == 0:
-                        log.info("  Evidence collected: %d/%d questions", processed_questions, len(questions))
-            else:
-                workers = min(AUTOPILOT_EVIDENCE_WORKERS, len(question_targets))
-                with ThreadPoolExecutor(max_workers=workers) as pool:
-                    future_to_question: dict = {
-                        pool.submit(_collect_single_question_evidence, q, qid, page_ids): q
-                        for q, qid, page_ids in question_targets
-                    }
-                    for future in as_completed(future_to_question):
-                        q = future_to_question[future]
-                        try:
-                            out_qid, evidence_text, evidence_sources = future.result()
-                        except Exception as exc:
-                            log.warning("  Evidence collection failed for [%s]: %s", q.code, exc)
-                            out_qid, evidence_text, evidence_sources = _question_internal_key(q), "", []
-                        evidence_map[out_qid] = evidence_text
-                        evidence_source_map[out_qid] = evidence_sources
-                        if evidence_text.strip():
-                            has_any_evidence = True
-                        processed_questions += 1
-                        qc_autopilot_jobs.update_evidence_progress(
-                            job_id,
-                            processed_questions=processed_questions,
-                            phase="gathering_evidence",
-                        )
-                        if processed_questions % 20 == 0:
-                            log.info("  Evidence collected: %d/%d questions", processed_questions, len(questions))
-=======
                 structured = evidence_bundle.get("evidence", [])
                 text_fallback = str(evidence_bundle.get("text_context", "") or "")
                 evidence_map[qid] = structured if structured else text_fallback
@@ -1541,7 +1488,6 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                 )
                 if idx % 20 == 0:
                     log.info("  Evidence collected: %d/%d questions", idx, len(questions))
->>>>>>> pinecone
 
         log.info("  Evidence collection done: %d questions, has_evidence=%s",
                  len(evidence_map), has_any_evidence)
