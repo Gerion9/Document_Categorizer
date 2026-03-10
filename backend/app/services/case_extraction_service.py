@@ -6,14 +6,14 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable
 
 from ..database import SessionLocal
-from ..models import DocumentType, Page
+from ..models import DocumentType, ExtractionStatus, Page
 from .gemini_runtime_service import ZERO_TOKEN_SUMMARY, sum_token_summaries
 from .indexing_service import process_page_extraction
 from .json_export_service import save_extraction_json
 
 log = logging.getLogger("extraction")
 
-MAX_EXTRACTION_WORKERS = int(os.getenv("MAX_EXTRACTION_WORKERS", "6"))
+MAX_EXTRACTION_WORKERS = max(1, int(os.getenv("MAX_EXTRACTION_WORKERS", "3")))
 
 
 def _determine_has_tables(page: Page, db) -> bool:
@@ -24,9 +24,19 @@ def _determine_has_tables(page: Page, db) -> bool:
     return False
 
 
+def _page_has_usable_ocr(page: Page) -> bool:
+    return (
+        (page.extraction_status or "") == ExtractionStatus.DONE.value
+        and bool((page.ocr_text or "").strip())
+        and not str(page.ocr_text or "").strip().startswith("[Error]")
+    )
+
+
 def _extract_single_page(page_id: str, has_tables: bool) -> tuple[str, bool, str, dict | None]:
     try:
         result = process_page_extraction(page_id, has_tables)
+        if result is None:
+            return page_id, False, "OCR extraction did not produce a result", None
         return page_id, True, "", result
     except Exception as exc:
         return page_id, False, str(exc), None
@@ -75,7 +85,7 @@ def extract_case_pages(
         already_done = 0
         page_configs: list[dict[str, object]] = []
         for page in pages:
-            if only_missing and (page.ocr_text or "").strip():
+            if only_missing and _page_has_usable_ocr(page):
                 already_done += 1
                 continue
             page_configs.append(
@@ -102,6 +112,13 @@ def extract_case_pages(
             }
         )
 
+    log.info(
+        "Case extraction [%s]: queued=%d already_done=%d workers=%d",
+        case_id[:8],
+        total,
+        already_done,
+        MAX_EXTRACTION_WORKERS,
+    )
     if total:
         with ThreadPoolExecutor(max_workers=MAX_EXTRACTION_WORKERS) as pool:
             futures = [
