@@ -326,6 +326,20 @@ def invalidate_ocr_prompt_cache(cache_name: str) -> None:
             _OCR_PROMPT_CACHE_BY_KEY.pop(key, None)
 
 
+_TOKEN_SUMMARY_KEYS = ("input", "output", "cached", "thoughts", "embedding", "grand_total")
+
+ZERO_TOKEN_SUMMARY: dict[str, int] = {k: 0 for k in _TOKEN_SUMMARY_KEYS}
+
+
+def compact_token_summary(raw: dict) -> dict[str, int]:
+    """Extract a normalized {input, output, cached, thoughts, embedding, grand_total} dict."""
+    return {k: int(raw.get(k, 0) or 0) for k in _TOKEN_SUMMARY_KEYS}
+
+
+def sum_token_summaries(a: dict, b: dict) -> dict[str, int]:
+    return {k: int(a.get(k, 0) or 0) + int(b.get(k, 0) or 0) for k in _TOKEN_SUMMARY_KEYS}
+
+
 def get_or_create_ocr_prompt_cache(
     client: Any,
     *,

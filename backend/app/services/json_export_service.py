@@ -15,21 +15,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-log = logging.getLogger("json_export")
+from .gemini_runtime_service import ZERO_TOKEN_SUMMARY, sum_token_summaries
+from .paths import EXPORTS_DIR, STORAGE_DIR
 
-STORAGE_DIR = Path(__file__).resolve().parent.parent.parent / "storage"
-EXPORTS_DIR = STORAGE_DIR / "exports"
+log = logging.getLogger("json_export")
 
 _write_lock = threading.Lock()
 
-_ZERO_TOKENS: dict[str, int] = {
-    "input": 0,
-    "output": 0,
-    "cached": 0,
-    "thoughts": 0,
-    "embedding": 0,
-    "grand_total": 0,
-}
+_ZERO_TOKENS = ZERO_TOKEN_SUMMARY
 
 
 def _ensure_exports_dir() -> Path:
@@ -43,11 +36,7 @@ def _write_json(path: Path, data: Any) -> None:
     log.info("Wrote %s (%d bytes)", path.name, path.stat().st_size)
 
 
-def _sum_tokens(a: dict, b: dict) -> dict[str, int]:
-    return {
-        key: int(a.get(key, 0) or 0) + int(b.get(key, 0) or 0)
-        for key in _ZERO_TOKENS
-    }
+_sum_tokens = sum_token_summaries
 
 
 # ---------------------------------------------------------------------------

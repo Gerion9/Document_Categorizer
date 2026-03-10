@@ -4,7 +4,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 import os
 from datetime import datetime, timezone
 import re
-from typing import Optional
+from typing import Any, Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -43,6 +43,7 @@ from ..schemas import (
     QCAutopilotJobOut,
     ReorderRequest,
 )
+from ..db_utils import get_or_404, reorder_entities
 from ..services import qc_autopilot_jobs
 from ..services.gemini_runtime_service import GeminiTokenTracker, create_token_tracker, log_token_summary
 
@@ -638,12 +639,7 @@ def delete_qc_part(part_id: str, db: Session = Depends(get_db)):
 
 @router.put("/qc-parts/reorder", status_code=200)
 def reorder_qc_parts(body: ReorderRequest, db: Session = Depends(get_db)):
-    for item in body.items:
-        p = db.query(QCPart).filter(QCPart.id == item.id).first()
-        if p:
-            p.order = item.order
-    db.commit()
-    return {"ok": True}
+    return reorder_entities(db, QCPart, body.items)
 
 
 # ── QC Question CRUD ──────────────────────────────────────────────────────
@@ -705,12 +701,7 @@ def delete_qc_question(q_id: str, db: Session = Depends(get_db)):
 
 @router.put("/qc-questions/reorder", status_code=200)
 def reorder_qc_questions(body: ReorderRequest, db: Session = Depends(get_db)):
-    for item in body.items:
-        q = db.query(QCQuestion).filter(QCQuestion.id == item.id).first()
-        if q:
-            q.order = item.order
-    db.commit()
-    return {"ok": True}
+    return reorder_entities(db, QCQuestion, body.items)
 
 
 # ── QC Question Evidence ──────────────────────────────────────────────────
@@ -1015,7 +1006,7 @@ def _format_source_pages_for_notes(source_pages: list[dict] | None, *, max_items
 
 
 def _save_ai_result(q: QCQuestion, result: dict, *, source_pages: list[dict] | None = None) -> None:
-    q.ai_answer = result.get("answer", "na")
+    q.ai_answer = result.get("answer", "insufficient")
     explanation = str(result.get("explanation", "") or "").strip()
     source_hint = _format_source_pages_for_notes(source_pages)
     if source_hint:
@@ -1044,19 +1035,13 @@ def _verify_question_with_ai(
     tracker: GeminiTokenTracker | None = None,
 ) -> str:
     """
-    Verify a single question. Tries three modes in priority order:
-    1) Image + text context (vision model)
-    2) Text-only RAG (text model, Gemini OCR evidence)
-    3) Skip if neither images nor text available
+    Verify a single question using RAG evidence from Pinecone.
+    No images are sent to the model -- only indexed OCR text.
     """
     import logging
     log = logging.getLogger("qc_autopilot")
 
-    from ..services.ai_verify_service import (
-        verify_question,
-        verify_question_multi_page,
-        verify_question_rag,
-    )
+    from ..services.ai_verify_service import verify_question_rag
     from ..services.checklist_index_service import upsert_qc_question_answer
     from ..services.indexing_service import is_indexing_available
     from ..services.retrieval_service import collect_evidence_bundle_for_question
@@ -1085,54 +1070,18 @@ def _verify_question_with_ai(
         raw_sources = evidence_bundle.get("source_pages")
         if isinstance(raw_sources, list):
             source_pages = raw_sources
-        log.debug("  [%s] text_context: %d chars", q.code, len(text_context))
+        log.debug("  [%s] RAG evidence: %d chars", q.code, len(text_context))
 
-    image_paths = _collect_question_image_paths(q, db, case_id=case_id)
-
-    if image_paths and text_context:
-        log.debug("  [%s] mode=image+text (%d images)", q.code, len(image_paths))
-        if len(image_paths) == 1:
-            result = verify_question(
-                image_paths[0], q.description, q.where_to_verify or "",
-                text_context=text_context,
-                form_type=form_type,
-                tracker=tracker,
-                step_label=f"verify-image-{q.id[:8]}",
-            )
-        else:
-            result = verify_question_multi_page(
-                image_paths, q.description, q.where_to_verify or "",
-                text_context=text_context,
-                form_type=form_type,
-                tracker=tracker,
-                step_label=f"verify-image-multi-{q.id[:8]}",
-            )
-    elif text_context:
-        log.debug("  [%s] mode=text-only RAG", q.code)
-        result = verify_question_rag(
-            q.description, q.where_to_verify or "", text_context,
-            form_type=form_type,
-            tracker=tracker,
-            step_label=f"verify-rag-{q.id[:8]}",
-        )
-    elif image_paths:
-        log.debug("  [%s] mode=image-only (%d images)", q.code, len(image_paths))
-        if len(image_paths) == 1:
-            result = verify_question(
-                image_paths[0], q.description, q.where_to_verify or "",
-                form_type=form_type,
-                tracker=tracker,
-                step_label=f"verify-image-{q.id[:8]}",
-            )
-        else:
-            result = verify_question_multi_page(
-                image_paths, q.description, q.where_to_verify or "",
-                form_type=form_type,
-                tracker=tracker,
-                step_label=f"verify-image-multi-{q.id[:8]}",
-            )
-    else:
+    if not text_context:
+        log.debug("  [%s] no RAG evidence available, skipping", q.code)
         return "skipped"
+
+    result = verify_question_rag(
+        q.description, q.where_to_verify or "", text_context,
+        form_type=form_type,
+        tracker=tracker,
+        step_label=f"verify-rag-{q.id[:8]}",
+    )
 
     _save_ai_result(q, result, source_pages=source_pages)
 
@@ -1213,7 +1162,7 @@ def _group_questions_for_autopilot_batches(
 
 def _run_autopilot_batch_rag(
     questions: list[QCQuestion],
-    evidence_map: dict[str, str],
+    evidence_map: dict[str, Any],
     evidence_source_map: dict[str, list[dict]],
     db: Session,
     checklist: QCChecklist,
@@ -1242,7 +1191,7 @@ def _run_autopilot_batch_rag(
         for q in questions
     ]
 
-    batch_evidence: dict[str, str] = {}
+    batch_evidence: dict[str, Any] = {}
     for q in questions:
         qid = _question_internal_key(q)
         batch_evidence[qid] = evidence_map.get(qid, "")
@@ -1471,7 +1420,7 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
         from ..services.rag_config import get_rag_settings
         from ..services.retrieval_service import collect_evidence_bundle_for_question
 
-        evidence_map: dict[str, str] = {}
+        evidence_map: dict[str, Any] = {}
         evidence_source_map: dict[str, list[dict]] = {}
         question_query_vectors: dict[str, list[float]] = {}
         has_any_evidence = False
@@ -1525,6 +1474,7 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                     # Keep tracker in the main pipeline to avoid cross-thread token accounting races.
                     tracker=None,
                 )
+<<<<<<< HEAD
                 evidence_text = str(evidence_bundle.get("text_context", "") or "")
                 raw_sources = evidence_bundle.get("source_pages")
                 evidence_sources = raw_sources if isinstance(raw_sources, list) else []
@@ -1576,6 +1526,22 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                         )
                         if processed_questions % 20 == 0:
                             log.info("  Evidence collected: %d/%d questions", processed_questions, len(questions))
+=======
+                structured = evidence_bundle.get("evidence", [])
+                text_fallback = str(evidence_bundle.get("text_context", "") or "")
+                evidence_map[qid] = structured if structured else text_fallback
+                raw_sources = evidence_bundle.get("source_pages")
+                evidence_source_map[qid] = raw_sources if isinstance(raw_sources, list) else []
+                if structured or text_fallback.strip():
+                    has_any_evidence = True
+                qc_autopilot_jobs.update_evidence_progress(
+                    job_id,
+                    processed_questions=idx,
+                    phase="gathering_evidence",
+                )
+                if idx % 20 == 0:
+                    log.info("  Evidence collected: %d/%d questions", idx, len(questions))
+>>>>>>> pinecone
 
         log.info("  Evidence collection done: %d questions, has_evidence=%s",
                  len(evidence_map), has_any_evidence)
@@ -1767,7 +1733,7 @@ def get_checklist_ai_autopilot_job(job_id: str):
 
 @router.post("/qc-questions/{q_id}/ai-verify", response_model=QCQuestionOut)
 def ai_verify_question(q_id: str, db: Session = Depends(get_db)):
-    """Use Gemini Vision to automatically verify a QC question against its evidence pages."""
+    """Use RAG evidence from Pinecone to automatically verify a QC question."""
     from ..services.extraction_service import is_configured as gemini_ok
     if not gemini_ok():
         raise HTTPException(503, "GEMINI_API_KEY not configured")

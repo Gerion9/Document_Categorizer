@@ -53,31 +53,56 @@ def _dedup_matches(matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return list(seen.values())
 
 
-def format_match_context(matches: list[dict[str, Any]], *, max_chars: int | None = None) -> str:
+def format_match_as_evidence(matches: list[dict[str, Any]], *, max_chars: int | None = None) -> list[dict[str, Any]]:
+    """Return ranked evidence as structured objects preserving metadata."""
     if max_chars is None:
         max_chars = get_rag_settings().evidence_context_max_chars
     ranked = sorted(matches, key=_evidence_rank_score, reverse=True)
-    blocks: list[str] = []
+    evidence: list[dict[str, Any]] = []
     remaining = max_chars
 
-    for idx, match in enumerate(ranked, start=1):
+    for match in ranked:
         metadata = match.get("metadata", {}) or {}
-        label = metadata.get("section_path_code") or metadata.get("question_code") or metadata.get("page_id") or "match"
         text = metadata.get("text") or metadata.get("explanation") or metadata.get("question") or ""
         snippet = str(text).strip()
         if not snippet:
             continue
 
-        block = f"[{idx}] {label}\n{snippet}"
-        if len(block) > remaining:
-            block = block[: max(0, remaining)].rstrip()
-        if not block:
-            break
-        blocks.append(block)
-        remaining -= len(block) + 2
+        page_number = metadata.get("page_number") or metadata.get("page_id")
+        try:
+            page_number = int(page_number) if page_number is not None else None
+        except (TypeError, ValueError):
+            page_number = None
+
+        item: dict[str, Any] = {
+            "score": round(float(match.get("score", 0)), 3),
+            "pageNumber": page_number,
+            "chunkOrder": int(metadata.get("chunk_order", 0) or 0),
+            "text": snippet,
+            "sourceType": str(metadata.get("source_type", "") or ""),
+        }
+
+        cost = len(snippet) + 80
+        if cost > remaining:
+            item["text"] = snippet[: max(0, remaining - 80)].rstrip()
+            if not item["text"]:
+                break
+        evidence.append(item)
+        remaining -= cost
         if remaining <= 0:
             break
 
+    return evidence
+
+
+def format_match_context(matches: list[dict[str, Any]], *, max_chars: int | None = None) -> str:
+    """Format ranked evidence as a flat text string (legacy helper)."""
+    evidence = format_match_as_evidence(matches, max_chars=max_chars)
+    blocks: list[str] = []
+    for item in evidence:
+        page = item.get("pageNumber")
+        page_label = f"p.{page}" if page else "unknown"
+        blocks.append(f"[{page_label}] {item['text']}")
     return "\n\n".join(blocks)
 
 
@@ -206,7 +231,7 @@ def _query_best_stage_matches(
     return None, []
 
 
-def _ocr_text_from_db(case_id: str, *, max_chars: int | None = None) -> str:
+def _ocr_text_from_db(case_id: str, *, max_chars: int | None = None) -> tuple[str, list[dict[str, Any]]]:
     """Fallback: gather Gemini OCR text directly from the DB when Pinecone is not available."""
     if max_chars is None:
         max_chars = get_rag_settings().db_fallback_max_chars
@@ -286,6 +311,7 @@ def collect_evidence_bundle_for_question(
             target_section_ids=target_section_ids,
         )
         if ranked_matches:
+            structured_evidence = format_match_as_evidence(ranked_matches, max_chars=max_context_chars)
             text_context = format_match_context(ranked_matches, max_chars=max_context_chars)
             log.debug(
                 "Using %s stage for evidence collection (%d matches)",
@@ -294,6 +320,7 @@ def collect_evidence_bundle_for_question(
             )
             return {
                 "text_context": text_context,
+                "evidence": structured_evidence,
                 "source_pages": _source_pages_from_matches(ranked_matches),
                 "stage": stage_name or "unknown",
                 "matches": ranked_matches,
@@ -302,6 +329,7 @@ def collect_evidence_bundle_for_question(
     db_text, db_source_pages = _ocr_text_from_db(case_id, max_chars=max_context_chars)
     return {
         "text_context": db_text,
+        "evidence": [],
         "source_pages": db_source_pages,
         "stage": "db_ocr_text" if db_text else "no_matches",
         "matches": [],
@@ -342,40 +370,21 @@ def retrieve_qc_text_context(
 ) -> dict[str, Any]:
     """
     Get text context for a QC question.
-    Priority: Pinecone semantic search -> DB ocr_text fallback.
+    Delegates to collect_evidence_bundle_for_question and maps the result.
     """
-    if is_pinecone_configured():
-        evidence_page_ids = [str(pid) for pid in (evidence_page_ids or []) if pid]
-        target_section_ids = [str(sid) for sid in (target_section_ids or []) if sid]
-        settings = get_rag_settings()
-        resolved_top_k = max(1, top_k or settings.retrieval_top_k)
-        stage_name, ranked_matches = _query_best_stage_matches(
-            question,
-            case_id=case_id,
-            top_k=resolved_top_k,
-            tracker=tracker,
-            step_prefix="qc-context",
-            evidence_page_ids=evidence_page_ids,
-            target_section_ids=target_section_ids,
-        )
-        if ranked_matches:
-            return {
-                "stage": stage_name or "unknown",
-                "matches": ranked_matches,
-                "text_context": format_match_context(ranked_matches),
-            }
-
-    # Fallback: read Gemini OCR text directly from DB
-    db_text, _ = _ocr_text_from_db(case_id)
-    if db_text:
-        log.debug("Using DB ocr_text fallback (%d chars)", len(db_text))
-        return {
-            "stage": "db_ocr_text",
-            "matches": [],
-            "text_context": db_text,
-        }
-
-    return {"stage": "no_matches", "matches": [], "text_context": ""}
+    bundle = collect_evidence_bundle_for_question(
+        question,
+        case_id=case_id,
+        evidence_page_ids=evidence_page_ids,
+        target_section_ids=target_section_ids,
+        top_k=top_k,
+        tracker=tracker,
+    )
+    return {
+        "stage": bundle.get("stage", "no_matches"),
+        "matches": bundle.get("matches", []),
+        "text_context": bundle.get("text_context", ""),
+    }
 
 
 def query_case_rag(

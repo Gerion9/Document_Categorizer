@@ -9,6 +9,7 @@ Configuration:
   Set the environment variable GEMINI_API_KEY (or add it to backend/.env).
 """
 
+import io
 import logging
 import os
 from pathlib import Path
@@ -61,7 +62,25 @@ def _get_client() -> genai.Client:
     return _CLIENT
 
 
-STORAGE_DIR = Path(__file__).resolve().parent.parent.parent / "storage"
+from .paths import STORAGE_DIR
+
+OCR_IMAGE_MAX_LONG_EDGE = int(os.getenv("OCR_IMAGE_MAX_LONG_EDGE", "1600"))
+OCR_IMAGE_JPEG_QUALITY = int(os.getenv("OCR_IMAGE_JPEG_QUALITY", "80"))
+
+
+def _prepare_image_for_ocr(img: PIL.Image.Image) -> PIL.Image.Image:
+    """Downscale and convert to RGB so Gemini receives fewer image tokens."""
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+    max_edge = OCR_IMAGE_MAX_LONG_EDGE
+    w, h = img.size
+    if max(w, h) > max_edge:
+        ratio = max_edge / max(w, h)
+        img = img.resize((int(w * ratio), int(h * ratio)), PIL.Image.LANCZOS)
+    buf = io.BytesIO()
+    img.save(buf, format="JPEG", quality=OCR_IMAGE_JPEG_QUALITY, optimize=True)
+    buf.seek(0)
+    return PIL.Image.open(buf)
 
 
 # ── Core extraction function ─────────────────────────────────────────────
@@ -113,7 +132,8 @@ def extract_text(
     settings = get_rag_settings()
     model = settings.gemini_vision_model or settings.gemini_model
 
-    img = PIL.Image.open(image_path)
+    raw_img = PIL.Image.open(image_path)
+    img = _prepare_image_for_ocr(raw_img)
     page_label = Path(image_path).name
     prompt_profile = "tables" if has_tables else "ocr"
     system_prompt = get_ocr_system_prompt(has_tables)
