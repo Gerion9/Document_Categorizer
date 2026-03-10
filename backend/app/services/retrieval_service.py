@@ -51,31 +51,56 @@ def _dedup_matches(matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return list(seen.values())
 
 
-def format_match_context(matches: list[dict[str, Any]], *, max_chars: int | None = None) -> str:
+def format_match_as_evidence(matches: list[dict[str, Any]], *, max_chars: int | None = None) -> list[dict[str, Any]]:
+    """Return ranked evidence as structured objects preserving metadata."""
     if max_chars is None:
         max_chars = get_rag_settings().evidence_context_max_chars
     ranked = sorted(matches, key=_evidence_rank_score, reverse=True)
-    blocks: list[str] = []
+    evidence: list[dict[str, Any]] = []
     remaining = max_chars
 
-    for idx, match in enumerate(ranked, start=1):
+    for match in ranked:
         metadata = match.get("metadata", {}) or {}
-        label = metadata.get("section_path_code") or metadata.get("question_code") or metadata.get("page_id") or "match"
         text = metadata.get("text") or metadata.get("explanation") or metadata.get("question") or ""
         snippet = str(text).strip()
         if not snippet:
             continue
 
-        block = f"[{idx}] {label}\n{snippet}"
-        if len(block) > remaining:
-            block = block[: max(0, remaining)].rstrip()
-        if not block:
-            break
-        blocks.append(block)
-        remaining -= len(block) + 2
+        page_number = metadata.get("page_number") or metadata.get("page_id")
+        try:
+            page_number = int(page_number) if page_number is not None else None
+        except (TypeError, ValueError):
+            page_number = None
+
+        item: dict[str, Any] = {
+            "score": round(float(match.get("score", 0)), 3),
+            "pageNumber": page_number,
+            "chunkOrder": int(metadata.get("chunk_order", 0) or 0),
+            "text": snippet,
+            "sourceType": str(metadata.get("source_type", "") or ""),
+        }
+
+        cost = len(snippet) + 80
+        if cost > remaining:
+            item["text"] = snippet[: max(0, remaining - 80)].rstrip()
+            if not item["text"]:
+                break
+        evidence.append(item)
+        remaining -= cost
         if remaining <= 0:
             break
 
+    return evidence
+
+
+def format_match_context(matches: list[dict[str, Any]], *, max_chars: int | None = None) -> str:
+    """Format ranked evidence as a flat text string (legacy helper)."""
+    evidence = format_match_as_evidence(matches, max_chars=max_chars)
+    blocks: list[str] = []
+    for item in evidence:
+        page = item.get("pageNumber")
+        page_label = f"p.{page}" if page else "unknown"
+        blocks.append(f"[{page_label}] {item['text']}")
     return "\n\n".join(blocks)
 
 
@@ -246,6 +271,7 @@ def collect_evidence_bundle_for_question(
             target_section_ids=target_section_ids,
         )
         if ranked_matches:
+            structured_evidence = format_match_as_evidence(ranked_matches, max_chars=max_context_chars)
             text_context = format_match_context(ranked_matches, max_chars=max_context_chars)
             log.debug(
                 "Using %s stage for evidence collection (%d matches)",
@@ -254,6 +280,7 @@ def collect_evidence_bundle_for_question(
             )
             return {
                 "text_context": text_context,
+                "evidence": structured_evidence,
                 "source_pages": _source_pages_from_matches(ranked_matches),
                 "stage": stage_name or "unknown",
                 "matches": ranked_matches,
@@ -262,6 +289,7 @@ def collect_evidence_bundle_for_question(
     db_text, db_source_pages = _ocr_text_from_db(case_id)
     return {
         "text_context": db_text,
+        "evidence": [],
         "source_pages": db_source_pages,
         "stage": "db_ocr_text" if db_text else "no_matches",
         "matches": [],
