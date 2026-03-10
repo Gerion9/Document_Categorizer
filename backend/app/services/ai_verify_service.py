@@ -61,9 +61,14 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
-FAST_BATCH_PROMPT = _env_bool("QC_AUTOPILOT_FAST_BATCH_PROMPT", True)
-BATCH_MAX_OUTPUT_TOKENS = max(512, _env_int("QC_AUTOPILOT_BATCH_MAX_OUTPUT_TOKENS", 1800))
-BATCH_MODEL_OVERRIDE = str(os.getenv("QC_AUTOPILOT_BATCH_MODEL", "")).strip()
+def _batch_runtime_options(settings) -> tuple[str, bool, int, bool]:
+    # Note: get_rag_settings() loads .env before this function is called.
+    model_override = str(os.getenv("QC_AUTOPILOT_BATCH_MODEL", "")).strip()
+    batch_model = model_override or settings.gemini_model
+    fast_batch_prompt = _env_bool("QC_AUTOPILOT_FAST_BATCH_PROMPT", False)
+    batch_max_output_tokens = max(512, _env_int("QC_AUTOPILOT_BATCH_MAX_OUTPUT_TOKENS", 2200))
+    use_prompt_cache = _env_bool("QC_AUTOPILOT_BATCH_USE_PROMPT_CACHE", not fast_batch_prompt)
+    return batch_model, fast_batch_prompt, batch_max_output_tokens, use_prompt_cache
 
 
 # ---------------------------------------------------------------------------
@@ -260,6 +265,7 @@ def verify_question_batch_rag(
     Returns a list of dicts with keys: id, answer, confidence, explanation, correction.
     """
     settings = get_rag_settings()
+    batch_model, fast_batch_prompt, batch_max_output_tokens, use_prompt_cache = _batch_runtime_options(settings)
 
     lines: list[str] = []
     for q in questions:
@@ -280,28 +286,31 @@ def verify_question_batch_rag(
     questions_block = "\n".join(lines)
 
     normalized_form = form_type.strip().lower().replace(" ", "-") if form_type else "default"
-    if FAST_BATCH_PROMPT:
+    if fast_batch_prompt:
         system_prompt = (
             "You are an immigration QC assistant. "
             "For each question, use ONLY its own evidence. "
             "Return JSON: {\"answers\":[...]}, preserving question order and ids exactly. "
             "Allowed answer: yes/no/insufficient. "
             "Allowed confidence: high/medium/low. "
-            "explanation must be concise (max 20 words). "
+            "Use yes/no whenever evidence clearly supports or contradicts the field. "
+            "Use insufficient only when evidence is missing/ambiguous. "
+            "explanation must be concise (max 25 words). "
             "correction must be empty unless answer is no."
         )
     else:
         system_prompt = build_rag_batch_system_prompt(form_type)
     request_prompt = build_rag_batch_request_prompt(questions_block)
     client = _get_client()
-    batch_model = BATCH_MODEL_OVERRIDE or settings.gemini_model
-    cached_content = get_or_create_ocr_prompt_cache(
-        client,
-        model=batch_model,
-        prompt_profile=f"verify-batch-rag-{normalized_form}-fast{1 if FAST_BATCH_PROMPT else 0}-v2",
-        system_prompt=system_prompt,
-        placeholder_text=VERIFY_CACHE_PLACEHOLDER,
-    )
+    cached_content = ""
+    if use_prompt_cache:
+        cached_content = get_or_create_ocr_prompt_cache(
+            client,
+            model=batch_model,
+            prompt_profile=f"verify-batch-rag-{normalized_form}-fast{1 if fast_batch_prompt else 0}-v3",
+            system_prompt=system_prompt,
+            placeholder_text=VERIFY_CACHE_PLACEHOLDER,
+        )
     contents = [request_prompt] if cached_content else [f"{system_prompt}\n\n{request_prompt}"]
 
     try:
@@ -313,7 +322,7 @@ def verify_question_batch_rag(
             step_label=step_label,
             rag_mode=True,
             cached_content=cached_content,
-            max_output_tokens=BATCH_MAX_OUTPUT_TOKENS,
+            max_output_tokens=batch_max_output_tokens,
         )
     except Exception as exc:
         if cached_content and is_cached_content_error(exc):
@@ -330,7 +339,7 @@ def verify_question_batch_rag(
                 tracker=tracker,
                 step_label=step_label,
                 rag_mode=True,
-                max_output_tokens=BATCH_MAX_OUTPUT_TOKENS,
+                max_output_tokens=batch_max_output_tokens,
             )
         else:
             raise
