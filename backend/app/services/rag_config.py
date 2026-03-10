@@ -67,6 +67,17 @@ class RagSettings:
     pinecone_api_key: str
     pinecone_index_ocr: str
     pinecone_namespace_prefix: str
+    qc_batch_use_prompt_cache: bool
+    qc_batch_model: str
+    qc_batch_max_output_tokens: int
+    qc_batch_fast_prompt: bool
+    autopilot_evidence_top_k: int
+    autopilot_evidence_max_chars: int
+    autopilot_evidence_workers: int
+    autopilot_batch_size: int
+    retrieval_prefer_scoped_document: bool
+    retrieval_document_fallback_enabled: bool
+    autopilot_llm_batch_concurrency: int
 
     @property
     def pinecone_configured(self) -> bool:
@@ -113,4 +124,15 @@ def get_rag_settings() -> RagSettings:
         pinecone_api_key=_env_str("PINECONE_API_KEY"),
         pinecone_index_ocr=_env_str("PINECONE_INDEX_OCR", "document-categorizer-ocr"),
         pinecone_namespace_prefix=_env_str("PINECONE_NAMESPACE_PREFIX", "case"),
+        qc_batch_use_prompt_cache=_env_bool("QC_AUTOPILOT_BATCH_USE_PROMPT_CACHE", True),
+        qc_batch_model=_env_str("QC_AUTOPILOT_BATCH_MODEL", ""),
+        qc_batch_max_output_tokens=max(512, _env_int("QC_AUTOPILOT_BATCH_MAX_OUTPUT_TOKENS", 4096)),
+        qc_batch_fast_prompt=_env_bool("QC_AUTOPILOT_FAST_BATCH_PROMPT", False),
+        autopilot_evidence_top_k=max(1, _env_int("QC_AUTOPILOT_EVIDENCE_TOP_K", 6)),
+        autopilot_evidence_max_chars=max(1200, _env_int("QC_AUTOPILOT_EVIDENCE_MAX_CHARS", 12000)),
+        autopilot_evidence_workers=max(1, _env_int("QC_AUTOPILOT_EVIDENCE_WORKERS", 8)),
+        autopilot_batch_size=max(1, _env_int("QC_AUTOPILOT_BATCH_SIZE", 25)),
+        retrieval_prefer_scoped_document=_env_bool("RETRIEVAL_PREFER_SCOPED_DOCUMENT", True),
+        retrieval_document_fallback_enabled=_env_bool("RETRIEVAL_DOCUMENT_FALLBACK_ENABLED", True),
+        autopilot_llm_batch_concurrency=max(1, _env_int("QC_AUTOPILOT_LLM_BATCH_CONCURRENCY", 3)),
     )

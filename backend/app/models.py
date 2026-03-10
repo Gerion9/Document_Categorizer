@@ -153,6 +153,7 @@ class Page(Base):
 
     id = Column(String, primary_key=True, default=_uuid)
     case_id = Column(String, ForeignKey("cases.id"), nullable=False)
+    source_document_id = Column(String, nullable=True)
     original_filename = Column(String, nullable=False)
     original_page_number = Column(Integer, default=1)
     thumbnail_path = Column(String, default="")

@@ -1,5 +1,6 @@
-"""Router – Upload, classify, reorder pages + multi-section linking."""
+"""Router -- Upload, classify, reorder pages + multi-section linking."""
 
+import uuid
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
@@ -57,6 +58,7 @@ def _page_out(p: Page) -> PageOut:
     d = {
         "id": p.id,
         "case_id": p.case_id,
+        "source_document_id": p.source_document_id,
         "original_filename": p.original_filename,
         "original_page_number": p.original_page_number,
         "thumbnail_path": p.thumbnail_path,
@@ -161,9 +163,12 @@ async def upload_files(
         else:
             raise HTTPException(400, f"Unsupported file type: {ext}")
 
+        file_source_document_id = str(uuid.uuid4())
+
         for info in page_infos:
             page = Page(
                 case_id=case_id,
+                source_document_id=file_source_document_id,
                 original_filename=filename,
                 original_page_number=info["page_number"],
                 file_path=info["file_path"],

@@ -267,6 +267,11 @@ def verify_question_batch_rag(
     Returns a list of dicts with keys: id, answer, confidence, explanation, correction.
     """
     settings = get_rag_settings()
+    use_prompt_cache = settings.qc_batch_use_prompt_cache
+    batch_model = settings.qc_batch_model or settings.gemini_model
+    fast_batch_prompt = settings.qc_batch_fast_prompt
+    batch_max_output_tokens = settings.qc_batch_max_output_tokens
+
     normalized_form = form_type.strip().lower().replace(" ", "-") if form_type else "default"
     system_prompt = build_rag_batch_system_prompt(form_type)
     request_prompt = build_rag_batch_request_prompt(
