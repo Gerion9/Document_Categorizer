@@ -108,9 +108,15 @@ def _detect_by_llm(text: str) -> dict[str, str]:
         from .rag_config import get_rag_settings
         settings = get_rag_settings()
 
+        from google.genai import types
         response = client.models.generate_content(
             model=settings.gemini_model,
             contents=[prompt],
+            config=types.GenerateContentConfig(
+                temperature=settings.form_detection_temperature,
+                max_output_tokens=settings.form_detection_max_output_tokens,
+                response_mime_type="application/json",
+            )
         )
         import json
         raw_text = response.text or ""

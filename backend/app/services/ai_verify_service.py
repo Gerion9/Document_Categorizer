@@ -119,14 +119,14 @@ def _generate_structured_response(
     step_label: str = "verify",
     rag_mode: bool = False,
     cached_content: str = "",
-    max_output_tokens: int = 4096,
+    max_output_tokens: int = 65536,
 ) -> dict:
     client = _get_client()
     settings = get_rag_settings()
     model = model_override or settings.gemini_vision_model or settings.gemini_model
     config_kwargs: dict[str, object] = {
         "temperature": settings.verify_temperature,
-        "max_output_tokens": max(128, int(max_output_tokens or 4096)),
+        "max_output_tokens": max(128, int(max_output_tokens or 65536)),
         "response_mime_type": "application/json",
         "response_json_schema": schema.model_json_schema(),
     }

@@ -66,24 +66,18 @@ def _get_client() -> genai.Client:
 
 from .paths import STORAGE_DIR
 
-OCR_IMAGE_MAX_LONG_EDGE = int(os.getenv("OCR_IMAGE_MAX_LONG_EDGE", "1600"))
-OCR_IMAGE_JPEG_QUALITY = int(os.getenv("OCR_IMAGE_JPEG_QUALITY", "80"))
-OCR_REQUEST_TIMEOUT_MS = max(1000, int(os.getenv("OCR_REQUEST_TIMEOUT_MS", "45000")))
-OCR_REQUEST_MAX_RETRIES = max(1, int(os.getenv("OCR_REQUEST_MAX_RETRIES", "3")))
-OCR_RETRY_BASE_MS = max(100, int(os.getenv("OCR_RETRY_BASE_MS", "1500")))
-
-
 def _prepare_image_for_ocr(img: PIL.Image.Image) -> PIL.Image.Image:
     """Downscale and convert to RGB so Gemini receives fewer image tokens."""
+    settings = get_rag_settings()
     if img.mode != "RGB":
         img = img.convert("RGB")
-    max_edge = OCR_IMAGE_MAX_LONG_EDGE
+    max_edge = settings.ocr_image_max_long_edge
     w, h = img.size
     if max(w, h) > max_edge:
         ratio = max_edge / max(w, h)
         img = img.resize((int(w * ratio), int(h * ratio)), PIL.Image.LANCZOS)
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=OCR_IMAGE_JPEG_QUALITY, optimize=True)
+    img.save(buf, format="JPEG", quality=settings.ocr_image_jpeg_quality, optimize=True)
     buf.seek(0)
     result = PIL.Image.open(buf)
     result.load()
@@ -91,7 +85,8 @@ def _prepare_image_for_ocr(img: PIL.Image.Image) -> PIL.Image.Image:
 
 
 def _sleep_ocr_backoff(attempt: int) -> None:
-    delay_ms = OCR_RETRY_BASE_MS * (2 ** max(0, attempt - 1))
+    settings = get_rag_settings()
+    delay_ms = settings.ocr_retry_base_ms * (2 ** max(0, attempt - 1))
     delay_ms += random.randint(0, 400)
     time.sleep(delay_ms / 1000)
 
@@ -128,10 +123,11 @@ def _generate_page_ocr(
     image: PIL.Image.Image,
     cached_content: str = "",
 ):
+    settings = get_rag_settings()
     config_kwargs: dict[str, object] = {
-        "temperature": 0.1,
-        "max_output_tokens": 8192,
-        "http_options": types.HttpOptions(timeout=OCR_REQUEST_TIMEOUT_MS),
+        "temperature": settings.ocr_temperature,
+        "max_output_tokens": settings.ocr_max_output_tokens,
+        "http_options": types.HttpOptions(timeout=settings.ocr_request_timeout_ms),
     }
     if cached_content:
         config_kwargs["cached_content"] = cached_content
@@ -223,7 +219,7 @@ def extract_text(
         )
         page_prompt = build_ocr_page_prompt(page_label, using_cached_prompt=bool(cached_content))
 
-        for attempt in range(1, OCR_REQUEST_MAX_RETRIES + 1):
+        for attempt in range(1, settings.ocr_request_max_retries + 1):
             try:
                 response, cached_content = _generate_page_ocr_with_cache_fallback(
                     client,
@@ -242,12 +238,12 @@ def extract_text(
                 )
                 return (response.text or "").strip()
             except Exception as exc:
-                if attempt >= OCR_REQUEST_MAX_RETRIES or not _should_retry_ocr_error(exc):
+                if attempt >= settings.ocr_request_max_retries or not _should_retry_ocr_error(exc):
                     raise
                 log.warning(
                     "[GEMINI] OCR attempt %d/%d failed for %s. Retrying: %s",
                     attempt,
-                    OCR_REQUEST_MAX_RETRIES,
+                    settings.ocr_request_max_retries,
                     page_label,
                     str(exc),
                 )

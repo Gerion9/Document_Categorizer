@@ -15,15 +15,15 @@ import fitz  # PyMuPDF
 from PIL import Image
 
 from .paths import PAGES_DIR, STORAGE_DIR, THUMBNAILS_DIR, UPLOADS_DIR
+from .rag_config import get_rag_settings
 
 THUMBNAIL_SIZE = (280, 360)
-PAGE_DPI = int(os.getenv("PAGE_DPI", "150"))
-PAGE_IMAGE_QUALITY = int(os.getenv("PAGE_IMAGE_QUALITY", "85"))
-PAGE_IMAGE_FORMAT = os.getenv("PAGE_IMAGE_FORMAT", "JPEG").upper()
 
 
-def _render_page_image(page: fitz.Page, dpi: int = PAGE_DPI) -> Image.Image:
+def _render_page_image(page: fitz.Page, dpi: int | None = None) -> Image.Image:
     """Render a PyMuPDF page to a PIL Image."""
+    if dpi is None:
+        dpi = get_rag_settings().page_dpi
     zoom = dpi / 72
     mat = fitz.Matrix(zoom, zoom)
     pix = page.get_pixmap(matrix=mat, alpha=False)
@@ -31,12 +31,14 @@ def _render_page_image(page: fitz.Page, dpi: int = PAGE_DPI) -> Image.Image:
 
 
 def _page_ext() -> str:
-    return ".jpg" if PAGE_IMAGE_FORMAT == "JPEG" else ".png"
+    settings = get_rag_settings()
+    return ".jpg" if settings.page_image_format == "JPEG" else ".png"
 
 
 def _save_page_image(img: Image.Image, path: Path) -> None:
-    if PAGE_IMAGE_FORMAT == "JPEG":
-        img.save(str(path), "JPEG", quality=PAGE_IMAGE_QUALITY, optimize=True)
+    settings = get_rag_settings()
+    if settings.page_image_format == "JPEG":
+        img.save(str(path), "JPEG", quality=settings.page_image_quality, optimize=True)
     else:
         img.save(str(path), "PNG")
 
