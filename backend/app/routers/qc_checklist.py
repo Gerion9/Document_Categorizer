@@ -980,7 +980,6 @@ def _format_source_pages_for_notes(source_pages: list[dict] | None, *, max_items
             {
                 "page_id": page_id,
                 "page_number": page_number,
-                "original_filename": str(item.get("original_filename", "") or ""),
             }
         )
 
