@@ -4,6 +4,34 @@ Bitacora de cambios realizados en frontend durante esta iteracion.
 
 ## 2026-03-11
 
+### Restriccion por rol en dropdown (prueba QA temporal)
+
+- Se aplico regla para mostrar `Agregar usuario` solo cuando el rol actual es `Admin`.
+- Para validar visualmente el bloqueo, se dejo un override temporal de QA en el frontend:
+  - `TEMP_ROLE_OVERRIDE = "supervisor"` para simular usuario no admin.
+  - Con ese override, el item `Agregar usuario` desaparece del dropdown.
+- Prueba completada y validada.
+- El override temporal ya se retiro y el sistema volvio a usar el rol real del backend (`GET /api/auth/me`) como fuente de verdad.
+
+#### Asi es como seria la codificacion para determinar que modulos ve el usuario dependiendo de su rol
+
+```ts
+const isAdmin = userRole.toLowerCase() === "admin";
+
+{isAdmin && (
+  <button type="button" onClick={handleAddUser}>
+    Agregar usuario
+  </button>
+)}
+```
+
+### Archivos modificados en esta parte
+
+- `frontend/src/components/Layout.tsx`
+- `frontend/FRONTEND_CHANGES_LOG.md`
+
+---
+
 ### Regla de seguridad en Team members
 
 - Se agrego restriccion para evitar que un `admin` se elimine a si mismo cuando es el unico admin disponible en la lista.

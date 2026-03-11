@@ -58,6 +58,7 @@ export default function Layout() {
     setMenuOpen(false);
     navigate("/team-members");
   };
+  const isAdmin = userRole.toLowerCase() === "admin";
 
   return (
     <div className="min-h-screen flex flex-col relative overflow-x-hidden">
@@ -102,14 +103,16 @@ export default function Layout() {
                   <p className="text-sm font-semibold text-gray-900 break-words whitespace-normal">{userName}</p>
                   <p className="text-xs text-gray-500 break-words whitespace-normal">{userRole}</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={handleAddUser}
-                  className="w-full px-4 py-2.5 text-sm text-left text-gray-700 hover:bg-gray-100 inline-flex items-center gap-2"
-                >
-                  <UserPlus className="w-4 h-4" />
-                  Agregar usuario
-                </button>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={handleAddUser}
+                    className="w-full px-4 py-2.5 text-sm text-left text-gray-700 hover:bg-gray-100 inline-flex items-center gap-2"
+                  >
+                    <UserPlus className="w-4 h-4" />
+                    Agregar usuario
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handleLogout}
