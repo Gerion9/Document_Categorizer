@@ -118,16 +118,15 @@ STORAGE_DIR.mkdir(parents=True, exist_ok=True)
 app.mount("/storage", StaticFiles(directory=str(STORAGE_DIR)), name="storage")
 
 # Register routers
-app.include_router(cases.router, prefix="/api")
-app.include_router(documents.router, prefix="/api")
-app.include_router(pages.router, prefix="/api")
-app.include_router(checklist.router, prefix="/api")
-app.include_router(export.router, prefix="/api")
-app.include_router(extraction.router, prefix="/api")
-app.include_router(templates.router, prefix="/api")
-app.include_router(qc_checklist.router, prefix="/api")
-app.include_router(auth.router, prefix="/api")
-
+app.include_router(cases.router, prefix="/api", dependencies=[Depends(get_current_user)])
+app.include_router(documents.router, prefix="/api", dependencies=[Depends(get_current_user)])
+app.include_router(pages.router, prefix="/api", dependencies=[Depends(get_current_user)])
+app.include_router(checklist.router, prefix="/api", dependencies=[Depends(get_current_user)])
+app.include_router(export.router, prefix="/api", dependencies=[Depends(get_current_user)])
+app.include_router(extraction.router, prefix="/api", dependencies=[Depends(get_current_user)])
+app.include_router(templates.router, prefix="/api", dependencies=[Depends(get_current_user)])
+app.include_router(qc_checklist.router, prefix="/api", dependencies=[Depends(get_current_user)])
+app.include_router(auth.router, prefix="/api")  # SIN protección (es el login)
 
 @app.get("/api/health")
 def health():
