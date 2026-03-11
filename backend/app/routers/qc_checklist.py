@@ -1125,6 +1125,15 @@ AUTOPILOT_SKIP_PREVERIFIED = _bool_env("QC_AUTOPILOT_SKIP_PREVERIFIED", True)
 AUTOPILOT_FORCE_BATCH_ON_NO_EVIDENCE = _bool_env("QC_AUTOPILOT_FORCE_BATCH_ON_NO_EVIDENCE", True)
 AUTOPILOT_INDEX_ANSWERS = _bool_env("QC_AUTOPILOT_INDEX_ANSWERS", False)
 
+# #region agent log
+import json as _dbg_json, time as _dbg_time
+def _dbg_log_config():
+    from ..services.rag_config import get_rag_settings
+    s = get_rag_settings()
+    open("debug-1c0d70.log","a").write(_dbg_json.dumps({"sessionId":"1c0d70","hypothesisId":"H-A,H-B","runId":"run1","location":"qc_checklist.py:module_level","message":"module-level vs rag_config values","data":{"module_BATCH_SIZE":BATCH_SIZE,"rag_autopilot_batch_size":s.autopilot_batch_size,"module_EVIDENCE_TOP_K":AUTOPILOT_EVIDENCE_TOP_K,"rag_evidence_top_k":s.autopilot_evidence_top_k,"module_EVIDENCE_MAX_CHARS":AUTOPILOT_EVIDENCE_MAX_CHARS,"rag_evidence_max_chars":s.autopilot_evidence_max_chars,"module_EVIDENCE_WORKERS":AUTOPILOT_EVIDENCE_WORKERS,"rag_evidence_workers":s.autopilot_evidence_workers,"module_SKIP_PREVERIFIED":AUTOPILOT_SKIP_PREVERIFIED,"module_FORCE_BATCH":AUTOPILOT_FORCE_BATCH_ON_NO_EVIDENCE,"module_INDEX_ANSWERS":AUTOPILOT_INDEX_ANSWERS,"rag_llm_concurrency":s.autopilot_llm_batch_concurrency,"rag_verify_temp":s.verify_temperature,"rag_max_extraction_workers":s.max_extraction_workers,"rag_extraction_batch_size":s.extraction_batch_size},"timestamp":int(_dbg_time.time()*1000)})+"\n")
+_dbg_log_config()
+# #endregion
+
 
 def _is_question_preverified(q: QCQuestion) -> bool:
     if not AUTOPILOT_SKIP_PREVERIFIED:
@@ -1410,6 +1419,10 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                         phase=phase,
                     )
 
+            # #region agent log
+            open("debug-1c0d70.log","a").write(_dbg_json.dumps({"sessionId":"1c0d70","hypothesisId":"H-C,H-D","runId":"run1","location":"qc_checklist.py:autopilot_start","message":"autopilot config at runtime","data":{"case_id":case_id[:8] if case_id else "","total_questions":len(all_questions),"pending_questions":len(questions),"BATCH_SIZE":BATCH_SIZE,"EVIDENCE_TOP_K":AUTOPILOT_EVIDENCE_TOP_K,"EVIDENCE_MAX_CHARS":AUTOPILOT_EVIDENCE_MAX_CHARS,"EVIDENCE_WORKERS":AUTOPILOT_EVIDENCE_WORKERS},"timestamp":int(_dbg_time.time()*1000)})+"\n")
+            # #endregion
+
             qc_autopilot_jobs.mark_running(job_id, phase="extracting_ocr")
             extraction_summary = extract_case_pages(
                 case_id,
@@ -1569,6 +1582,10 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                 for future in as_completed(ev_futures):
                     future.result()
 
+        # #region agent log
+        _ev_with_data = sum(1 for v in evidence_map.values() if (isinstance(v,str) and v.strip()) or (isinstance(v,list) and v))
+        open("debug-1c0d70.log","a").write(_dbg_json.dumps({"sessionId":"1c0d70","hypothesisId":"H-C","runId":"run1","location":"qc_checklist.py:evidence_done","message":"evidence collection summary","data":{"total_questions":len(questions),"evidence_map_size":len(evidence_map),"questions_with_evidence":_ev_with_data,"has_any_evidence":has_any_evidence},"timestamp":int(_dbg_time.time()*1000)})+"\n")
+        # #endregion
         log.info("  Evidence collection done: %d questions, has_evidence=%s",
                  len(evidence_map), has_any_evidence)
 
@@ -1696,6 +1713,9 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                     phase="verifying_questions",
                 )
 
+        # #region agent log
+        open("debug-1c0d70.log","a").write(_dbg_json.dumps({"sessionId":"1c0d70","hypothesisId":"H-A,H-B,H-C","runId":"run1","location":"qc_checklist.py:autopilot_done","message":"autopilot final results","data":{"verified":verified,"skipped":skipped,"errors":errors,"total_questions":len(all_questions)},"timestamp":int(_dbg_time.time()*1000)})+"\n")
+        # #endregion
         log.info("Autopilot %s done: verified=%d, skipped=%d, errors=%d",
                  job_id[:8], verified, skipped, errors)
         log_token_summary(tracker, label=f"AI Autopilot {job_id[:8]}", logger=log)

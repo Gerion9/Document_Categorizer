@@ -17,6 +17,7 @@ from sqlalchemy import inspect, text
 
 from .database import Base, engine
 from .routers import cases, checklist, documents, export, pages, extraction, templates, qc_checklist
+from .services.indexing_service import recover_interrupted_processing_states
 
 
 def _configure_logger(name: str, level: int) -> None:
@@ -123,6 +124,7 @@ def _run_migrations():
 
 
 _run_migrations()
+recover_interrupted_processing_states()
 
 app = FastAPI(
     title="Document Categorizer & Extractor",

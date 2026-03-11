@@ -12,6 +12,8 @@ Configuration:
 import io
 import logging
 import os
+import random
+import time
 from pathlib import Path
 
 import PIL.Image
@@ -64,23 +66,50 @@ def _get_client() -> genai.Client:
 
 from .paths import STORAGE_DIR
 
-OCR_IMAGE_MAX_LONG_EDGE = int(os.getenv("OCR_IMAGE_MAX_LONG_EDGE", "1600"))
-OCR_IMAGE_JPEG_QUALITY = int(os.getenv("OCR_IMAGE_JPEG_QUALITY", "80"))
-
-
 def _prepare_image_for_ocr(img: PIL.Image.Image) -> PIL.Image.Image:
     """Downscale and convert to RGB so Gemini receives fewer image tokens."""
+    settings = get_rag_settings()
     if img.mode != "RGB":
         img = img.convert("RGB")
-    max_edge = OCR_IMAGE_MAX_LONG_EDGE
+    max_edge = settings.ocr_image_max_long_edge
     w, h = img.size
     if max(w, h) > max_edge:
         ratio = max_edge / max(w, h)
         img = img.resize((int(w * ratio), int(h * ratio)), PIL.Image.LANCZOS)
     buf = io.BytesIO()
-    img.save(buf, format="JPEG", quality=OCR_IMAGE_JPEG_QUALITY, optimize=True)
+    img.save(buf, format="JPEG", quality=settings.ocr_image_jpeg_quality, optimize=True)
     buf.seek(0)
-    return PIL.Image.open(buf)
+    result = PIL.Image.open(buf)
+    result.load()
+    return result
+
+
+def _sleep_ocr_backoff(attempt: int) -> None:
+    settings = get_rag_settings()
+    delay_ms = settings.ocr_retry_base_ms * (2 ** max(0, attempt - 1))
+    delay_ms += random.randint(0, 400)
+    time.sleep(delay_ms / 1000)
+
+
+def _should_retry_ocr_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    retryable_tokens = (
+        "timeout",
+        "timed out",
+        "deadline",
+        "rate limit",
+        "resource exhausted",
+        "temporar",
+        "network",
+        "connection reset",
+        "connection aborted",
+        "503",
+        "502",
+        "500",
+        "429",
+        "408",
+    )
+    return any(token in message for token in retryable_tokens)
 
 
 # ── Core extraction function ─────────────────────────────────────────────
@@ -94,9 +123,11 @@ def _generate_page_ocr(
     image: PIL.Image.Image,
     cached_content: str = "",
 ):
+    settings = get_rag_settings()
     config_kwargs: dict[str, object] = {
-        "temperature": 0.1,
-        "max_output_tokens": 8192,
+        "temperature": settings.ocr_temperature,
+        "max_output_tokens": settings.ocr_max_output_tokens,
+        "http_options": types.HttpOptions(timeout=settings.ocr_request_timeout_ms),
     }
     if cached_content:
         config_kwargs["cached_content"] = cached_content
@@ -109,6 +140,45 @@ def _generate_page_ocr(
         contents=contents,
         config=types.GenerateContentConfig(**config_kwargs),
     )
+
+
+def _generate_page_ocr_with_cache_fallback(
+    client: genai.Client,
+    *,
+    model: str,
+    system_prompt: str,
+    page_prompt: str,
+    image: PIL.Image.Image,
+    cached_content: str,
+    page_label: str,
+) -> tuple[object, str]:
+    try:
+        response = _generate_page_ocr(
+            client,
+            model=model,
+            system_prompt=system_prompt,
+            page_prompt=page_prompt,
+            image=image,
+            cached_content=cached_content,
+        )
+        return response, cached_content
+    except Exception as exc:
+        if cached_content and is_cached_content_error(exc):
+            invalidate_ocr_prompt_cache(cached_content)
+            log.warning(
+                "[GEMINI] OCR cached content invalid for %s. Retrying without cache: %s",
+                page_label,
+                str(exc),
+            )
+            response = _generate_page_ocr(
+                client,
+                model=model,
+                system_prompt=system_prompt,
+                page_prompt=build_ocr_page_prompt(page_label, using_cached_prompt=False),
+                image=image,
+            )
+            return response, ""
+        raise
 
 
 def extract_text(
@@ -132,55 +202,54 @@ def extract_text(
     settings = get_rag_settings()
     model = settings.gemini_vision_model or settings.gemini_model
 
-    raw_img = PIL.Image.open(image_path)
-    img = _prepare_image_for_ocr(raw_img)
     page_label = Path(image_path).name
     prompt_profile = "tables" if has_tables else "ocr"
     system_prompt = get_ocr_system_prompt(has_tables)
+    with PIL.Image.open(image_path) as raw_img:
+        img = _prepare_image_for_ocr(raw_img)
 
-    cached_content = get_or_create_ocr_prompt_cache(
-        client,
-        model=model,
-        prompt_profile=prompt_profile,
-        system_prompt=system_prompt,
-        placeholder_text=OCR_CACHE_PLACEHOLDER,
-    )
-    page_prompt = build_ocr_page_prompt(page_label, using_cached_prompt=bool(cached_content))
-
+    log.debug("Prepared OCR image page=%s size=%s mode=%s", page_label, img.size, img.mode)
     try:
-        response = _generate_page_ocr(
+        cached_content = get_or_create_ocr_prompt_cache(
             client,
             model=model,
+            prompt_profile=prompt_profile,
             system_prompt=system_prompt,
-            page_prompt=page_prompt,
-            image=img,
-            cached_content=cached_content,
+            placeholder_text=OCR_CACHE_PLACEHOLDER,
         )
-    except Exception as exc:
-        if cached_content and is_cached_content_error(exc):
-            invalidate_ocr_prompt_cache(cached_content)
-            log.warning(
-                "[GEMINI] OCR cached content invalid for %s. Retrying without cache: %s",
-                page_label,
-                str(exc),
-            )
-            response = _generate_page_ocr(
-                client,
-                model=model,
-                system_prompt=system_prompt,
-                page_prompt=build_ocr_page_prompt(page_label, using_cached_prompt=False),
-                image=img,
-            )
-        else:
-            raise
+        page_prompt = build_ocr_page_prompt(page_label, using_cached_prompt=bool(cached_content))
 
-    record_usage_from_response(
-        tracker,
-        step=step_label or f"ocr-{prompt_profile}",
-        response=response,
-        model=model,
-    )
-    return (response.text or "").strip()
+        for attempt in range(1, settings.ocr_request_max_retries + 1):
+            try:
+                response, cached_content = _generate_page_ocr_with_cache_fallback(
+                    client,
+                    model=model,
+                    system_prompt=system_prompt,
+                    page_prompt=page_prompt,
+                    image=img,
+                    cached_content=cached_content,
+                    page_label=page_label,
+                )
+                record_usage_from_response(
+                    tracker,
+                    step=step_label or f"ocr-{prompt_profile}",
+                    response=response,
+                    model=model,
+                )
+                return (response.text or "").strip()
+            except Exception as exc:
+                if attempt >= settings.ocr_request_max_retries or not _should_retry_ocr_error(exc):
+                    raise
+                log.warning(
+                    "[GEMINI] OCR attempt %d/%d failed for %s. Retrying: %s",
+                    attempt,
+                    settings.ocr_request_max_retries,
+                    page_label,
+                    str(exc),
+                )
+                _sleep_ocr_backoff(attempt)
+    finally:
+        img.close()
 
 
 def is_configured() -> bool:

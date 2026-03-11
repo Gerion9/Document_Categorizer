@@ -52,7 +52,7 @@ Reglas avanzadas para documentos legales con layout complejo:
 - No completar automaticamente fechas, telefonos o numeros incompletos.
 - No inferir genero, estatus migratorio, parentesco o intencion legal si no esta escrito.
 - No deducir respuestas por contexto historico de otras paginas; cada pagina se extrae de forma independiente.
-- Si una pregunta aparece sin respuesta visible, puedes omitirla en vez de inventar.
+- Si una pregunta aparece sin respuesta visible, reportala con 'Respuesta: (vacio)' en vez de omitirla o inventar.
 - Si una respuesta esta tachada y hay correccion visible, reporta la version vigente y menciona correccion breve.
 - Si hay enmiendas manuscritas junto a texto impreso, prioriza lo manuscrito cuando se vea intencional y legible.
 - Si hay notas marginales del preparador, extraelas como nota contextual breve.

@@ -46,16 +46,20 @@ COMMON_VERIFICATION_SOURCES = (
 )
 
 OCR_MARKERS_INSTRUCTIONS = (
+    "- La evidencia puede estar en formato 'Pregunta: ... / Respuesta: ...' "
+    "que representa campos extraidos del formulario por OCR.\n"
     "- La evidencia puede contener texto de formularios USCIS con checkboxes "
     "([X] marcado, [ ] no marcado), campos de formulario (etiqueta: valor), "
     "tablas y texto libre.\n"
     "- Busca datos especificos: A-Numbers (formato numerico), "
     "fechas (mm/dd/yyyy), nombres completos (Family/Given/Middle), "
     "direcciones, numeros de telefono, SSN, numeros de pasaporte.\n"
-    "- Si la evidencia contiene texto manuscrito marcado como "
-    "[[texto_probable]], consideralo con confianza media.\n"
-    "- Si la evidencia contiene [?] o [SIGNATURE] o [OFFICIAL STAMP], "
-    "esos son marcadores de contenido ilegible/no-texto."
+    "- Si la evidencia contiene [?], es un segmento ilegible. "
+    "[FIRMA] o [SIGNATURE] indican firma. "
+    "[SELLO OFICIAL] o [OFFICIAL STAMP] indican sello oficial. "
+    "Ninguno de estos marcadores es texto real del documento.\n"
+    "- Si la evidencia dice '(no evidence available)' o esta vacia, "
+    "responde INSUFFICIENT sin forzar YES o NO."
 )
 
 VERIFY_CACHE_PLACEHOLDER = (
@@ -94,9 +98,13 @@ def _build_base_instructions(form_type: str = "") -> str:
         "Instrucciones para decidir cada pregunta:",
         "- Analiza la evidencia proporcionada del OCR del documento.",
         OCR_MARKERS_INSTRUCTIONS,
-        "- YES: La evidencia muestra claramente que el campo fue verificado/completado correctamente.",
-        "- NO: La evidencia muestra que el campo tiene un error, esta incompleto, o contradice otra fuente.",
-        "- INSUFFICIENT: No hay suficiente evidencia para determinar si el campo esta correcto.",
+        "- YES: La evidencia muestra que el campo fue completado o verificado correctamente. "
+        "Incluye casos donde la informacion esta presente y es consistente, aunque no sea exhaustiva.",
+        "- NO: La evidencia muestra un error verificable, falta informacion obligatoria que deberia estar presente, "
+        "o los datos contradicen otra fuente. Datos parciales pero correctos NO son motivo de NO; usa YES.",
+        "- INSUFFICIENT: La evidencia no contiene absolutamente ninguna informacion relacionada con esta pregunta. "
+        "NO uses INSUFFICIENT si hay datos parciales o indicios relevantes; en ese caso decide YES o NO segun lo disponible.",
+        "- Prefiere siempre YES o NO cuando exista cualquier evidencia relevante, aunque sea parcial o indirecta.",
         "- Usa exactamente el id recibido en cada pregunta; no inventes ni modifiques ids.",
         "- En justification, indica brevemente que evidencia especifica usaste y de que pagina/seccion.",
         "- En correction, indica que valor deberia tener el campo si la decision es NO.",
@@ -170,9 +178,10 @@ INSTRUCCIONES:
 4. Devuelve un objeto JSON que siga estrictamente el esquema de respuesta.
 
 REGLAS:
-- "YES" = La informacion esta presente y verificada correctamente en este documento.
-- "NO" = La informacion falta, es incorrecta o es inconsistente.
-- "INSUFFICIENT" = No hay suficiente evidencia para determinar si es correcto.
+- "YES" = La informacion esta presente y es consistente con lo esperado. Incluye casos con datos parciales pero correctos.
+- "NO" = Hay un error verificable, falta informacion obligatoria que deberia estar presente, o los datos contradicen otra fuente. Datos parciales pero correctos NO son motivo de NO; usa YES.
+- "INSUFFICIENT" = No hay absolutamente ninguna informacion relacionada con esta pregunta en la imagen ni en el contexto OCR.
+- Prefiere YES o NO siempre que haya cualquier dato relevante, aunque sea parcial o indirecto.
 - Se especifico en la justificacion, referencia texto/datos exactos que ves en la imagen.
 - Si el documento no es la fuente correcta para esta pregunta, responde "INSUFFICIENT".
 - Cuando refieras paginas en justification, usa solo numeros de pagina (ej. "p.22, p.27"). Nunca incluyas nombres de archivo, PDF, rutas ni texto entre parentesis como "(documento.pdf)". Si la evidencia muestra "p.22 (documento.pdf)", cita solo "p.22".
@@ -180,60 +189,3 @@ REGLAS:
 Output JSON solamente con esta forma:
 {{"decision":"YES|NO|INSUFFICIENT","justification":"texto corto","correction":"texto corto o vacio"}}"""
 
-# ---------------------------------------------------------------------------
-# Legacy template-based prompts (kept for backward compatibility)
-# ---------------------------------------------------------------------------
-RAG_VERIFY_PROMPT = """Eres un asistente legal de control de calidad para revision de checklist de inmigracion.
-
-Se te proporciona texto extraido por OCR de formularios USCIS y documentos de soporte.
-
-{form_context}
-{common_sources}
-
-TAREA: Usando SOLO la evidencia proporcionada, responde la pregunta de verificacion.
-
-INPUT:
-{request_payload}
-
-INSTRUCCIONES:
-1. Analiza la evidencia para informacion relevante a la pregunta.
-{ocr_markers}
-2. Determina si la informacion esta presente, es correcta y esta completa.
-3. Devuelve un objeto JSON que siga estrictamente el esquema de respuesta.
-4. En justification, indica brevemente que evidencia especifica usaste y de que pagina/seccion.
-5. En correction, indica que valor deberia tener el campo si la decision es NO.
-
-REGLAS:
-- "YES" = La evidencia muestra que el campo/informacion fue verificado/completado correctamente.
-- "NO" = La evidencia muestra que el campo tiene un error, esta incompleto, o contradice otra fuente.
-- "INSUFFICIENT" = No hay suficiente evidencia para determinar si es correcto.
-- Se especifico: referencia texto exacto, estados de checkbox o valores de campo de la evidencia.
-- Si la evidencia no contiene informacion sobre esta pregunta, responde "INSUFFICIENT".
-- Cuando cites paginas, usa solo "p.N". Nunca incluyas nombres de archivo, PDF, rutas ni texto entre parentesis."""
-
-RAG_BATCH_PROMPT = """Eres un asistente legal de control de calidad para revision de checklist de inmigracion.
-
-Se te proporciona texto extraido por OCR de formularios USCIS y documentos de soporte.
-
-{form_context}
-{common_sources}
-
-TAREA: Responde TODAS las preguntas de verificacion usando SOLO la evidencia proporcionada para cada pregunta.
-
-INPUT:
-{questions_block}
-
-INSTRUCCIONES:
-1. Para cada pregunta, analiza SOLO su evidencia asociada para informacion relevante.
-{ocr_markers}
-2. Devuelve un objeto JSON con un array "answers", una entrada por pregunta, en el mismo orden.
-3. Usa exactamente el id recibido en cada pregunta; no inventes ni modifiques ids.
-4. En justification, indica brevemente que evidencia especifica usaste y de que pagina/seccion.
-5. En correction, indica que valor deberia tener el campo si la decision es NO.
-
-REGLAS:
-- "YES" = La evidencia confirma que el campo/informacion es correcto/completo.
-- "NO" = La evidencia muestra un error, omision, o inconsistencia.
-- "INSUFFICIENT" = No hay suficiente evidencia para determinar si es correcto.
-- Se especifico: referencia texto exacto de la evidencia en cada justification.
-- Cuando cites paginas, usa solo "p.N". Nunca incluyas nombres de archivo, PDF, rutas ni texto entre parentesis."""

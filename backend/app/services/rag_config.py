@@ -30,6 +30,16 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return float(str(raw).strip())
+    except ValueError:
+        return default
+
+
 def _env_bool(name: str, default: bool) -> bool:
     raw = os.getenv(name)
     if raw is None:
@@ -78,6 +88,31 @@ class RagSettings:
     retrieval_prefer_scoped_document: bool
     retrieval_document_fallback_enabled: bool
     autopilot_llm_batch_concurrency: int
+    verify_temperature: float
+    verify_max_retries: int
+    
+    # OCR and Extraction Settings
+    ocr_image_max_long_edge: int
+    ocr_image_jpeg_quality: int
+    ocr_request_timeout_ms: int
+    ocr_request_max_retries: int
+    ocr_retry_base_ms: int
+    ocr_temperature: float
+    ocr_max_output_tokens: int
+    
+    # Form Detection Settings
+    form_detection_temperature: float
+    form_detection_max_output_tokens: int
+    
+    # PDF Rendering Settings
+    page_dpi: int
+    page_image_quality: int
+    page_image_format: str
+    
+    # Parallelism and Workers
+    max_extraction_workers: int
+    extraction_batch_size: int
+    case_extraction_parallel_batches: int
 
     @property
     def pinecone_configured(self) -> bool:
@@ -126,7 +161,7 @@ def get_rag_settings() -> RagSettings:
         pinecone_namespace_prefix=_env_str("PINECONE_NAMESPACE_PREFIX", "case"),
         qc_batch_use_prompt_cache=_env_bool("QC_AUTOPILOT_BATCH_USE_PROMPT_CACHE", True),
         qc_batch_model=_env_str("QC_AUTOPILOT_BATCH_MODEL", ""),
-        qc_batch_max_output_tokens=max(512, _env_int("QC_AUTOPILOT_BATCH_MAX_OUTPUT_TOKENS", 4096)),
+        qc_batch_max_output_tokens=max(512, _env_int("QC_AUTOPILOT_BATCH_MAX_OUTPUT_TOKENS", 65536)),
         qc_batch_fast_prompt=_env_bool("QC_AUTOPILOT_FAST_BATCH_PROMPT", False),
         autopilot_evidence_top_k=max(1, _env_int("QC_AUTOPILOT_EVIDENCE_TOP_K", 6)),
         autopilot_evidence_max_chars=max(1200, _env_int("QC_AUTOPILOT_EVIDENCE_MAX_CHARS", 12000)),
@@ -134,5 +169,30 @@ def get_rag_settings() -> RagSettings:
         autopilot_batch_size=max(1, _env_int("QC_AUTOPILOT_BATCH_SIZE", 25)),
         retrieval_prefer_scoped_document=_env_bool("RETRIEVAL_PREFER_SCOPED_DOCUMENT", True),
         retrieval_document_fallback_enabled=_env_bool("RETRIEVAL_DOCUMENT_FALLBACK_ENABLED", True),
-        autopilot_llm_batch_concurrency=max(1, _env_int("QC_AUTOPILOT_LLM_BATCH_CONCURRENCY", 3)),
+        autopilot_llm_batch_concurrency=max(1, _env_int("QC_AUTOPILOT_LLM_BATCH_CONCURRENCY", 5)),
+        verify_temperature=max(0.0, min(1.0, _env_float("VERIFY_TEMPERATURE", 0.25))),
+        verify_max_retries=max(1, _env_int("VERIFY_MAX_RETRIES", 2)),
+        
+        # OCR and Extraction Settings
+        ocr_image_max_long_edge=max(800, _env_int("OCR_IMAGE_MAX_LONG_EDGE", 1600)),
+        ocr_image_jpeg_quality=max(10, min(100, _env_int("OCR_IMAGE_JPEG_QUALITY", 80))),
+        ocr_request_timeout_ms=max(1000, _env_int("OCR_REQUEST_TIMEOUT_MS", 45000)),
+        ocr_request_max_retries=max(1, _env_int("OCR_REQUEST_MAX_RETRIES", 3)),
+        ocr_retry_base_ms=max(100, _env_int("OCR_RETRY_BASE_MS", 1500)),
+        ocr_temperature=max(0.0, min(1.0, _env_float("OCR_TEMPERATURE", 0.1))),
+        ocr_max_output_tokens=max(1024, _env_int("OCR_MAX_OUTPUT_TOKENS", 16384)),
+        
+        # Form Detection Settings
+        form_detection_temperature=max(0.0, min(1.0, _env_float("FORM_DETECTION_TEMPERATURE", 0.1))),
+        form_detection_max_output_tokens=max(128, _env_int("FORM_DETECTION_MAX_OUTPUT_TOKENS", 1024)),
+        
+        # PDF Rendering Settings
+        page_dpi=max(72, _env_int("PAGE_DPI", 150)),
+        page_image_quality=max(10, min(100, _env_int("PAGE_IMAGE_QUALITY", 85))),
+        page_image_format=_env_str("PAGE_IMAGE_FORMAT", "JPEG").upper(),
+        
+        # Parallelism and Workers
+        max_extraction_workers=max(1, _env_int("MAX_EXTRACTION_WORKERS", 10)),
+        extraction_batch_size=max(1, _env_int("EXTRACTION_BATCH_SIZE", 10)),
+        case_extraction_parallel_batches=max(1, _env_int("CASE_EXTRACTION_PARALLEL_BATCHES", 3)),
     )

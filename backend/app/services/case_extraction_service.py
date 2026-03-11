@@ -7,16 +7,13 @@ from threading import Lock
 from typing import Callable
 
 from ..database import SessionLocal
-from ..models import DocumentType, Page
+from ..models import DocumentType, ExtractionStatus, Page
 from .gemini_runtime_service import ZERO_TOKEN_SUMMARY, sum_token_summaries
 from .indexing_service import process_page_extraction
 from .json_export_service import save_extraction_json
+from .rag_config import get_rag_settings
 
 log = logging.getLogger("extraction")
-
-MAX_EXTRACTION_WORKERS = int(os.getenv("MAX_EXTRACTION_WORKERS", "6"))
-EXTRACTION_BATCH_SIZE = int(os.getenv("EXTRACTION_BATCH_SIZE", "0"))
-PARALLEL_BATCHES = int(os.getenv("CASE_EXTRACTION_PARALLEL_BATCHES", "3"))
 
 
 def _determine_has_tables(page: Page, db) -> bool:
@@ -27,9 +24,19 @@ def _determine_has_tables(page: Page, db) -> bool:
     return False
 
 
+def _page_has_usable_ocr(page: Page) -> bool:
+    return (
+        (page.extraction_status or "") == ExtractionStatus.DONE.value
+        and bool((page.ocr_text or "").strip())
+        and not str(page.ocr_text or "").strip().startswith("[Error]")
+    )
+
+
 def _extract_single_page(page_id: str, has_tables: bool) -> tuple[str, bool, str, dict | None]:
     try:
         result = process_page_extraction(page_id, has_tables)
+        if result is None:
+            return page_id, False, "OCR extraction did not produce a result", None
         return page_id, True, "", result
     except Exception as exc:
         return page_id, False, str(exc), None
@@ -84,7 +91,7 @@ def extract_case_pages(
         already_done = 0
         page_configs: list[dict[str, object]] = []
         for page in pages:
-            if only_missing and (page.ocr_text or "").strip():
+            if only_missing and _page_has_usable_ocr(page):
                 already_done += 1
                 continue
             page_configs.append(
@@ -111,6 +118,14 @@ def extract_case_pages(
             }
         )
 
+    settings = get_rag_settings()
+    log.info(
+        "Case extraction [%s]: queued=%d already_done=%d workers=%d",
+        case_id[:8],
+        total,
+        already_done,
+        settings.max_extraction_workers,
+    )
     if total:
         counter_lock = Lock()
 
@@ -152,15 +167,15 @@ def extract_case_pages(
                 )
                 _record_page_result(page_id, success, err, result)
 
-        use_batch_mode = EXTRACTION_BATCH_SIZE > 0 and total > EXTRACTION_BATCH_SIZE
+        use_batch_mode = settings.extraction_batch_size > 0 and total > settings.extraction_batch_size
         if use_batch_mode:
-            batches = _chunked(page_configs, EXTRACTION_BATCH_SIZE)
-            batch_workers = min(PARALLEL_BATCHES, len(batches))
+            batches = _chunked(page_configs, settings.extraction_batch_size)
+            batch_workers = min(settings.case_extraction_parallel_batches, len(batches))
             log.info(
                 "Case extraction [%s]: batch mode enabled (%d batches, size=%d, parallel=%d)",
                 case_id[:8],
                 len(batches),
-                EXTRACTION_BATCH_SIZE,
+                settings.extraction_batch_size,
                 batch_workers,
             )
             with ThreadPoolExecutor(max_workers=batch_workers) as pool:
@@ -168,7 +183,7 @@ def extract_case_pages(
                 for future in as_completed(futures):
                     future.result()
         else:
-            with ThreadPoolExecutor(max_workers=MAX_EXTRACTION_WORKERS) as pool:
+            with ThreadPoolExecutor(max_workers=settings.max_extraction_workers) as pool:
                 futures = [
                     pool.submit(
                         _extract_single_page,
