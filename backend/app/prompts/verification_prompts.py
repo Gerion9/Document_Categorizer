@@ -64,7 +64,9 @@ VERIFY_CACHE_PLACEHOLDER = (
 
 PAGE_CITATION_RULE = (
     '- Cuando refieras paginas en justification, usa solo numeros de pagina '
-    '(ej. "p.22, p.27"). No incluyas el nombre del archivo fuente.'
+    '(ej. "p.22, p.27"). Nunca incluyas nombres de archivo, PDF, rutas ni '
+    'texto entre parentesis como "(documento.pdf)". Si la evidencia muestra '
+    '"p.22 (documento.pdf)", cita solo "p.22".'
 )
 
 
@@ -173,7 +175,7 @@ REGLAS:
 - "INSUFFICIENT" = No hay suficiente evidencia para determinar si es correcto.
 - Se especifico en la justificacion, referencia texto/datos exactos que ves en la imagen.
 - Si el documento no es la fuente correcta para esta pregunta, responde "INSUFFICIENT".
-- Cuando refieras paginas en justification, usa solo numeros de pagina (ej. "p.22, p.27"). No incluyas el nombre del archivo fuente.
+- Cuando refieras paginas en justification, usa solo numeros de pagina (ej. "p.22, p.27"). Nunca incluyas nombres de archivo, PDF, rutas ni texto entre parentesis como "(documento.pdf)". Si la evidencia muestra "p.22 (documento.pdf)", cita solo "p.22".
 
 Output JSON solamente con esta forma:
 {{"decision":"YES|NO|INSUFFICIENT","justification":"texto corto","correction":"texto corto o vacio"}}"""
@@ -206,7 +208,8 @@ REGLAS:
 - "NO" = La evidencia muestra que el campo tiene un error, esta incompleto, o contradice otra fuente.
 - "INSUFFICIENT" = No hay suficiente evidencia para determinar si es correcto.
 - Se especifico: referencia texto exacto, estados de checkbox o valores de campo de la evidencia.
-- Si la evidencia no contiene informacion sobre esta pregunta, responde "INSUFFICIENT"."""
+- Si la evidencia no contiene informacion sobre esta pregunta, responde "INSUFFICIENT".
+- Cuando cites paginas, usa solo "p.N". Nunca incluyas nombres de archivo, PDF, rutas ni texto entre parentesis."""
 
 RAG_BATCH_PROMPT = """Eres un asistente legal de control de calidad para revision de checklist de inmigracion.
 
@@ -232,4 +235,5 @@ REGLAS:
 - "YES" = La evidencia confirma que el campo/informacion es correcto/completo.
 - "NO" = La evidencia muestra un error, omision, o inconsistencia.
 - "INSUFFICIENT" = No hay suficiente evidencia para determinar si es correcto.
-- Se especifico: referencia texto exacto de la evidencia en cada justification."""
+- Se especifico: referencia texto exacto de la evidencia en cada justification.
+- Cuando cites paginas, usa solo "p.N". Nunca incluyas nombres de archivo, PDF, rutas ni texto entre parentesis."""
