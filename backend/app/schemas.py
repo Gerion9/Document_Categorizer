@@ -100,6 +100,7 @@ class SectionUpdate(BaseModel):
 class PageOut(BaseModel):
     id: str
     case_id: str
+    source_document_id: Optional[str] = None
     original_filename: str
     original_page_number: int
     thumbnail_path: str

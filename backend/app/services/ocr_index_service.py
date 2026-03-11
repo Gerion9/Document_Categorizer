@@ -172,6 +172,7 @@ def _build_chunk_records_for_page_text(
                         "chunk_order": idx,
                         "source_type": resolved_source_type,
                         "document_id": str(document_id or page.id),
+                        "source_document_id": str(getattr(page, "source_document_id", "") or ""),
                         "document_title": document_title[:500],
                         "section_label": extract_section_label(chunk),
                         "created_at": created_at,
@@ -478,6 +479,8 @@ def query_ocr_chunks(
     page_ids: list[str] | None = None,
     section_ids: list[str] | None = None,
     document_type_ids: list[str] | None = None,
+    source_types: list[str] | None = None,
+    source_document_ids: list[str] | None = None,
     top_k: int | None = None,
     query_vector: list[float] | None = None,
     tracker: GeminiTokenTracker | None = None,
@@ -496,6 +499,10 @@ def query_ocr_chunks(
         filter_payload["section_id"] = {"$in": [str(section_id) for section_id in section_ids]}
     if document_type_ids:
         filter_payload["document_type_id"] = {"$in": [str(doc_id) for doc_id in document_type_ids]}
+    if source_types:
+        filter_payload["source_type"] = {"$in": [str(st) for st in source_types]}
+    if source_document_ids:
+        filter_payload["source_document_id"] = {"$in": [str(sd) for sd in source_document_ids]}
 
     vector = query_vector or get_embedding(
         question,

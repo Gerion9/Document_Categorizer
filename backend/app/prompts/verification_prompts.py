@@ -1,43 +1,36 @@
 """
 Prompts for QC verification (ai_verify_service).
 
-Three verification modes:
+Shared instruction base aligned with v1 (checklist.prompts.js), used by all modes:
   1) Image + text  (VERIFY_PROMPT)
   2) Text-only RAG (build_rag_verify_system_prompt / build_rag_verify_request_prompt)
   3) Batch RAG     (build_rag_batch_system_prompt / build_rag_batch_request_prompt)
 """
 
 FORM_CONTEXT: dict[str, str] = {
-    "i-914a": (
-        "Estructura del formulario I-914A:\n"
-        "- Part 1: Relacion familiar (Spouse/Child/Parent/Sibling under 18)\n"
-        "- Part 2: Info del principal (nombre, DOB, A-Number, status del I-914)\n"
-        "- Part 3: Info del derivado (nombre, direccion, A-Number, SSN, sexo, "
-        "estado civil, DOB, pasaporte, status migratorio, historial de entradas)\n"
-        "- Part 4: Procesamiento (criminal, prostitucion, terrorismo, "
-        "presencia cerca de dano, proceedings migratorios)\n"
-        "- Part 5: Declaracion y firma del aplicante\n"
-        "- Part 6: Interprete\n"
-        "- Part 7: Preparador\n"
-        "- Part 8: Informacion adicional"
-    ),
-    "i-914": (
-        "Estructura del formulario I-914:\n"
-        "- Part 1: Proposito (seleccion A o B segun el caso T-1)\n"
-        "- Part 2: Info general (sexo, estado civil, DOB - items 8-10)\n"
-        "- Part 3: Elegibilidad de trata (3.1-3.11: victima de trata severa, "
-        "cooperacion con LEA, presencia fisica, hardship, reporte, edad, "
-        "entradas previas, EAD, familiares)\n"
-        "- Part 4: Procesamiento (4.1: criminal/LEA, 4.2: prostitucion/"
-        "contrabando/drogas, 4.3: seguridad/terrorismo/espionaje, "
-        "4.4: presencia cerca de dano/proceedings, 4.5: tortura/genocidio, "
-        "4.6: militar/paramilitar, 4.7: penalidades civiles/fraude, 4.8: salud)\n"
-        "- Part 5: Miembros familiares (5.1-5.13)\n"
-        "- Part 6: Declaracion y firma\n"
-        "- Part 7: Interprete\n"
-        "- Part 8: Preparador\n"
-        "- Part 9: Informacion adicional"
-    ),
+    "i-914a": "\n".join([
+        "Estructura del formulario I-914A:",
+        "- Part 1: Relacion familiar (Spouse/Child/Parent/Sibling under 18)",
+        "- Part 2: Info del principal (nombre, DOB, A-Number, status del I-914)",
+        "- Part 3: Info del derivado (nombre, direccion, A-Number, SSN, sexo, estado civil, DOB, pasaporte, status migratorio, historial de entradas)",
+        "- Part 4: Procesamiento (criminal, prostitucion, terrorismo, presencia cerca de dano, proceedings migratorios)",
+        "- Part 5: Declaracion y firma del aplicante",
+        "- Part 6: Interprete",
+        "- Part 7: Preparador",
+        "- Part 8: Informacion adicional",
+    ]),
+    "i-914": "\n".join([
+        "Estructura del formulario I-914:",
+        "- Part 1: Proposito (seleccion A o B segun el caso T-1)",
+        "- Part 2: Info general (sexo, estado civil, DOB - items 8-10)",
+        "- Part 3: Elegibilidad de trata (3.1-3.11: victima de trata severa, cooperacion con LEA, presencia fisica, hardship, reporte, edad, entradas previas, EAD, familiares)",
+        "- Part 4: Procesamiento (4.1: criminal/LEA, 4.2: prostitucion/contrabando/drogas, 4.3: seguridad/terrorismo/espionaje, 4.4: presencia cerca de dano/proceedings, 4.5: tortura/genocidio, 4.6: militar/paramilitar, 4.7: penalidades civiles/fraude, 4.8: salud)",
+        "- Part 5: Miembros familiares (5.1-5.13)",
+        "- Part 6: Declaracion y firma",
+        "- Part 7: Interprete",
+        "- Part 8: Preparador",
+        "- Part 9: Informacion adicional",
+    ]),
 }
 
 FORM_LABELS: dict[str, str] = {
@@ -69,6 +62,11 @@ VERIFY_CACHE_PLACEHOLDER = (
     "Contexto compartido de verificacion QC para ejecucion por lotes."
 )
 
+PAGE_CITATION_RULE = (
+    '- Cuando refieras paginas en justification, usa solo numeros de pagina '
+    '(ej. "p.22, p.27"). No incluyas el nombre del archivo fuente.'
+)
+
 
 def get_form_context(form_type: str = "") -> str:
     key = form_type.strip().lower().replace(" ", "-") if form_type else ""
@@ -80,31 +78,43 @@ def _get_form_label(form_type: str = "") -> str:
     return FORM_LABELS.get(key, FORM_LABELS["i-914"])
 
 
+def _build_base_instructions(form_type: str = "") -> str:
+    """Shared instruction block matching v1's buildChecklistInstructions()."""
+    form_label = _get_form_label(form_type)
+    form_context = get_form_context(form_type)
+    return "\n".join([
+        f"Eres un asistente legal de control de calidad para revision de checklist del formulario {form_label}.",
+        "",
+        form_context,
+        "",
+        COMMON_VERIFICATION_SOURCES,
+        "",
+        "Instrucciones para decidir cada pregunta:",
+        "- Analiza la evidencia proporcionada del OCR del documento.",
+        OCR_MARKERS_INSTRUCTIONS,
+        "- YES: La evidencia muestra claramente que el campo fue verificado/completado correctamente.",
+        "- NO: La evidencia muestra que el campo tiene un error, esta incompleto, o contradice otra fuente.",
+        "- INSUFFICIENT: No hay suficiente evidencia para determinar si el campo esta correcto.",
+        "- Usa exactamente el id recibido en cada pregunta; no inventes ni modifiques ids.",
+        "- En justification, indica brevemente que evidencia especifica usaste y de que pagina/seccion.",
+        "- En correction, indica que valor deberia tener el campo si la decision es NO.",
+        PAGE_CITATION_RULE,
+    ])
+
+
 # ---------------------------------------------------------------------------
 # Batch RAG verification (primary autopilot path)
 # ---------------------------------------------------------------------------
+_BATCH_OUTPUT_SCHEMA = (
+    'Output JSON solamente con esta forma:\n'
+    '{"answers":[{"id":"string","decision":"YES|NO|INSUFFICIENT",'
+    '"justification":"texto corto","correction":"texto corto o vacio"}]}'
+)
+
+
 def build_rag_batch_system_prompt(form_type: str = "") -> str:
-    form_label = _get_form_label(form_type)
-    form_context = get_form_context(form_type)
-    return f"""Eres un asistente legal de control de calidad para revision de checklist del formulario {form_label}.
-
-{form_context}
-
-{COMMON_VERIFICATION_SOURCES}
-
-Instrucciones para decidir cada pregunta:
-- Analiza la evidencia proporcionada del OCR del documento.
-{OCR_MARKERS_INSTRUCTIONS}
-- YES: La evidencia muestra claramente que el campo fue verificado/completado correctamente.
-- NO: La evidencia muestra que el campo tiene un error, esta incompleto, o contradice otra fuente.
-- INSUFFICIENT: No hay suficiente evidencia para determinar si el campo esta correcto.
-- Usa exactamente el id recibido en cada pregunta; no inventes ni modifiques ids.
-- En justification, indica brevemente que evidencia especifica usaste y de que pagina/seccion.
-- En correction, indica que valor deberia tener el campo si la decision es NO.
-- Cuando refieras paginas en justification, usa solo numeros de pagina (ej. "p.22, p.27"). No incluyas el nombre del archivo fuente.
-
-Output JSON solamente con esta forma:
-{{"answers":[{{"id":"string","decision":"YES|NO|INSUFFICIENT","justification":"texto corto","correction":"texto corto o vacio"}}]}}""".strip()
+    base = _build_base_instructions(form_type)
+    return f"{base}\n\n{_BATCH_OUTPUT_SCHEMA}".strip()
 
 
 def build_rag_batch_request_prompt(questions_payload: str) -> str:
@@ -114,27 +124,16 @@ def build_rag_batch_request_prompt(questions_payload: str) -> str:
 # ---------------------------------------------------------------------------
 # Single-question RAG verification
 # ---------------------------------------------------------------------------
+_SINGLE_OUTPUT_SCHEMA = (
+    'Output JSON solamente con esta forma:\n'
+    '{"decision":"YES|NO|INSUFFICIENT",'
+    '"justification":"texto corto","correction":"texto corto o vacio"}'
+)
+
+
 def build_rag_verify_system_prompt(form_type: str = "") -> str:
-    form_label = _get_form_label(form_type)
-    form_context = get_form_context(form_type)
-    return f"""Eres un asistente legal de control de calidad para revision de checklist del formulario {form_label}.
-
-{form_context}
-
-{COMMON_VERIFICATION_SOURCES}
-
-Instrucciones para decidir la pregunta:
-- Analiza la evidencia proporcionada del OCR del documento.
-{OCR_MARKERS_INSTRUCTIONS}
-- YES: La evidencia muestra claramente que el campo fue verificado/completado correctamente.
-- NO: La evidencia muestra que el campo tiene un error, esta incompleto, o contradice otra fuente.
-- INSUFFICIENT: No hay suficiente evidencia para determinar si el campo esta correcto.
-- En justification, indica brevemente que evidencia especifica usaste y de que pagina/seccion.
-- En correction, indica que valor deberia tener el campo si la decision es NO.
-- Cuando refieras paginas en justification, usa solo numeros de pagina (ej. "p.22, p.27"). No incluyas el nombre del archivo fuente.
-
-Output JSON solamente con esta forma:
-{{"decision":"YES|NO|INSUFFICIENT","justification":"texto corto","correction":"texto corto o vacio"}}""".strip()
+    base = _build_base_instructions(form_type)
+    return f"{base}\n\n{_SINGLE_OUTPUT_SCHEMA}".strip()
 
 
 def build_rag_verify_request_prompt(request_payload: str) -> str:

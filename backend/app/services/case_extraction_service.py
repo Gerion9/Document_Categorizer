@@ -3,6 +3,7 @@ from __future__ import annotations
 import logging
 import os
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from threading import Lock
 from typing import Callable
 
 from ..database import SessionLocal
@@ -13,7 +14,13 @@ from .json_export_service import save_extraction_json
 
 log = logging.getLogger("extraction")
 
+<<<<<<< HEAD
 MAX_EXTRACTION_WORKERS = max(1, int(os.getenv("MAX_EXTRACTION_WORKERS", "3")))
+=======
+MAX_EXTRACTION_WORKERS = int(os.getenv("MAX_EXTRACTION_WORKERS", "6"))
+EXTRACTION_BATCH_SIZE = int(os.getenv("EXTRACTION_BATCH_SIZE", "0"))
+PARALLEL_BATCHES = int(os.getenv("CASE_EXTRACTION_PARALLEL_BATCHES", "3"))
+>>>>>>> checklist
 
 
 def _determine_has_tables(page: Page, db) -> bool:
@@ -40,6 +47,12 @@ def _extract_single_page(page_id: str, has_tables: bool) -> tuple[str, bool, str
         return page_id, True, "", result
     except Exception as exc:
         return page_id, False, str(exc), None
+
+
+def _chunked(items: list[dict[str, object]], size: int) -> list[list[dict[str, object]]]:
+    if size <= 0:
+        return [items]
+    return [items[idx:idx + size] for idx in range(0, len(items), size)]
 
 
 def _build_extraction_pages(case_id: str) -> list[dict]:
@@ -120,34 +133,74 @@ def extract_case_pages(
         MAX_EXTRACTION_WORKERS,
     )
     if total:
-        with ThreadPoolExecutor(max_workers=MAX_EXTRACTION_WORKERS) as pool:
-            futures = [
-                pool.submit(
-                    _extract_single_page,
-                    str(cfg["page_id"]),
-                    bool(cfg["has_tables"]),
-                )
-                for cfg in page_configs
-            ]
-            for future in as_completed(futures):
-                page_id, success, err, result = future.result()
+        counter_lock = Lock()
+
+        def _record_page_result(
+            page_id: str,
+            success: bool,
+            err: str,
+            result: dict | None,
+        ) -> None:
+            nonlocal done, failed
+            with counter_lock:
                 done += 1
                 if not success:
                     failed += 1
-                    log.error("Case extraction [%s]: page %s failed: %s", case_id[:8], page_id[:8], err)
                 if result:
                     page_results.append(result)
-                if progress_callback is not None:
-                    progress_callback(
-                        {
-                            "phase": "extracting_document",
-                            "ocr_total_pages": total_case_pages,
-                            "ocr_processed_pages": already_done + done,
-                            "ocr_error_pages": failed,
-                        }
+                local_done = done
+                local_failed = failed
+
+            if not success:
+                log.error("Case extraction [%s]: page %s failed: %s", case_id[:8], page_id[:8], err)
+            if progress_callback is not None:
+                progress_callback(
+                    {
+                        "phase": "extracting_document",
+                        "ocr_total_pages": total_case_pages,
+                        "ocr_processed_pages": already_done + local_done,
+                        "ocr_error_pages": local_failed,
+                    }
+                )
+            if local_done % 20 == 0 or local_done == total:
+                log.info("Case extraction [%s]: %d/%d done (%d errors)", case_id[:8], local_done, total, local_failed)
+
+        def _run_batch(batch: list[dict[str, object]]) -> None:
+            for cfg in batch:
+                page_id, success, err, result = _extract_single_page(
+                    str(cfg["page_id"]),
+                    bool(cfg["has_tables"]),
+                )
+                _record_page_result(page_id, success, err, result)
+
+        use_batch_mode = EXTRACTION_BATCH_SIZE > 0 and total > EXTRACTION_BATCH_SIZE
+        if use_batch_mode:
+            batches = _chunked(page_configs, EXTRACTION_BATCH_SIZE)
+            batch_workers = min(PARALLEL_BATCHES, len(batches))
+            log.info(
+                "Case extraction [%s]: batch mode enabled (%d batches, size=%d, parallel=%d)",
+                case_id[:8],
+                len(batches),
+                EXTRACTION_BATCH_SIZE,
+                batch_workers,
+            )
+            with ThreadPoolExecutor(max_workers=batch_workers) as pool:
+                futures = [pool.submit(_run_batch, batch) for batch in batches]
+                for future in as_completed(futures):
+                    future.result()
+        else:
+            with ThreadPoolExecutor(max_workers=MAX_EXTRACTION_WORKERS) as pool:
+                futures = [
+                    pool.submit(
+                        _extract_single_page,
+                        str(cfg["page_id"]),
+                        bool(cfg["has_tables"]),
                     )
-                if done % 20 == 0 or done == total:
-                    log.info("Case extraction [%s]: %d/%d done (%d errors)", case_id[:8], done, total, failed)
+                    for cfg in page_configs
+                ]
+                for future in as_completed(futures):
+                    page_id, success, err, result = future.result()
+                    _record_page_result(page_id, success, err, result)
 
     page_results.sort(key=lambda row: row.get("page_number", 0))
 

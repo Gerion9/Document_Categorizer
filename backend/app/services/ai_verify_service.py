@@ -10,6 +10,7 @@ Supports three modes:
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import Literal
 
@@ -114,13 +115,14 @@ def _generate_structured_response(
     step_label: str = "verify",
     rag_mode: bool = False,
     cached_content: str = "",
+    max_output_tokens: int = 4096,
 ) -> dict:
     client = _get_client()
     settings = get_rag_settings()
     model = model_override or settings.gemini_vision_model or settings.gemini_model
     config_kwargs: dict[str, object] = {
         "temperature": 0.1,
-        "max_output_tokens": 4096,
+        "max_output_tokens": max(128, int(max_output_tokens or 4096)),
         "response_mime_type": "application/json",
         "response_json_schema": schema.model_json_schema(),
     }
@@ -265,30 +267,38 @@ def verify_question_batch_rag(
     Returns a list of dicts with keys: id, answer, confidence, explanation, correction.
     """
     settings = get_rag_settings()
+    use_prompt_cache = settings.qc_batch_use_prompt_cache
+    batch_model = settings.qc_batch_model or settings.gemini_model
+    fast_batch_prompt = settings.qc_batch_fast_prompt
+    batch_max_output_tokens = settings.qc_batch_max_output_tokens
+
     normalized_form = form_type.strip().lower().replace(" ", "-") if form_type else "default"
     system_prompt = build_rag_batch_system_prompt(form_type)
     request_prompt = build_rag_batch_request_prompt(
         build_rag_batch_toon_payload(questions, evidence_by_id)
     )
     client = _get_client()
-    cached_content = get_or_create_ocr_prompt_cache(
-        client,
-        model=settings.gemini_model,
-        prompt_profile=f"verify-batch-rag-{normalized_form}",
-        system_prompt=system_prompt,
-        placeholder_text=VERIFY_CACHE_PLACEHOLDER,
-    )
+    cached_content = ""
+    if use_prompt_cache:
+        cached_content = get_or_create_ocr_prompt_cache(
+            client,
+            model=batch_model,
+            prompt_profile=f"verify-batch-rag-{normalized_form}-fast{1 if fast_batch_prompt else 0}-v3",
+            system_prompt=system_prompt,
+            placeholder_text=VERIFY_CACHE_PLACEHOLDER,
+        )
     contents = [request_prompt] if cached_content else [f"{system_prompt}\n\n{request_prompt}"]
 
     try:
         result = _generate_structured_response(
             contents,
-            model_override=settings.gemini_model,
+            model_override=batch_model,
             schema=BatchVerificationResult,
             tracker=tracker,
             step_label=step_label,
             rag_mode=True,
             cached_content=cached_content,
+            max_output_tokens=batch_max_output_tokens,
         )
     except Exception as exc:
         if cached_content and is_cached_content_error(exc):
@@ -300,11 +310,12 @@ def verify_question_batch_rag(
             )
             result = _generate_structured_response(
                 [f"{system_prompt}\n\n{request_prompt}"],
-                model_override=settings.gemini_model,
+                model_override=batch_model,
                 schema=BatchVerificationResult,
                 tracker=tracker,
                 step_label=step_label,
                 rag_mode=True,
+                max_output_tokens=batch_max_output_tokens,
             )
         else:
             raise

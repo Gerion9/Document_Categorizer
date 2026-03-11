@@ -68,6 +68,8 @@ def _run_migrations():
             migrations.append("ALTER TABLE pages ADD COLUMN indexed_vector_count INTEGER DEFAULT 0")
         if "pinecone_document_id" not in page_cols:
             migrations.append("ALTER TABLE pages ADD COLUMN pinecone_document_id VARCHAR")
+        if "source_document_id" not in page_cols:
+            migrations.append("ALTER TABLE pages ADD COLUMN source_document_id VARCHAR")
 
     # Section: parent_section_id, depth, path_code (hierarchy)
     if "sections" in existing_tables:

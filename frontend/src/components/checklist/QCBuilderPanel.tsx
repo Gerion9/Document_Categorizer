@@ -20,12 +20,17 @@ import {
   Upload,
   Search,
   Send,
+  Library,
+  Save,
+  FilePlus,
+  Bookmark,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import { Tooltip } from "../ui/Tooltip";
 import { EmptyState } from "../ui/EmptyState";
 import { AnimatedAIBot } from "../ui/AnimatedAIBot";
+import { AnimatedReport } from "../ui/AnimatedReport";
 import { GlassSurface } from "../glass/GlassSurface";
 import type { QCChecklist, QCPart, QCQuestion, QCLinkPreset, DocumentType, Section } from "../../types";
 import {
@@ -55,6 +60,7 @@ import {
   startAutopilot,
   getAutopilotJob,
   qcSemanticQuery,
+  exportQCReport,
 } from "../../api/client";
 import type { AutopilotJob, RagMatch } from "../../types";
 
@@ -718,21 +724,38 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
   return (
     <div className="flex flex-col gap-3">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between mb-2">
         <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
           <ClipboardList className="w-4 h-4" /> QC Checklists
         </h3>
-        <div className="flex gap-1">
-          <Tooltip content="Plantillas QC disponibles">
-            <button aria-label="Plantillas QC disponibles" onClick={() => setShowTemplates(!showTemplates)} className={`p-1.5 rounded transition focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-300 ${showTemplates ? "bg-purple-100 text-purple-600" : "text-gray-500 hover:bg-gray-200"}`}>
-              <Download className="w-4 h-4" />
-            </button>
-          </Tooltip>
-          <Tooltip content="Crear QC checklist nuevo">
-            <button aria-label="Crear QC checklist nuevo" onClick={() => setAddingCl(true)} className="p-1.5 rounded hover:bg-gray-200 text-brand-600 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">
-              <Plus className="w-4 h-4" />
-            </button>
-          </Tooltip>
+        <div className="flex gap-2 items-center">
+          {checklists.length > 0 && (
+            <Tooltip content="Descargar reporte de QC en PDF">
+              <motion.a
+                whileHover={{ scale: 1.02 }}
+                whileTap={{ scale: 0.98 }}
+                href={exportQCReport(caseId)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition shadow-sm mr-2"
+              >
+                <AnimatedReport className="w-4 h-4" />
+                <span className="text-xs font-semibold">Descargar Reporte</span>
+              </motion.a>
+            </Tooltip>
+          )}
+          <div className="flex gap-1">
+            <Tooltip content="Plantillas QC disponibles">
+              <button aria-label="Plantillas QC disponibles" onClick={() => setShowTemplates(!showTemplates)} className={`p-1.5 rounded transition focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-300 ${showTemplates ? "bg-purple-100 text-purple-600" : "text-gray-500 hover:bg-gray-200"}`}>
+                <Library className="w-4 h-4" />
+              </button>
+            </Tooltip>
+            <Tooltip content="Crear QC checklist nuevo">
+              <button aria-label="Crear QC checklist nuevo" onClick={() => setAddingCl(true)} className="p-1.5 rounded hover:bg-gray-200 text-brand-600 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">
+                <Plus className="w-4 h-4" />
+              </button>
+            </Tooltip>
+          </div>
         </div>
       </div>
 
@@ -756,7 +779,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
             <div className="flex flex-col gap-1">
               {templates.map((tpl) => (
                 <button key={tpl.id} onClick={() => handleApplyTemplate(tpl.id)} className="flex items-center gap-1.5 text-xs text-left px-2 py-1.5 rounded hover:bg-purple-100 transition">
-                  <Download className="w-3.5 h-3.5 text-purple-500 shrink-0" />
+                  <FilePlus className="w-3.5 h-3.5 text-purple-500 shrink-0" />
                   <div className="flex-1">
                     <span className="font-medium text-gray-800">{tpl.name}</span>
                     <span className="text-xs text-gray-400 ml-1">{tpl.total_questions} preguntas</span>
@@ -866,12 +889,12 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
 
               <Tooltip content="Guardar como plantilla reutilizable">
                 <button aria-label="Guardar como plantilla" onClick={async (e) => { e.stopPropagation(); try { await saveQCAsTemplate(cl.id); toast.success("Guardado como plantilla"); await reload(); } catch { toast.error("Error"); } }} className="p-1.5 text-gray-400 hover:text-purple-600 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-300 rounded">
-                  <Download className="w-3.5 h-3.5" />
+                  <Save className="w-3.5 h-3.5" />
                 </button>
               </Tooltip>
               <Tooltip content="Guardar preset de vinculación QC ↔ Doc">
                 <button aria-label="Guardar preset de vinculación" onClick={(e) => { e.stopPropagation(); handleSaveLinkPreset(cl.id, cl.name); }} className="p-1.5 text-gray-400 hover:text-teal-600 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-300 rounded">
-                  <Upload className="w-3.5 h-3.5" />
+                  <Bookmark className="w-3.5 h-3.5" />
                 </button>
               </Tooltip>
               <Tooltip content="Aplicar preset de vinculación">

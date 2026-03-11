@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
 import re
 from typing import Any
 
 from .checklist_index_service import query_checklist_answers
+from .embedding_service import get_embedding
 from .gemini_runtime_service import GeminiTokenTracker
 from .ocr_index_service import query_ocr_chunks
 from .pinecone_client import is_pinecone_configured
@@ -108,13 +110,20 @@ def _build_retrieval_stages(
     *,
     evidence_page_ids: list[str] | None = None,
     target_section_ids: list[str] | None = None,
+    source_document_ids: list[str] | None = None,
+    document_fallback_enabled: bool = True,
 ) -> list[tuple[str, dict[str, Any]]]:
     stages: list[tuple[str, dict[str, Any]]] = []
     if evidence_page_ids:
         stages.append(("evidence_pages", {"page_ids": evidence_page_ids}))
     if target_section_ids:
         stages.append(("target_sections", {"section_ids": target_section_ids}))
-    stages.append(("case_wide", {}))
+    if source_document_ids:
+        stages.append(("source_document", {"source_document_ids": source_document_ids}))
+    if document_fallback_enabled:
+        stages.append(("case_wide", {}))
+    elif not stages:
+        stages.append(("case_wide", {}))
     return stages
 
 
@@ -166,27 +175,70 @@ def _query_best_stage_matches(
     tracker: GeminiTokenTracker | None = None,
     evidence_page_ids: list[str] | None = None,
     target_section_ids: list[str] | None = None,
+    source_document_ids: list[str] | None = None,
+    document_fallback_enabled: bool = True,
 ) -> tuple[str | None, list[dict[str, Any]]]:
     stages = _build_retrieval_stages(
         evidence_page_ids=evidence_page_ids,
         target_section_ids=target_section_ids,
+        source_document_ids=source_document_ids,
+        document_fallback_enabled=document_fallback_enabled,
     )
-    for stage_name, extra_filters in stages:
+    resolved_query_vector = query_vector
+    if resolved_query_vector is None:
         try:
-            matches = query_ocr_chunks(
+            settings = get_rag_settings()
+            resolved_query_vector = get_embedding(
                 question,
-                case_id=case_id,
-                top_k=top_k,
-                query_vector=query_vector,
+                task_type=settings.embedding_task_type_query,
                 tracker=tracker,
-                step_label=f"{step_prefix}-{stage_name}",
-                **extra_filters,
+                step_label=f"{step_prefix}-embedding",
             )
-            ranked_matches = _rank_matches(matches, top_k=top_k)
-            if ranked_matches and format_match_context(ranked_matches, max_chars=context_max_chars):
-                return stage_name, ranked_matches
         except Exception as exc:
-            log.warning("Evidence query failed (stage=%s): %s", stage_name, exc)
+            log.warning("Evidence embedding generation failed: %s", exc)
+
+    def _query_stage(stage_name: str, extra_filters: dict[str, Any]) -> tuple[str, list[dict[str, Any]]]:
+        matches = query_ocr_chunks(
+            question,
+            case_id=case_id,
+            top_k=top_k,
+            query_vector=resolved_query_vector,
+            # query_vector is precomputed once to avoid repeated embeddings and tracker races.
+            tracker=None,
+            step_label=f"{step_prefix}-{stage_name}",
+            **extra_filters,
+        )
+        ranked_matches = _rank_matches(matches, top_k=top_k)
+        if ranked_matches and format_match_context(ranked_matches, max_chars=context_max_chars):
+            return stage_name, ranked_matches
+        return stage_name, []
+
+    stage_results: dict[str, list[dict[str, Any]]] = {}
+    if len(stages) <= 1:
+        for stage_name, extra_filters in stages:
+            try:
+                _, ranked_matches = _query_stage(stage_name, extra_filters)
+                stage_results[stage_name] = ranked_matches
+            except Exception as exc:
+                log.warning("Evidence query failed (stage=%s): %s", stage_name, exc)
+    else:
+        with ThreadPoolExecutor(max_workers=len(stages)) as pool:
+            future_to_stage = {
+                pool.submit(_query_stage, stage_name, extra_filters): stage_name
+                for stage_name, extra_filters in stages
+            }
+            for future in as_completed(future_to_stage):
+                stage_name = future_to_stage[future]
+                try:
+                    _, ranked_matches = future.result()
+                    stage_results[stage_name] = ranked_matches
+                except Exception as exc:
+                    log.warning("Evidence query failed (stage=%s): %s", stage_name, exc)
+
+    for stage_name, _ in stages:
+        ranked_matches = stage_results.get(stage_name) or []
+        if ranked_matches:
+            return stage_name, ranked_matches
     return None, []
 
 
@@ -213,8 +265,7 @@ def _ocr_text_from_db(case_id: str, *, max_chars: int | None = None) -> tuple[st
             text = (pg.ocr_text or "").strip()
             if not text:
                 continue
-            label = pg.original_filename or pg.id[:8]
-            block = f"--- Page {pg.original_page_number} ({label}) ---\n{text}"
+            block = f"--- Page {pg.original_page_number} ---\n{text}"
             if len(block) > remaining:
                 block = block[:remaining].rstrip()
             if not block:
@@ -237,12 +288,42 @@ def _ocr_text_from_db(case_id: str, *, max_chars: int | None = None) -> tuple[st
         db.close()
 
 
+_OCR_PRIORITY_SOURCE_TYPES = ["gemini_ocr", "gemini_tables", "gemini-vision", "gemini-vision-empty"]
+
+
+def _query_ocr_priority_matches(
+    question: str,
+    *,
+    case_id: str,
+    top_k: int,
+    query_vector: list[float] | None = None,
+    source_document_ids: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Secondary query filtered to OCR source types, like v1's ocrPriorityMatches."""
+    try:
+        matches = query_ocr_chunks(
+            question,
+            case_id=case_id,
+            top_k=max(1, top_k),
+            query_vector=query_vector,
+            tracker=None,
+            step_label="evidence-ocr-priority",
+            source_types=_OCR_PRIORITY_SOURCE_TYPES,
+            source_document_ids=source_document_ids,
+        )
+        return matches
+    except Exception as exc:
+        log.warning("OCR-priority retrieval failed, continuing with primary: %s", exc)
+        return []
+
+
 def collect_evidence_bundle_for_question(
     question_text: str,
     *,
     case_id: str,
     evidence_page_ids: list[str] | None = None,
     target_section_ids: list[str] | None = None,
+    source_document_ids: list[str] | None = None,
     top_k: int | None = None,
     query_vector: list[float] | None = None,
     max_context_chars: int | None = None,
@@ -250,8 +331,10 @@ def collect_evidence_bundle_for_question(
 ) -> dict[str, Any]:
     """
     Collect, rank, dedup, and format evidence for a single QC question.
-    Preserves narrow-to-broad stage precedence while keeping broad fallbacks.
-    Returns a structured evidence bundle compatible with Autopilot callers.
+    Uses a dual-query strategy like v1: primary retrieval + OCR-priority retrieval,
+    then merge, dedup, and rank all results together.
+    When source_document_ids is provided, retrieval is scoped to those documents
+    with configurable fallback to case-wide search.
     """
     settings = get_rag_settings()
     resolved_top_k = max(1, top_k or settings.retrieval_top_k)
@@ -259,34 +342,66 @@ def collect_evidence_bundle_for_question(
     if is_pinecone_configured():
         evidence_page_ids = [str(pid) for pid in (evidence_page_ids or []) if pid]
         target_section_ids = [str(sid) for sid in (target_section_ids or []) if sid]
-        stage_name, ranked_matches = _query_best_stage_matches(
+        source_document_ids = [str(sd) for sd in (source_document_ids or []) if sd] if source_document_ids else None
+
+        resolved_query_vector = query_vector
+        if resolved_query_vector is None:
+            try:
+                resolved_query_vector = get_embedding(
+                    question_text,
+                    task_type=settings.embedding_task_type_query,
+                    tracker=tracker,
+                    step_label="evidence-query-embedding",
+                )
+            except Exception as exc:
+                log.warning("Evidence embedding generation failed: %s", exc)
+
+        use_doc_scope = source_document_ids and settings.retrieval_prefer_scoped_document
+
+        stage_name, primary_matches = _query_best_stage_matches(
             question_text,
             case_id=case_id,
             top_k=resolved_top_k,
-            query_vector=query_vector,
+            query_vector=resolved_query_vector,
             context_max_chars=max_context_chars,
-            tracker=tracker,
+            tracker=None,
             step_prefix="evidence-query",
             evidence_page_ids=evidence_page_ids,
             target_section_ids=target_section_ids,
+            source_document_ids=source_document_ids if use_doc_scope else None,
+            document_fallback_enabled=settings.retrieval_document_fallback_enabled,
         )
+
+        ocr_priority_matches = _query_ocr_priority_matches(
+            question_text,
+            case_id=case_id,
+            top_k=max(4, resolved_top_k // 2),
+            query_vector=resolved_query_vector,
+            source_document_ids=source_document_ids if use_doc_scope else None,
+        )
+
+        all_matches = list(primary_matches) + list(ocr_priority_matches)
+        ranked_matches = _rank_matches(all_matches, top_k=resolved_top_k) if all_matches else []
+
         if ranked_matches:
             structured_evidence = format_match_as_evidence(ranked_matches, max_chars=max_context_chars)
             text_context = format_match_context(ranked_matches, max_chars=max_context_chars)
             log.debug(
-                "Using %s stage for evidence collection (%d matches)",
+                "Evidence collected: stage=%s primary=%d ocr_priority=%d merged=%d",
                 stage_name or "unknown",
+                len(primary_matches),
+                len(ocr_priority_matches),
                 len(ranked_matches),
             )
             return {
                 "text_context": text_context,
                 "evidence": structured_evidence,
                 "source_pages": _source_pages_from_matches(ranked_matches),
-                "stage": stage_name or "unknown",
+                "stage": stage_name or "merged",
                 "matches": ranked_matches,
             }
 
-    db_text, db_source_pages = _ocr_text_from_db(case_id)
+    db_text, db_source_pages = _ocr_text_from_db(case_id, max_chars=max_context_chars)
     return {
         "text_context": db_text,
         "evidence": [],
