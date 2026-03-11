@@ -5,16 +5,17 @@ Run with:
     cd backend
     uvicorn app.main:app --reload --port 8000
 """
-
+from .routers import cases, checklist, documents, export, pages, extraction, templates, qc_checklist, auth
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
+from fastapi import Depends
+from .routers.auth import get_current_user
 
 from sqlalchemy import inspect, text
 
 from .database import Base, engine
-from .routers import cases, checklist, documents, export, pages, extraction, templates, qc_checklist
 
 # Create all tables on startup
 Base.metadata.create_all(bind=engine)
@@ -125,6 +126,7 @@ app.include_router(export.router, prefix="/api")
 app.include_router(extraction.router, prefix="/api")
 app.include_router(templates.router, prefix="/api")
 app.include_router(qc_checklist.router, prefix="/api")
+app.include_router(auth.router, prefix="/api")
 
 
 @app.get("/api/health")

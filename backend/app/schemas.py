@@ -453,3 +453,14 @@ class ReorderItem(BaseModel):
 class ReorderRequest(BaseModel):
     items: list[ReorderItem]
 
+class SSOLoginRequest(BaseModel):
+    email: str
+    name: str
+    first_name: Optional[str] = None
+    last_name: Optional[str] = None
+    role: Optional[str] = None
+    signature: str
+
+class SSOLoginResponse(BaseModel):
+    token: str
+    email: str

@@ -20,6 +20,14 @@ import type {
 
 const api = axios.create({ baseURL: "/api" });
 
+api.interceptors.request.use((config) => {
+  const token = sessionStorage.getItem("auth_token");
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
+
 /* ── Cases ──────────────────────────────────────────────────────────── */
 
 export const getCases = () => api.get<Case[]>("/cases").then((r) => r.data);
