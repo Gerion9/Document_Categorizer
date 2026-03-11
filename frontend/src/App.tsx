@@ -2,6 +2,7 @@ import { Routes, Route } from "react-router-dom";
 import Layout from "./components/Layout";
 import Dashboard from "./pages/Dashboard";
 import CaseWorkspace from "./pages/CaseWorkspace";
+import TeamMembersPage from "./pages/TeamMembersPage";
 
 export default function App() {
   const token = sessionStorage.getItem("auth_token");
@@ -22,6 +23,7 @@ export default function App() {
       <Route element={<Layout />}>
         <Route path="/" element={<Dashboard />} />
         <Route path="/cases/:caseId" element={<CaseWorkspace />} />
+        <Route path="/team-members" element={<TeamMembersPage />} />
       </Route>
     </Routes>
   );

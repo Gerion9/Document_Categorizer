@@ -1,11 +1,11 @@
 import { useEffect, useRef, useState } from "react";
-import { Outlet, Link } from "react-router-dom";
+import { Outlet, Link, useNavigate } from "react-router-dom";
 import { FileStack, User, ChevronDown, UserPlus, LogOut } from "lucide-react";
-import toast from "react-hot-toast";
 import { GlassSurface } from "./glass/GlassSurface";
 import { authApi } from "../api/client";
 
 export default function Layout() {
+  const navigate = useNavigate();
   const [userName, setUserName] = useState("Usuario");
   const [userRole, setUserRole] = useState("Sin rol");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -56,7 +56,7 @@ export default function Layout() {
 
   const handleAddUser = () => {
     setMenuOpen(false);
-    toast("Agregar usuario: en construccion");
+    navigate("/team-members");
   };
 
   return (
