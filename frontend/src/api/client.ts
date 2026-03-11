@@ -376,3 +376,35 @@ export const extractBatch = (
 
 export const getAuditLog = (caseId: string) =>
   api.get<AuditEntry[]>(`/cases/${caseId}/audit`).then((r) => r.data);
+
+/* ── Auth / SSO ────────────────────────────────────────────────────── */
+
+export interface AuthUser {
+  id: number;
+  email: string;
+  name: string;
+  roles: string[];
+  permissions: string[];
+}
+
+interface SSOLoginPayload {
+  email: string;
+  name: string;
+  first_name?: string;
+  last_name?: string;
+  role?: string;
+  signature: string;
+}
+
+interface SSOLoginResult {
+  token: string;
+  user: AuthUser;
+}
+
+export const authApi = {
+  ssoLogin: (data: SSOLoginPayload) =>
+    api.post<SSOLoginResult>("/sso-login", data).then((r) => r.data),
+
+  getMe: () =>
+    api.get<AuthUser>("/auth/me").then((r) => r.data),
+};

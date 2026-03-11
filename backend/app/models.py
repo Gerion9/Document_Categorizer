@@ -25,6 +25,7 @@ from sqlalchemy import (
     JSON,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 
@@ -471,4 +472,81 @@ class AuditLog(Base):
     created_at = Column(DateTime, default=_utcnow)
 
     case = relationship("Case", back_populates="audit_logs")
+
+
+# ---------------------------------------------------------------------------
+# RBAC – Users, Roles, Permissions
+# ---------------------------------------------------------------------------
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False)
+    email = Column(String, nullable=False, unique=True)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    user_roles = relationship("UserRole", back_populates="user", cascade="all, delete-orphan")
+    user_permissions = relationship("UserPermission", back_populates="user", cascade="all, delete-orphan")
+
+
+class Role(Base):
+    __tablename__ = "roles"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False, unique=True)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    role_permissions = relationship("RolePermission", back_populates="role", cascade="all, delete-orphan")
+    user_roles = relationship("UserRole", back_populates="role", cascade="all, delete-orphan")
+
+
+class Permission(Base):
+    __tablename__ = "permissions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False, unique=True)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    role_permissions = relationship("RolePermission", back_populates="permission", cascade="all, delete-orphan")
+    user_permissions = relationship("UserPermission", back_populates="permission", cascade="all, delete-orphan")
+
+
+class UserRole(Base):
+    __tablename__ = "user_roles"
+    __table_args__ = (UniqueConstraint("user_id", "role_id"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    role_id = Column(Integer, ForeignKey("roles.id", ondelete="CASCADE"), nullable=False)
+
+    user = relationship("User", back_populates="user_roles")
+    role = relationship("Role", back_populates="user_roles")
+
+
+class RolePermission(Base):
+    __tablename__ = "role_permissions"
+    __table_args__ = (UniqueConstraint("role_id", "permission_id"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    role_id = Column(Integer, ForeignKey("roles.id", ondelete="CASCADE"), nullable=False)
+    permission_id = Column(Integer, ForeignKey("permissions.id", ondelete="CASCADE"), nullable=False)
+
+    role = relationship("Role", back_populates="role_permissions")
+    permission = relationship("Permission", back_populates="role_permissions")
+
+
+class UserPermission(Base):
+    __tablename__ = "user_permissions"
+    __table_args__ = (UniqueConstraint("user_id", "permission_id"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    permission_id = Column(Integer, ForeignKey("permissions.id", ondelete="CASCADE"), nullable=False)
+
+    user = relationship("User", back_populates="user_permissions")
+    permission = relationship("Permission", back_populates="user_permissions")
 

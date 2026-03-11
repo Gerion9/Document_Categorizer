@@ -461,6 +461,34 @@ class SSOLoginRequest(BaseModel):
     role: Optional[str] = None
     signature: str
 
+
+class PermissionOut(BaseModel):
+    id: int
+    name: str
+
+    class Config:
+        from_attributes = True
+
+
+class RoleOut(BaseModel):
+    id: int
+    name: str
+
+    class Config:
+        from_attributes = True
+
+
+class UserOut(BaseModel):
+    id: int
+    email: str
+    name: str
+    roles: list[str] = []
+    permissions: list[str] = []
+
+    class Config:
+        from_attributes = True
+
+
 class SSOLoginResponse(BaseModel):
     token: str
-    email: str
+    user: UserOut
