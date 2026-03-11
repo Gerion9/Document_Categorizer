@@ -1,0 +1,196 @@
+"""
+I-192 QC Checklist template data.
+
+Structure: list of parts, each with optional subparts and questions.
+Each question has: code, description, where_to_verify.
+"""
+
+I192_TEMPLATE = {
+    "name": "QC Checklist - I-192",
+    "description": "Quality Control checklist for I-192 Application for Advance Permission to Enter as a Nonimmigrant",
+    "parts": [
+        {
+            "code": "Global",
+            "name": "Representative Information",
+            "questions": [
+                {"code": "1", "description": "Did you verify if the G-28 checkbox is checked and is attached to the packet?", "where_to_verify": "Part 1, Item 1 on I-192; case strategy memo"},
+                {"code": "2", "description": "Volag number section must be blank", "where_to_verify": ""},
+                {"code": "3", "description": "Did you verify that we have the correct Attorney Bar number Manuel E. Solis (18826790), and USCIS Online account number (087361245002)?", "where_to_verify": ""},
+            ],
+        },
+        {
+            "code": "Part 1",
+            "name": "Application Type",
+            "questions": [
+                {"code": "1", "description": "Did you verify the applicant selected only one box for what permission is requested (T-Visa)?", "where_to_verify": "Part 1, Item 1 on I-192; case strategy memo"},
+            ],
+        },
+        {
+            "code": "Part 2",
+            "name": "Information About You",
+            "subparts": [
+                {
+                    "code": "A",
+                    "name": "Name / Aliases",
+                    "questions": [
+                        {"code": "1", "description": "Did you verify Client's Full Legal Name (Do not provide a nickname) (Last name, first name, middle name format)?", "where_to_verify": "Birth Certificate, Passport, BioCall"},
+                        {"code": "2", "description": "Did you verify Other Names Used (if any) (aliases/maiden/nicknames) are fully listed? (Last name, first name, middle name format)? This must match the other forms (I-914, I-765). (If you need extra space, use Part 6. Additional Information on Page 9)", "where_to_verify": "FBI record and/or Bio Call; prior filings"},
+                    ],
+                },
+                {
+                    "code": "B",
+                    "name": "Other Information",
+                    "questions": [
+                        {"code": "3", "description": "Did you verify Alien Registration Number (A-Number) (if any)?", "where_to_verify": "BioCall, FBI, Intake, previous immigration documents (NTA, Asylum, etc.)"},
+                        {"code": "4", "description": "Did you verify if client has USCIS Online Account number?", "where_to_verify": "Documents from prior submissions; BioCall"},
+                        {"code": "5", "description": "Did you verify Date of birth? REMEMBER TO USE THE RIGHT FORMAT MM/DD/YYYY", "where_to_verify": "BioCall, Intake, Birth Certificate, Passport"},
+                        {"code": "6", "description": "Did you verify the client's place of birth?", "where_to_verify": "Birth Certificate, Passport"},
+                        {"code": "7", "description": "Did you verify the client's Country of citizenship or nationality?", "where_to_verify": "Birth Certificate, Passport, Intake"},
+                        {"code": "8", "description": "Did you verify the client's sex? Male / female", "where_to_verify": "Birth Certificate, Intake"},
+                        {"code": "9", "description": "Did you verify the Mailing Address is complete and safe (including \"In Care Of\" Law Offices of Manuel E. Solis, P.O. Box 231704, Houston, Texas 77223?", "where_to_verify": "Law Offices of Manuel E. Solis, P.O. Box 231704, Houston, Texas 77223"},
+                        {"code": "10", "description": "Did you verify the Physical Address 1 (current address) is complete with dates of residence? Remember to use the right format (mm/dd/yyyy)", "where_to_verify": "Bio Call + confirm in Google Maps"},
+                        {"code": "11", "description": "Did you verify the applicant listed Physical Address history with From/To dates (last 5 years)? Remember to use the right format (mm/dd/yyyy) (If you need extra space, use Part 6. Additional Information on Page 9)", "where_to_verify": "Bio Call / Intake; prior filings"},
+                    ],
+                },
+                {
+                    "code": "C",
+                    "name": "Marital History / Current Marriage",
+                    "questions": [],
+                    "note": "If filing this form concurrently with a USCIS Form I-914/I-914A, complete Item Numbers 1-10 and then skip to Item Number 26.",
+                },
+                {
+                    "code": "D",
+                    "name": "Inadmissibility Explanation (core I-192 purpose)",
+                    "questions": [
+                        {"code": "26", "description": "Did you verify the applicant completed: \"Explain the grounds of inadmissibility that may apply in your case.\" (clear, specific, consistent with record)?", "where_to_verify": "FBI record; court dispositions; FOIA (if used); intake/bio call notes"},
+                    ],
+                },
+                {
+                    "code": "E",
+                    "name": "Prior I-192 / U.S. presence / prior immigration filings / denials / criminal history (Items 27-36)",
+                    "questions": [
+                        {"code": "27", "description": "Did you verify whether the applicant has previously filed an application for advance permission to enter the U.S. as a nonimmigrant (Form I-192 or similar advance permission request)?", "where_to_verify": "Client interview/Bio Call; USCIS receipts; FOIA USCIS/CBP"},
+                        {"code": "28", "description": "If \"Yes\" to #27: Did you verify the Date Application Filed (mm/dd/yyyy)?", "where_to_verify": "Prior I-192 copy; I-797 receipt notice; FOIA"},
+                        {"code": "29-1", "description": "If \"Yes\" to #27: Did you verify the location where the application was filed (USCIS Office or U.S. Port-of-Entry; City/Town)?", "where_to_verify": "I-797 receipt; prior filing copy; FOIA"},
+                        {"code": "29-2", "description": "If \"Yes\" to #27: Did you verify the State/Province for the filing location?", "where_to_verify": "Same as above"},
+                        {"code": "29-3", "description": "If \"Yes\" to #27: Did you verify the Country for the filing location?", "where_to_verify": "Same as above"},
+                        {"code": "29-4", "description": "If \"Yes\" to #27: Did you verify the Receipt Number (if available)?", "where_to_verify": "I-797; USCIS online account; FOIA"},
+                        {"code": "30", "description": "Did you verify whether the applicant has EVER been in the U.S. for a period of six months or more?", "where_to_verify": "Passport stamps; I-94; FOIA CBP/USCIS; timeline notes"},
+                        {"code": "30-AI", "description": "If \"Yes\" to #30: Did you verify the dates in the U.S. (from/to) are provided in Part 6 Additional Information?", "where_to_verify": "Part 6; timeline; CBP travel history (FOIA)"},
+                        {"code": "30-AII", "description": "If \"Yes\" to #30: Did you verify the immigration status at time of entry is stated in Part 6?", "where_to_verify": "Part 6; I-94/visa; client interview; FOIA"},
+                        {"code": "31", "description": "Did you verify whether the applicant has EVER filed an application or petition for immigration benefits with the U.S. Government, or whether one was filed on their behalf?", "where_to_verify": "FOIA USCIS/EOIR/DOS; client documents; prior counsel file"},
+                        {"code": "32", "description": "If \"Yes\" to #31: Did you verify the type of application or petition filed?", "where_to_verify": "I-797 receipts; prior filings; FOIA"},
+                        {"code": "33", "description": "If \"Yes\" to #31: Did you verify the location where filed (USCIS office / Port of Entry / other)?", "where_to_verify": "Receipts/decisions; FOIA; client records"},
+                        {"code": "34", "description": "If \"Yes\" to #31: Did you verify the outcome (approved/denied/pending/withdrawn) for each filing?", "where_to_verify": "Approval/denial notices; EOIR orders; FOIA"},
+                        {"code": "34-ADD", "description": "If multiple filings exist: Did you verify Part 6 includes #32-34 details for each additional application/petition?", "where_to_verify": "Part 6; filings list; FOIA"},
+                        {"code": "35", "description": "Did you verify whether the applicant has EVER been denied or refused an immigration benefit by the U.S. Government, or had a benefit revoked/terminated (including visas)?", "where_to_verify": "Denial/refusal notices (USCIS/DOS/CBP); FOIA; EOIR record"},
+                        {"code": "35-ADD", "description": "If \"Yes\" to #35: Did you verify an explanation is provided in Part 6 Additional Information (what benefit, when, where, reason summary)?", "where_to_verify": "Part 6; denial/refusal letter; FOIA"},
+                        {"code": "36", "description": "Did you verify whether the applicant has EVER (in or outside the U.S.) been arrested, cited, charged, indicted, fined, convicted, or imprisoned (excluding minor traffic violations)?", "where_to_verify": "FBI rap sheet; certified court dispositions; state/local records; client interview"},
+                        {"code": "36-AI", "description": "If \"Yes\" to #36: Did you verify that Part 6 describes each incident in detail (date, place, agency, charge(s), court, disposition, sentence)?", "where_to_verify": "Part 6; certified dispositions; attorney notes"},
+                    ],
+                },
+                {
+                    "code": "F",
+                    "name": "Travel Information (Items 37-43)",
+                    "questions": [],
+                    "note": "If applying for T or U nonimmigrant status and the applicant is in the U.S., Items 37-43 may be skipped.",
+                },
+                {
+                    "code": "G",
+                    "name": "Employment History (Items 44-45)",
+                    "questions": [
+                        {"code": "44-1", "description": "Did you verify Employer 1 (current/most recent) name is complete?", "where_to_verify": "Client interview; pay stubs; W-2/1099; letter from employer"},
+                        {"code": "44-2", "description": "Did you verify Employer 1 address is complete (street, city, state, ZIP, country)?", "where_to_verify": "Pay stubs; employer letter; Google Maps"},
+                        {"code": "44-3", "description": "Did you verify Occupation for Employer 1 is correct?", "where_to_verify": "Client interview; employer letter; pay stubs"},
+                        {"code": "44-4", "description": "Did you verify Dates of employment (From/To) are complete and in the correct format?", "where_to_verify": "Pay stubs; tax docs; client timeline"},
+                        {"code": "45-1", "description": "Did you verify Employer 2 name is complete (if applicable)?", "where_to_verify": "Client interview; pay stubs; tax docs"},
+                        {"code": "45-2", "description": "Did you verify Employer 2 address is complete (street, city, state, ZIP, country)?", "where_to_verify": "Employer letter; pay stubs; Google Maps"},
+                        {"code": "45-3", "description": "Did you verify Occupation for Employer 2 is correct?", "where_to_verify": "Client interview; employer letter"},
+                        {"code": "45-4", "description": "Did you verify Dates of employment (From/To) are complete and in the correct format?", "where_to_verify": "Pay stubs; tax docs; client timeline"},
+                        {"code": "EMP-5YR", "description": "Did you verify the employment history covers the last five years (most recent first), using Part 6 if extra space is needed?", "where_to_verify": "Timeline worksheet; Part 6; supporting evidence list"},
+                    ],
+                },
+            ],
+        },
+        {
+            "code": "Part 3",
+            "name": "Applicant's Statement, Contact Information, Certification, and Signature",
+            "questions": [
+                {"code": "3-1", "description": "Did you verify the applicant's Daytime Telephone Number is entered and correct?", "where_to_verify": "Client confirmation; prior filings"},
+                {"code": "3-2", "description": "Did you verify the applicant's Mobile Telephone Number (if any) is entered and correct?", "where_to_verify": "Client confirmation"},
+                {"code": "3-3", "description": "Did you verify the applicant's Email Address (if any) is entered and correct?", "where_to_verify": "Client confirmation; written verification"},
+                {"code": "3-4", "description": "Did you verify the applicant's signature is present and properly placed?", "where_to_verify": "Final packet review (Page 7)"},
+                {"code": "3-5", "description": "Did you verify the Date of Signature is completed in mm/dd/yyyy and matches the filing plan?", "where_to_verify": "Final packet review; mailing date strategy"},
+            ],
+        },
+        {
+            "code": "Part 4",
+            "name": "Interpreter's Contact Information, Certification, and Signature (I-192)",
+            "questions": [
+                {"code": "4.1-LN", "description": "Did you verify the interpreter's Family Name (Last Name) is complete and correctly spelled?", "where_to_verify": "Part 4, Item 1"},
+                {"code": "4.1-FN", "description": "Did you verify the interpreter's Given Name (First Name) is complete and correctly spelled?", "where_to_verify": "Part 4, Item 1"},
+                {"code": "4.2", "description": "Did you verify the interpreter's Business or Organization Name (if any) is appropriate for this field (and not mistakenly an email/other)?", "where_to_verify": "Part 4, Item 2"},
+                {"code": "4.3", "description": "Did you verify the interpreter's Daytime Telephone Number is complete and accurate?", "where_to_verify": "Part 4, Item 3"},
+                {"code": "4.4", "description": "Did you verify the interpreter's Mobile Telephone Number (if any) is complete and accurate (or blank if none)?", "where_to_verify": "Part 4, Item 4"},
+                {"code": "4.5", "description": "Did you verify the interpreter's Email Address (if any) is complete and accurate (and formatted correctly)?", "where_to_verify": "Part 4, Item 5"},
+                {"code": "4.CERT-LANG", "description": "Did you verify the interpreter entered the language interpreted and it matches the applicant's language needs?", "where_to_verify": "Part 4, Interpreter's Certification language field"},
+                {"code": "4.CERT-TEXT", "description": "Did you verify the interpreter certification is consistent (fluent in English + interpreted every question/instruction + applicant understood)?", "where_to_verify": "Part 4, Interpreter's Certification paragraph"},
+                {"code": "4.6", "description": "Did you verify the interpreter signed the form (ink signature on final packet)?", "where_to_verify": "Part 4, Interpreter's Signature"},
+                {"code": "4.DATE", "description": "Did you verify the interpreter date of signature is completed and in mm/dd/yyyy format?", "where_to_verify": "Part 4, Date of Signature"},
+            ],
+        },
+        {
+            "code": "Part 5",
+            "name": "Contact Information, Declaration, and Signature of the Person Preparing this Application (if Other Than the Applicant) (I-192)",
+            "questions": [
+                {"code": "5.0", "description": "Did you verify Part 5 is completed only if the preparer is other than the applicant (otherwise should be blank)?", "where_to_verify": "Part 5 header + Part 3 Applicant's Statement"},
+                {"code": "5.1-LN", "description": "Did you verify the preparer's Family Name (Last Name) is complete and correctly spelled?", "where_to_verify": "Part 5, Item 1"},
+                {"code": "5.1-FN", "description": "Did you verify the preparer's Given Name (First Name) is complete and correctly spelled?", "where_to_verify": "Part 5, Item 1"},
+                {"code": "5.2", "description": "Did you verify the preparer's Business or Organization Name (if any) is complete and appropriate?", "where_to_verify": "Part 5, Item 2"},
+                {"code": "5.3", "description": "Did you verify the preparer's Daytime Telephone Number is complete and accurate?", "where_to_verify": "Part 5, Item 3"},
+                {"code": "5.4", "description": "Did you verify the preparer's Mobile Telephone Number (if any) is complete and accurate (or blank if none)?", "where_to_verify": "Part 5, Item 4"},
+                {"code": "5.5", "description": "Did you verify the preparer's Email Address (if any) is complete and accurate (and formatted correctly)?", "where_to_verify": "Part 5, Item 5"},
+                {"code": "5.CERT-TEXT", "description": "Did you verify the preparer certification/declaration is completed and consistent (prepared at request/consent; info is complete/true/correct as provided by applicant; applicant reviewed and understood)?", "where_to_verify": "Part 5, Preparer's Certification paragraph"},
+                {"code": "5.6", "description": "Did you verify the preparer signed the form (ink signature on final packet)?", "where_to_verify": "Part 5, Preparer's Signature"},
+                {"code": "5.DATE", "description": "Did you verify the preparer date of signature is completed and in mm/dd/yyyy format?", "where_to_verify": "Part 5, Date of Signature"},
+            ],
+        },
+        {
+            "code": "Part 6",
+            "name": "Additional Information (If used)",
+            "questions": [
+                {"code": "6-1", "description": "Did you verify Family Name (Last Name) is typed/printed correctly at the top of Part 6?", "where_to_verify": "Passport/birth certificate; Part 2 name fields"},
+                {"code": "6-2", "description": "Did you verify Given Name (First Name) is typed/printed correctly at the top of Part 6?", "where_to_verify": "Passport/birth certificate; Part 2 name fields"},
+                {"code": "6-3", "description": "Did you verify Middle Name (if any) is correctly listed (or blank if none)?", "where_to_verify": "Passport/birth certificate"},
+                {"code": "6-4", "description": "Did you verify A-Number is listed if any, or correctly left blank if none?", "where_to_verify": "Bio Call; USCIS notices; FOIA"},
+                {"code": "6-5", "description": "Did you verify each Part 6 entry includes Page Number, Part Number, and Item Number it refers to?", "where_to_verify": "Part 6 formatting requirements"},
+                {"code": "6-6", "description": "Did you verify each additional sheet (if used) is signed and dated, with name and A-number at top (per instructions)?", "where_to_verify": "Attachment packet; Part 6 instruction block"},
+            ],
+        },
+        {
+            "code": "Inadmissibility Spotter",
+            "name": "\"Read-the-declaration\" inadmissibility spotter (main sub-checklist)",
+            "questions": [
+                {"code": "1", "description": "Did the client say they \"crossed the border,\" \"entered through desert/river,\" or \"without speaking to an officer\"?", "where_to_verify": "Declaration; Intake/Bio Call; FOIA CBP if needed", "ina_ground": "212(a)(6)(A)(i)"},
+                {"code": "2", "description": "Did the client describe the trafficker controlling the crossing (ordered/threatened/held documents)?", "where_to_verify": "Declaration; Intake/Bio Call", "ina_ground": "212(a)(6)(A)(i) (nexus)"},
+                {"code": "3", "description": "Did the client mention borrowed papers / fake documents / another identity / \"they told me to say...\"?", "where_to_verify": "Declaration; prior filings; FOIA CBP/USCIS if needed", "ina_ground": "212(a)(6)(C)(i)"},
+                {"code": "4", "description": "Did the client say they claimed \"I'm a U.S. citizen / I was born here / I'm American\" (even for work/DMV)?", "where_to_verify": "Declaration; I-9/DMV docs if any; prior filings", "ina_ground": "212(a)(6)(C)(ii)"},
+                {"code": "5", "description": "Did the client say immigration stopped them / ICE / deported / returned?", "where_to_verify": "Declaration; FOIA CBP/EOIR/ICE", "ina_ground": "212(a)(9)(A) and/or 212(a)(6)(A)"},
+                {"code": "6", "description": "Did the client say they had court / didn't go to court / never got the notice?", "where_to_verify": "Declaration; EOIR portal; FOIA EOIR", "ina_ground": "212(a)(6)(B)"},
+                {"code": "7", "description": "Did the client describe leaving the U.S. after being undocumented, then returning?", "where_to_verify": "Declaration; travel history; FOIA CBP", "ina_ground": "212(a)(9)(B)"},
+                {"code": "8", "description": "Did the client describe departure + reentry EWI after >1 year unlawful presence or after removal?", "where_to_verify": "Declaration; FOIA CBP/EOIR/ICE", "ina_ground": "212(a)(9)(C)(i)"},
+                {"code": "9", "description": "Did the client say no passport / trafficker took it / couldn't renew?", "where_to_verify": "Declaration; consular/passport attempts if any", "ina_ground": "212(a)(7)(B)(i)(I) (document issues)"},
+                {"code": "10", "description": "Did the client describe arrest/jail/probation/fines/pleaded guilty?", "where_to_verify": "FBI/criminal record; certified dispositions", "ina_ground": "212(a)(2)"},
+                {"code": "11", "description": "Did the client describe theft/fraud/forgery/violence/threats (even without conviction)?", "where_to_verify": "Declaration; police/court records", "ina_ground": "212(a)(2)(A)(i)(I) and/or 212(a)(2)(B)"},
+                {"code": "12", "description": "Did the client mention drugs (possession/use OR forced selling/transport)?", "where_to_verify": "Declaration; criminal record; treatment records", "ina_ground": "212(a)(2)(A)(i)(II) and/or 212(a)(2)(C)"},
+                {"code": "13", "description": "Did the client mention commercial sex/prostitution (incl. \"forced to prostitute\" or arrest)?", "where_to_verify": "Declaration; criminal record", "ina_ground": "212(a)(2)(D)"},
+                {"code": "14", "description": "Did the client mention helping others cross / paying/organizing entries?", "where_to_verify": "Declaration; FOIA CBP", "ina_ground": "212(a)(6)(E)(i)"},
+                {"code": "15", "description": "Did the client mention a serious communicable disease / \"Class A\" medical finding?", "where_to_verify": "Medical evaluation/records", "ina_ground": "212(a)(1)(A)(i)"},
+                {"code": "16", "description": "Did the client mention psychiatric hospitalization / dangerous behavior tied to a disorder?", "where_to_verify": "Medical evaluation/records", "ina_ground": "212(a)(1)(A)(iii)"},
+                {"code": "17", "description": "Did the client mention current addiction / recent problematic use?", "where_to_verify": "Medical evaluation/records", "ina_ground": "212(a)(1)(A)(iv)"},
+                {"code": "18", "description": "Did the client mention voting/registration to vote or polygamy?", "where_to_verify": "Declaration; any records", "ina_ground": "212(a)(10)(D) / 212(a)(10)(A)"},
+                {"code": "19", "description": "Did the client mention gangs/terrorism/armed training for political group (rare but critical)?", "where_to_verify": "Declaration; any records", "ina_ground": "212(a)(3)"},
+            ],
+        },
+    ],
+}
