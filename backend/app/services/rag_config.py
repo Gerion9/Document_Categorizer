@@ -30,6 +30,16 @@ def _env_int(name: str, default: int) -> int:
         return default
 
 
+def _env_float(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None:
+        return default
+    try:
+        return float(str(raw).strip())
+    except ValueError:
+        return default
+
+
 def _env_bool(name: str, default: bool) -> bool:
     raw = os.getenv(name)
     if raw is None:
@@ -78,6 +88,8 @@ class RagSettings:
     retrieval_prefer_scoped_document: bool
     retrieval_document_fallback_enabled: bool
     autopilot_llm_batch_concurrency: int
+    verify_temperature: float
+    verify_max_retries: int
 
     @property
     def pinecone_configured(self) -> bool:
@@ -135,4 +147,6 @@ def get_rag_settings() -> RagSettings:
         retrieval_prefer_scoped_document=_env_bool("RETRIEVAL_PREFER_SCOPED_DOCUMENT", True),
         retrieval_document_fallback_enabled=_env_bool("RETRIEVAL_DOCUMENT_FALLBACK_ENABLED", True),
         autopilot_llm_batch_concurrency=max(1, _env_int("QC_AUTOPILOT_LLM_BATCH_CONCURRENCY", 3)),
+        verify_temperature=max(0.0, min(1.0, _env_float("VERIFY_TEMPERATURE", 0.25))),
+        verify_max_retries=max(1, _env_int("VERIFY_MAX_RETRIES", 2)),
     )

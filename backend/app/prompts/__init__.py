@@ -4,8 +4,6 @@ from .verification_prompts import (
     OCR_MARKERS_INSTRUCTIONS,
     VERIFY_CACHE_PLACEHOLDER,
     VERIFY_PROMPT,
-    RAG_VERIFY_PROMPT,
-    RAG_BATCH_PROMPT,
     get_form_context,
     build_rag_verify_system_prompt,
     build_rag_verify_request_prompt,
@@ -23,6 +21,9 @@ from .toon_prompts import (
     build_rag_verify_toon_payload,
     build_rag_batch_toon_payload,
 )
+from .form_detection_prompts import (
+    FORM_DETECTOR_PROMPT,
+)
 
 __all__ = [
     "FORM_CONTEXT",
@@ -30,8 +31,6 @@ __all__ = [
     "OCR_MARKERS_INSTRUCTIONS",
     "VERIFY_CACHE_PLACEHOLDER",
     "VERIFY_PROMPT",
-    "RAG_VERIFY_PROMPT",
-    "RAG_BATCH_PROMPT",
     "get_form_context",
     "build_rag_verify_system_prompt",
     "build_rag_verify_request_prompt",
@@ -44,4 +43,5 @@ __all__ = [
     "build_ocr_page_prompt",
     "build_rag_verify_toon_payload",
     "build_rag_batch_toon_payload",
+    "FORM_DETECTOR_PROMPT",
 ]

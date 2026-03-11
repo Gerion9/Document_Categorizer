@@ -31,7 +31,7 @@ def _evidence_rank_score(match: dict[str, Any]) -> float:
     source_type = str(metadata.get("source_type", ""))
 
     if _SELECTION_CUE_RE.search(text):
-        score += 0.4
+        score += 0.15
     if _YES_NO_RE.search(text):
         score += 0.05
     if source_type.startswith("gemini"):
@@ -80,6 +80,9 @@ def format_match_as_evidence(matches: list[dict[str, Any]], *, max_chars: int | 
             "chunkOrder": int(metadata.get("chunk_order", 0) or 0),
             "text": snippet,
             "sourceType": str(metadata.get("source_type", "") or ""),
+            "sectionName": str(metadata.get("section_name", "") or ""),
+            "documentType": str(metadata.get("document_type_code", "") or ""),
+            "originalFilename": str(metadata.get("original_filename", "") or ""),
         }
 
         cost = len(snippet) + 80
@@ -100,9 +103,18 @@ def format_match_context(matches: list[dict[str, Any]], *, max_chars: int | None
     evidence = format_match_as_evidence(matches, max_chars=max_chars)
     blocks: list[str] = []
     for item in evidence:
+        parts: list[str] = []
         page = item.get("pageNumber")
-        page_label = f"p.{page}" if page else "unknown"
-        blocks.append(f"[{page_label}] {item['text']}")
+        if page:
+            parts.append(f"p.{page}")
+        section = item.get("sectionName", "")
+        if section:
+            parts.append(section)
+        doc_type = item.get("documentType", "")
+        if doc_type:
+            parts.append(doc_type)
+        label = " | ".join(parts) if parts else "unknown"
+        blocks.append(f"[{label}] {item['text']}")
     return "\n\n".join(blocks)
 
 

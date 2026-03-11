@@ -53,10 +53,10 @@ _DECISION_LITERAL = Literal["YES", "NO", "INSUFFICIENT"]
 
 class VerificationResult(BaseModel):
     decision: _DECISION_LITERAL = Field(
-        description="YES if verified correct, NO if error/incomplete, INSUFFICIENT if not enough evidence."
+        description="YES if correct or present, NO if error or inconsistent, INSUFFICIENT only if absolutely no related information exists."
     )
     justification: str = Field(
-        description="Short justification referencing the specific evidence used."
+        description="Short justification referencing specific evidence and page numbers used."
     )
     correction: str = Field(
         description="Required correction when decision is NO, otherwise an empty string."
@@ -66,10 +66,10 @@ class VerificationResult(BaseModel):
 class BatchAnswerItem(BaseModel):
     id: str = Field(description="Question identifier.")
     decision: _DECISION_LITERAL = Field(
-        description="YES if verified correct, NO if error/incomplete, INSUFFICIENT if not enough evidence."
+        description="YES if correct or present, NO if error or inconsistent, INSUFFICIENT only if absolutely no related information exists."
     )
     justification: str = Field(
-        description="Short justification referencing the specific evidence used."
+        description="Short justification referencing specific evidence and page numbers used."
     )
     correction: str = Field(description="Correction if decision is NO, else empty.")
 
@@ -81,7 +81,7 @@ class BatchVerificationResult(BaseModel):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-_CONFIDENCE_FROM_DECISION = {"YES": "high", "NO": "high", "INSUFFICIENT": "low"}
+_CONFIDENCE_FROM_DECISION = {"YES": "high", "NO": "high", "INSUFFICIENT": "medium"}
 
 
 def _normalize_result(raw: dict) -> dict:
@@ -89,10 +89,14 @@ def _normalize_result(raw: dict) -> dict:
     decision = str(raw.get("decision", "INSUFFICIENT")).upper()
     if decision not in ("YES", "NO", "INSUFFICIENT"):
         decision = "INSUFFICIENT"
+    justification = str(raw.get("justification", "") or "").strip()
+    confidence = _CONFIDENCE_FROM_DECISION.get(decision, "low")
+    if decision == "INSUFFICIENT" and not justification:
+        confidence = "low"
     return {
         "answer": decision.lower(),
-        "confidence": _CONFIDENCE_FROM_DECISION.get(decision, "low"),
-        "explanation": str(raw.get("justification", "") or "").strip(),
+        "confidence": confidence,
+        "explanation": justification,
         "correction": str(raw.get("correction", "") or "").strip(),
     }
 
@@ -121,26 +125,42 @@ def _generate_structured_response(
     settings = get_rag_settings()
     model = model_override or settings.gemini_vision_model or settings.gemini_model
     config_kwargs: dict[str, object] = {
-        "temperature": 0.1,
+        "temperature": settings.verify_temperature,
         "max_output_tokens": max(128, int(max_output_tokens or 4096)),
         "response_mime_type": "application/json",
         "response_json_schema": schema.model_json_schema(),
     }
     if cached_content:
         config_kwargs["cached_content"] = cached_content
-    response = client.models.generate_content(
-        model=model,
-        contents=contents,
-        config=types.GenerateContentConfig(**config_kwargs),
-    )
-    record_usage_from_response(tracker, step=step_label, response=response, model=model)
 
-    raw_text = (response.text or "").strip()
-    try:
-        parsed = schema.model_validate_json(raw_text)
-        return parsed.model_dump()
-    except ValidationError:
-        return {"_parse_error": True, "_raw": raw_text[:500]}
+    max_attempts = max(1, settings.verify_max_retries)
+    last_raw = ""
+    for attempt in range(1, max_attempts + 1):
+        response = client.models.generate_content(
+            model=model,
+            contents=contents,
+            config=types.GenerateContentConfig(**config_kwargs),
+        )
+        record_usage_from_response(
+            tracker,
+            step=f"{step_label}{'-retry' + str(attempt) if attempt > 1 else ''}",
+            response=response,
+            model=model,
+        )
+
+        raw_text = (response.text or "").strip()
+        try:
+            parsed = schema.model_validate_json(raw_text)
+            return parsed.model_dump()
+        except ValidationError:
+            last_raw = raw_text[:500]
+            if attempt < max_attempts:
+                log.warning(
+                    "[VERIFY] Parse error on attempt %d/%d, retrying: %s",
+                    attempt, max_attempts, last_raw[:120],
+                )
+
+    return {"_parse_error": True, "_raw": last_raw}
 
 
 # ---------------------------------------------------------------------------

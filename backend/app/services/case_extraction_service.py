@@ -14,13 +14,9 @@ from .json_export_service import save_extraction_json
 
 log = logging.getLogger("extraction")
 
-<<<<<<< HEAD
-MAX_EXTRACTION_WORKERS = max(1, int(os.getenv("MAX_EXTRACTION_WORKERS", "3")))
-=======
-MAX_EXTRACTION_WORKERS = int(os.getenv("MAX_EXTRACTION_WORKERS", "6"))
-EXTRACTION_BATCH_SIZE = int(os.getenv("EXTRACTION_BATCH_SIZE", "0"))
-PARALLEL_BATCHES = int(os.getenv("CASE_EXTRACTION_PARALLEL_BATCHES", "3"))
->>>>>>> checklist
+MAX_EXTRACTION_WORKERS = int(os.getenv("MAX_EXTRACTION_WORKERS"))
+EXTRACTION_BATCH_SIZE = int(os.getenv("EXTRACTION_BATCH_SIZE"))
+PARALLEL_BATCHES = int(os.getenv("CASE_EXTRACTION_PARALLEL_BATCHES"))
 
 
 def _determine_has_tables(page: Page, db) -> bool:
