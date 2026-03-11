@@ -994,8 +994,6 @@ def _format_source_pages_for_notes(source_pages: list[dict] | None, *, max_items
             label = f"p.{row['page_number']}"
         else:
             label = f"id:{str(row['page_id'])[:8]}"
-        if row["original_filename"]:
-            label = f"{label} ({row['original_filename']})"
         labels.append(label)
 
     extra = len(rows) - max_items
