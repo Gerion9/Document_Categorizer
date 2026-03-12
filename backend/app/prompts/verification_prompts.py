@@ -68,9 +68,7 @@ VERIFY_CACHE_PLACEHOLDER = (
 
 PAGE_CITATION_RULE = (
     '- Cuando refieras paginas en justification, usa solo numeros de pagina '
-    '(ej. "p.22, p.27"). Nunca incluyas nombres de archivo, PDF, rutas ni '
-    'texto entre parentesis como "(documento.pdf)". Si la evidencia muestra '
-    '"p.22 (documento.pdf)", cita solo "p.22".'
+    '(ej. "p.22, p.27"). No incluyas el nombre del archivo fuente.'
 )
 
 
@@ -183,8 +181,7 @@ REGLAS:
 - "INSUFFICIENT" = No hay absolutamente ninguna informacion relacionada con esta pregunta en la imagen ni en el contexto OCR.
 - Prefiere YES o NO siempre que haya cualquier dato relevante, aunque sea parcial o indirecto.
 - Se especifico en la justificacion, referencia texto/datos exactos que ves en la imagen.
-- Si el documento no es la fuente correcta para esta pregunta, responde "INSUFFICIENT".
-- Cuando refieras paginas en justification, usa solo numeros de pagina (ej. "p.22, p.27"). Nunca incluyas nombres de archivo, PDF, rutas ni texto entre parentesis como "(documento.pdf)". Si la evidencia muestra "p.22 (documento.pdf)", cita solo "p.22".
+- Cuando refieras paginas en justification, usa solo numeros de pagina (ej. "p.22, p.27"). No incluyas el nombre del archivo fuente.
 
 Output JSON solamente con esta forma:
 {{"decision":"YES|NO|INSUFFICIENT","justification":"texto corto","correction":"texto corto o vacio"}}"""
