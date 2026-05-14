@@ -1,9 +1,15 @@
 from .verification_prompts import (
     FORM_CONTEXT,
     COMMON_VERIFICATION_SOURCES,
+    SOURCE_HIERARCHY_INSTRUCTIONS,
     OCR_MARKERS_INSTRUCTIONS,
     VERIFY_CACHE_PLACEHOLDER,
     VERIFY_PROMPT,
+    VERIFY_CORRECTION_DESC,
+    VERIFY_DECISION_DESC,
+    VERIFY_JUSTIFICATION_DESC,
+    VERIFY_QUESTION_ID_DESC,
+    build_verify_prompt,
     get_form_context,
     build_rag_verify_system_prompt,
     build_rag_verify_request_prompt,
@@ -24,13 +30,23 @@ from .toon_prompts import (
 from .form_detection_prompts import (
     FORM_DETECTOR_PROMPT,
 )
+from .form_filling_prompts import (
+    PRINCIPAL_APPLICANT_SEARCH_QUERY,
+    build_applicant_context_instruction,
+    FIELD_VALUE_DESC,
+    FIELD_CONFIDENCE_DESC,
+    FIELD_JUSTIFICATION_DESC,
+    FIELD_ID_DESC,
+)
 
 __all__ = [
     "FORM_CONTEXT",
     "COMMON_VERIFICATION_SOURCES",
+    "SOURCE_HIERARCHY_INSTRUCTIONS",
     "OCR_MARKERS_INSTRUCTIONS",
     "VERIFY_CACHE_PLACEHOLDER",
     "VERIFY_PROMPT",
+    "build_verify_prompt",
     "get_form_context",
     "build_rag_verify_system_prompt",
     "build_rag_verify_request_prompt",
@@ -44,4 +60,14 @@ __all__ = [
     "build_rag_verify_toon_payload",
     "build_rag_batch_toon_payload",
     "FORM_DETECTOR_PROMPT",
+    "VERIFY_DECISION_DESC",
+    "VERIFY_JUSTIFICATION_DESC",
+    "VERIFY_CORRECTION_DESC",
+    "VERIFY_QUESTION_ID_DESC",
+    "PRINCIPAL_APPLICANT_SEARCH_QUERY",
+    "build_applicant_context_instruction",
+    "FIELD_VALUE_DESC",
+    "FIELD_CONFIDENCE_DESC",
+    "FIELD_JUSTIFICATION_DESC",
+    "FIELD_ID_DESC",
 ]

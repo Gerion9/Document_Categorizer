@@ -1,0 +1,786 @@
+{
+  "form": "I-765",
+  "pages": [
+    {
+      "page": 1,
+      "items": [
+        {
+          "id": "p1_1",
+          "code": "1",
+          "section": "Part 1. Reason for Applying",
+          "responsible_party": "client",
+          "type": "single_choice",
+          "form_text": "I am applying for (select only one box):",
+          "instruction": "Replacement (correction) due to USCIS error does not require a new Form I-765 and filing fee. Refer to www.uscis.gov/i-765 for further details.",
+          "options": [
+            {
+              "value": "A",
+              "label": "Initial permission to accept employment."
+            },
+            {
+              "value": "B",
+              "label": "Replacement of lost, stolen, or damaged previous employment authorization document, or correction of my employment authorization document NOT DUE to U.S. Citizenship and Immigration Services (USCIS) error."
+            },
+            {
+              "value": "C",
+              "label": "Renewal of my permission to accept employment. Attach a copy of your previous employment authorization document."
+            }
+          ],
+          "also_validate_with": [
+            "attorney"
+          ],
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_1",
+          "code": "2.1",
+          "section": "Part 2. Information About You",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Your Full Legal Name",
+          "fields": [
+            {
+              "id": "family_name",
+              "label": "Family Name (Last Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "given_name",
+              "label": "Given Name (First Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "middle_name",
+              "label": "Middle Name",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_other_names_used",
+          "code": "2.2-2.4",
+          "section": "Part 2. Information About You",
+          "responsible_party": "client",
+          "type": "repeatable_group",
+          "form_text": "Other Names Used",
+          "instruction": "Provide all other names you have ever used, including aliases, maiden name, and nicknames. If you need extra space to complete this section, use the space provided in Part 6. Additional Information.",
+          "optional": true,
+          "visible_on_pages": [
+            1
+          ],
+          "visible_slots": [
+            "Other Name 1",
+            "Other Name 2",
+            "Other Name 3"
+          ],
+          "fields": [
+            {
+              "id": "family_name",
+              "label": "Family Name (Last Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "given_name",
+              "label": "Given Name (First Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "middle_name",
+              "label": "Middle Name",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "For USCIS Use Only",
+          "reason": "This section is completed by USCIS, not by the client or attorney."
+        },
+        {
+          "name": "START HERE",
+          "reason": "Instructional text only; not a direct question or fillable field."
+        }
+      ]
+    },
+    {
+      "page": 2,
+      "items": [
+        {
+          "id": "p2_5",
+          "code": "5.A-5.F",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Your U.S. Mailing Address",
+          "fields": [
+            {
+              "id": "in_care_of_name",
+              "label": "In Care Of Name (if any)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "street_number_name",
+              "label": "Street Number and Name",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "unit_type",
+              "label": "Apt./Ste./Flr.",
+              "type": "select",
+              "options": [
+                "Apt.",
+                "Ste.",
+                "Flr."
+              ],
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "unit_number",
+              "label": "Number",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "city",
+              "label": "City or Town",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "state",
+              "label": "State",
+              "type": "select",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "zip_code",
+              "label": "ZIP Code",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_6",
+          "code": "6",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Is your current mailing address the same as your physical address?",
+          "instruction": "If you selected 'No,' provide your physical address below.",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_7",
+          "code": "7.A-7.E",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "U.S. Physical Address",
+          "condition": "If Item 6 is 'No'",
+          "fields": [
+            {
+              "id": "street_number_name",
+              "label": "Street Number and Name",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "unit_type",
+              "label": "Apt./Ste./Flr.",
+              "type": "select",
+              "options": [
+                "Apt.",
+                "Ste.",
+                "Flr."
+              ],
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "unit_number",
+              "label": "Number",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "city",
+              "label": "City or Town",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "state",
+              "label": "State",
+              "type": "select",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "zip_code",
+              "label": "ZIP Code",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_8",
+          "code": "8",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Alien Registration Number (A-Number) (if any)",
+          "prefix": "A-",
+          "optional": true,
+          "where_to_verify": "EAD Card; I-94; USCIS Receipt; BIO CALL"
+        },
+        {
+          "id": "p2_9",
+          "code": "9",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "USCIS Online Account Number (if any)",
+          "optional": true,
+          "where_to_verify": "USCIS Online Account; BIO CALL"
+        },
+        {
+          "id": "p2_10",
+          "code": "10",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "single_choice",
+          "form_text": "Sex",
+          "options": [
+            "Male",
+            "Female"
+          ],
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_11",
+          "code": "11",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "single_choice",
+          "form_text": "Marital Status",
+          "options": [
+            "Single",
+            "Married",
+            "Divorced",
+            "Widowed"
+          ],
+          "optional": true,
+          "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+        },
+        {
+          "id": "p2_12",
+          "code": "12",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Have you previously filed Form I-765?",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_13",
+          "code": "13",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Provide your Social Security number (SSN) (if known).",
+          "optional": true,
+          "where_to_verify": "SSN Card; Tax Records; BIO CALL"
+        },
+        {
+          "id": "p2_14",
+          "code": "14.A-14.B",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Your Country or Countries of Citizenship or Nationality",
+          "instruction": "List all countries where you are currently a citizen or national. If you need extra space to complete this item, use the space provided in Part 6. Additional Information.",
+          "fields": [
+            {
+              "id": "country_1",
+              "label": "Country",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "country_2",
+              "label": "Country",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "Other Information",
+          "reason": "Subsection heading only; the answerable fields are captured as separate items."
+        }
+      ]
+    },
+    {
+      "page": 3,
+      "items": [
+        {
+          "id": "p2_15",
+          "code": "15.A-15.C",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Place of Birth",
+          "instruction": "List the city/town/village, state/province, and country where you were born.",
+          "fields": [
+            {
+              "id": "birth_city_town_village",
+              "label": "City/Town/Village of Birth",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "birth_state_province",
+              "label": "State/Province of Birth",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "birth_country",
+              "label": "Country of Birth",
+              "type": "text",
+              "where_to_verify": "Birth Certificate; Passport; BIO CALL"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "Birth Certificate; Passport; BIO CALL"
+        },
+        {
+          "id": "p2_16",
+          "code": "16",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "date",
+          "form_text": "Date of Birth",
+          "format": "Mmm DD YYYY",
+          "optional": true,
+          "where_to_verify": "Birth Certificate; Passport; BIO CALL"
+        },
+        {
+          "id": "p2_17",
+          "code": "17",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Form I-94 Arrival-Departure Record Number (if any)",
+          "optional": true,
+          "where_to_verify": "Form I-94; CBP Records; BIO CALL"
+        },
+        {
+          "id": "p2_18",
+          "code": "18",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Passport Number of Your Most Recently Issued Passport",
+          "optional": true,
+          "where_to_verify": "Passport; BIO CALL; Intake"
+        },
+        {
+          "id": "p2_19",
+          "code": "19",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Travel Document Number (if any)",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_20",
+          "code": "20",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Country That Issued Your Passport or Travel Document",
+          "optional": true,
+          "where_to_verify": "Passport; BIO CALL; Intake"
+        },
+        {
+          "id": "p2_21",
+          "code": "21",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "date",
+          "form_text": "Expiration Date for Passport or Travel Document",
+          "format": "Mmm DD YYYY",
+          "optional": true,
+          "where_to_verify": "Passport; BIO CALL; Intake"
+        },
+        {
+          "id": "p2_22",
+          "code": "22",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "date",
+          "form_text": "Date of Your Last Arrival Into the United States, On or About",
+          "format": "Mmm DD YYYY",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_23",
+          "code": "23",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Place of Your Last Arrival Into the United States",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_24",
+          "code": "24",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Immigration Status at Your Last Arrival",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_25",
+          "code": "25",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Your Current Immigration Status or Category",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_26",
+          "code": "26",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Student and Exchange Visitor Information System (SEVIS) Number (if any)",
+          "prefix": "N-",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_27",
+          "code": "27",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Eligibility Category",
+          "instruction": "Refer to the Who May File Form I-765 section of the Form I-765 Instructions to determine the appropriate eligibility category for this application. Enter the appropriate letter and number for your eligibility category below (for example, (a)(8), (c)(17)(iii)).",
+          "fields": [
+            {
+              "id": "category_letter",
+              "label": "Eligibility Category - Letter",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "category_number",
+              "label": "Eligibility Category - Number",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "category_subcategory",
+              "label": "Eligibility Category - Subcategory (if any)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_28",
+          "code": "28.A-28.C",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "(c)(3)(C) STEM OPT Eligibility Category",
+          "condition": "If Item 27 is (c)(3)(C)",
+          "instruction": "If you entered the eligibility category (c)(3)(C) in Item Number 27, provide the information requested in Item Numbers 28.a - 28.c.",
+          "fields": [
+            {
+              "id": "degree",
+              "label": "Degree",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "employer_name_e_verify",
+              "label": "Employer's Name as Listed in E-Verify",
+              "type": "text",
+              "where_to_verify": "Pay Stubs; Tax Records; BIO CALL"
+            },
+            {
+              "id": "employer_e_verify_company_id",
+              "label": "Employer's E-Verify Company Identification Number or a Valid E-Verify Client Company Identification Number",
+              "type": "text",
+              "where_to_verify": "Pay Stubs; Tax Records; BIO CALL"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_29",
+          "code": "29",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "(c)(26) Eligibility Category - Form I-797 receipt number for Form I-129, Petition for a Nonimmigrant Worker",
+          "condition": "If Item 27 is (c)(26)",
+          "optional": true,
+          "where_to_verify": "Pay Stubs; Tax Records; BIO CALL"
+        },
+        {
+          "id": "p2_30",
+          "code": "30",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "(c)(8) Eligibility Category - Have you EVER been arrested for and/or convicted of any crime?",
+          "condition": "If Item 27 is (c)(8)",
+          "instruction": "If you selected 'Yes,' refer to Special Filing Instructions for Those With Pending Asylum Applications (c)(8) in the Required Documentation section of the Form I-765 Instructions for information about providing court dispositions.",
+          "optional": true,
+          "where_to_verify": "FBI Records; Court Disposition; LEA Report; Declaration"
+        },
+        {
+          "id": "p2_31a",
+          "code": "31.A",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "(c)(35) and (c)(36) Eligibility Category - Form I-797 Notice for Form I-140 Receipt Number",
+          "condition": "If Item 27 is (c)(35) or (c)(36)",
+          "instruction": "If you entered the eligibility category (c)(35) in Item Number 27, provide the receipt number of your Form I-797 Notice for Form I-140, Immigrant Petition for Alien Worker. If you entered the eligibility category (c)(36) in Item Number 27, provide the receipt number of your spouse's or parent's Form I-797 Notice for Form I-140.",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_31b",
+          "code": "31.B",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "If you entered the eligibility category (c)(35) or (c)(36) in Item Number 27, have you EVER been arrested for and/or convicted of any crime?",
+          "condition": "If Item 27 is (c)(35) or (c)(36)",
+          "instruction": "If you selected 'Yes,' refer to Employment-Based Nonimmigrant Categories, Items 8. - 9., in the Who May File Form I-765 section of the Form I-765 Instructions for information about providing court dispositions.",
+          "optional": true,
+          "where_to_verify": "FBI Records; Court Disposition; LEA Report; Declaration"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "Place of Birth",
+          "reason": "Subsection heading only; the answerable fields are captured in Item 15."
+        },
+        {
+          "name": "Information About Your Last Arrival in the United States",
+          "reason": "Subsection heading only; the answerable fields are captured in Items 17 through 26."
+        },
+        {
+          "name": "Information About Your Eligibility Category",
+          "reason": "Subsection heading only; the answerable fields are captured in Items 27 through 31."
+        }
+      ]
+    },
+    {
+      "page": 4,
+      "items": [
+        {
+          "id": "p3_1",
+          "code": "1",
+          "section": "Part 3. Applicant's Statement, Contact Information, Certification, and Signature",
+          "responsible_party": "client",
+          "type": "single_choice",
+          "form_text": "Applicant's Statement Regarding the Interpreter",
+          "instruction": "Select the box for either Item Number 1.a. or 1.b.",
+          "options": [
+            {
+              "value": "A",
+              "label": "I can read and understand English, and I have read and understand every question and instruction on this application and my answer to every question."
+            },
+            {
+              "value": "B",
+              "label": "The interpreter named in Part 4. read to me every question and instruction on this application and my answer to every question in a language in which I am fluent, and I understood everything."
+            }
+          ],
+          "details_fields": [
+            {
+              "id": "interpreter_language",
+              "label": "Language in which I am fluent",
+              "type": "text",
+              "condition": "If option 'B' is selected",
+              "where_to_verify": "Interpreter Certification; Intake"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "Declaration; Signed Form"
+        },
+        {
+          "id": "p3_2",
+          "code": "2",
+          "section": "Part 3. Applicant's Statement, Contact Information, Certification, and Signature",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Applicant's Statement Regarding the Preparer",
+          "instruction": "If applicable, select the box for Item Number 2.",
+          "fields": [
+            {
+              "id": "preparer_statement_selected",
+              "label": "At my request, the preparer named in Part 5. prepared this application for me based only upon information I provided or authorized.",
+              "type": "checkbox",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "preparer_name_in_statement",
+              "label": "Preparer name",
+              "type": "text",
+              "condition": "If the checkbox is selected",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        },
+        {
+          "id": "p3_contact",
+          "code": "3-5",
+          "section": "Part 3. Applicant's Statement, Contact Information, Certification, and Signature",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Applicant's Contact Information",
+          "instruction": "Provide your daytime telephone number, mobile telephone number (if any), and email address (if any).",
+          "fields": [
+            {
+              "id": "applicant_daytime_telephone_number",
+              "label": "Applicant's Daytime Telephone Number",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake"
+            },
+            {
+              "id": "applicant_mobile_telephone_number",
+              "label": "Applicant's Mobile Telephone Number (if any)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake"
+            },
+            {
+              "id": "applicant_email_address",
+              "label": "Applicant's Email Address (if any)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "Declaration; Signed Form"
+        },
+        {
+          "id": "p3_6",
+          "code": "6",
+          "section": "Part 3. Applicant's Statement, Contact Information, Certification, and Signature",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "ABC Settlement Agreement Eligibility",
+          "fields": [
+            {
+              "id": "abc_settlement_agreement_selected",
+              "label": "Select this box if you are a Salvadoran or Guatemalan national eligible for benefits under the ABC settlement agreement.",
+              "type": "checkbox",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "Declaration; Signed Form"
+        },
+        {
+          "id": "p3_signature",
+          "code": "7.A-7.B",
+          "section": "Part 3. Applicant's Statement, Contact Information, Certification, and Signature",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Applicant's Signature",
+          "fields": [
+            {
+              "id": "applicant_signature",
+              "label": "Applicant's Signature",
+              "type": "signature",
+              "where_to_verify": "Declaration; Signed Form"
+            },
+            {
+              "id": "applicant_signature_date",
+              "label": "Date of Signature",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "where_to_verify": "Declaration; Signed Form"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "Declaration; Signed Form"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "Part 3 Intro Note",
+          "reason": "Instructional text only; not a direct question or fillable field."
+        },
+        {
+          "name": "Applicant's Certification",
+          "reason": "Certification paragraphs are declarative text tied to the applicant's signature, not separate fillable fields."
+        },
+        {
+          "name": "NOTE TO ALL APPLICANTS",
+          "reason": "Instructional warning text only; not a direct question or fillable field."
+        },
+        {
+          "name": "Part 4 Intro",
+          "reason": "Lead-in text only; the visible interpreter fields are captured separately."
+        }
+      ]
+    }
+  ]
+}

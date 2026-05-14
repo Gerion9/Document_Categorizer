@@ -1,0 +1,1179 @@
+{
+  "form": "I-192",
+  "pages": [
+    {
+      "page": 1,
+      "items": [
+        {
+          "id": "p1_1",
+          "code": "1",
+          "section": "Part 1. Application Type",
+          "responsible_party": "client",
+          "type": "single_choice",
+          "form_text": "I am seeking this permission so that I may obtain (select only one box):",
+          "options": [
+            {
+              "value": "A",
+              "label": "Status as a victim of trafficking (T nonimmigrant status) or a victim of qualifying criminal activity (U nonimmigrant status)."
+            },
+            {
+              "value": "B",
+              "label": "Admission as a nonimmigrant (other than as a T or U nonimmigrant)."
+            }
+          ],
+          "also_validate_with": [
+            "attorney"
+          ],
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "For DHS Use Only",
+          "reason": "This section is completed by DHS, not by the client or attorney."
+        },
+        {
+          "name": "Action by the Department of Homeland Security",
+          "reason": "This section is completed by DHS, not by the client or attorney."
+        },
+        {
+          "name": "START HERE",
+          "reason": "Instructional text only; not a direct question or fillable field."
+        },
+        {
+          "name": "Part 1 Instructions",
+          "reason": "The paragraph and skip instruction are explanatory text; the actual answerable field is Item 1."
+        }
+      ]
+    },
+    {
+      "page": 2,
+      "items": [
+        {
+          "id": "p2_1",
+          "code": "2.1",
+          "section": "Part 2. Information About You",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Your Full Legal Name",
+          "instruction": "Do not provide a nickname.",
+          "fields": [
+            {
+              "id": "family_name",
+              "label": "Family Name (Last Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "given_name",
+              "label": "Given Name (First Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "middle_name",
+              "label": "Middle Name (if applicable)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_2",
+          "code": "2.2",
+          "section": "Part 2. Information About You",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Other Names Used (if any)",
+          "instruction": "Provide all other names you have ever used, including aliases, maiden name, and nicknames. If you need extra space to complete this section, use the space provided in Part 6. Additional Information.",
+          "optional": true,
+          "fields": [
+            {
+              "id": "other_family_name",
+              "label": "Family Name (Last Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "other_given_name",
+              "label": "Given Name (First Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "other_middle_name",
+              "label": "Middle Name (if applicable)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_3",
+          "code": "2.3",
+          "section": "Part 2. Information About You",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Alien Registration Number (A-Number) (if any)",
+          "prefix": "A-",
+          "optional": true,
+          "where_to_verify": "EAD Card; I-94; USCIS Receipt; BIO CALL"
+        },
+        {
+          "id": "p2_4",
+          "code": "2.4",
+          "section": "Part 2. Information About You",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "USCIS Online Account Number (if any)",
+          "optional": true,
+          "where_to_verify": "USCIS Online Account; BIO CALL"
+        },
+        {
+          "id": "p2_5",
+          "code": "2.5",
+          "section": "Part 2. Information About You",
+          "responsible_party": "client",
+          "type": "date",
+          "form_text": "Date of Birth",
+          "format": "Mmm DD YYYY",
+          "optional": true,
+          "where_to_verify": "Birth Certificate; Passport; BIO CALL"
+        },
+        {
+          "id": "p2_6",
+          "code": "2.6",
+          "section": "Part 2. Information About You",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Place of Birth",
+          "fields": [
+            {
+              "id": "birth_city",
+              "label": "City or Town",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "birth_state_or_province",
+              "label": "State or Province",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "birth_country",
+              "label": "Country",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "Birth Certificate; Passport; BIO CALL"
+        },
+        {
+          "id": "p2_7",
+          "code": "2.7",
+          "section": "Part 2. Information About You",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Country of Citizenship or Nationality",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_8",
+          "code": "2.8",
+          "section": "Part 2. Information About You",
+          "responsible_party": "client",
+          "type": "single_choice",
+          "form_text": "Sex",
+          "options": [
+            "Male",
+            "Female"
+          ],
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_9",
+          "code": "2.9",
+          "section": "Part 2. Information About You",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Mailing Address (Safe address, if applicable)",
+          "instruction": "Please provide an address where you can safely receive correspondence from USCIS.",
+          "optional": true,
+          "fields": [
+            {
+              "id": "in_care_of_name",
+              "label": "In Care Of Name (if any)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "street_number_name",
+              "label": "Street Number and Name",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "unit_type",
+              "label": "Apt./Ste./Flr.",
+              "type": "select",
+              "options": [
+                "Apt.",
+                "Ste.",
+                "Flr."
+              ],
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "unit_number",
+              "label": "Number",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "city",
+              "label": "City or Town",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "state",
+              "label": "State",
+              "type": "select",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "zip_code",
+              "label": "ZIP Code",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "province",
+              "label": "Province",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "postal_code",
+              "label": "Postal Code",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "country",
+              "label": "Country",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "Other Information",
+          "reason": "Subsection heading only; the answerable fields are captured as separate items."
+        }
+      ]
+    },
+    {
+      "page": 3,
+      "items": [
+        {
+          "id": "p2_address_history",
+          "code": "2.10-2.11",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "repeatable_group",
+          "form_text": "Address History",
+          "instruction": "Provide physical addresses for everywhere you have lived during the last five years, whether inside or outside the United States. Provide your current address first. If you need extra space to complete this section, use the space provided in Part 6. Additional Information.",
+          "visible_on_pages": [
+            3
+          ],
+          "visible_slots": [
+            "Physical Address 1 (current address)",
+            "Physical Address 2"
+          ],
+          "fields": [
+            {
+              "id": "street_number_name",
+              "label": "Street Number and Name",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "unit_type",
+              "label": "Apt./Ste./Flr.",
+              "type": "select",
+              "options": [
+                "Apt.",
+                "Ste.",
+                "Flr."
+              ],
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "unit_number",
+              "label": "Number",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "city",
+              "label": "City or Town",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "state",
+              "label": "State",
+              "type": "select",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "zip_code",
+              "label": "ZIP Code",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "province",
+              "label": "Province",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "postal_code",
+              "label": "Postal Code",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "country",
+              "label": "Country",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "from_date",
+              "label": "Dates of Residence - From",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "to_date",
+              "label": "Dates of Residence - To",
+              "type": "date_or_text",
+              "format": "Mmm DD YYYY",
+              "allow_literal_values": [
+                "PRESENT"
+              ],
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_12",
+          "code": "2.12",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "single_choice",
+          "form_text": "What is your current marital status?",
+          "condition": "If not filing this form concurrently with Form I-914/I-914A",
+          "options": [
+            "Single, Never Married",
+            "Married",
+            "Divorced",
+            "Widowed",
+            "Legally Separated",
+            "Marriage Annulled",
+            "Other"
+          ],
+          "details_fields": [
+            {
+              "id": "marital_status_other",
+              "label": "Other",
+              "type": "text",
+              "condition": "If option 'Other' is selected",
+              "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+        },
+        {
+          "id": "p2_13",
+          "code": "2.13",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "number",
+          "condition": "If not filing this form concurrently with Form I-914/I-914A",
+          "form_text": "How many times have you been married (including annulled marriages and marriages to the same person)?",
+          "optional": true,
+          "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+        },
+        {
+          "id": "p2_14",
+          "code": "2.14",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Current Spouse's Legal Name",
+          "instruction": "If you are currently married, provide the following information about your current spouse.",
+          "condition": "If not filing this form concurrently with Form I-914/I-914A and the applicant is currently married or legally separated",
+          "optional": true,
+          "fields": [
+            {
+              "id": "spouse_family_name",
+              "label": "Family Name (Last Name)",
+              "type": "text",
+              "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+            },
+            {
+              "id": "spouse_given_name",
+              "label": "Given Name (First Name)",
+              "type": "text",
+              "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+            },
+            {
+              "id": "spouse_middle_name",
+              "label": "Middle Name (if applicable)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+            }
+          ],
+          "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+        },
+        {
+          "id": "p2_15",
+          "code": "2.15",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Spouse's Alien Registration Number (A-Number) (if any)",
+          "prefix": "A-",
+          "optional": true,
+          "condition": "If not filing this form concurrently with Form I-914/I-914A and the applicant is currently married or legally separated",
+          "where_to_verify": "EAD Card; I-94; USCIS Receipt; BIO CALL"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "Address History",
+          "reason": "Subsection heading only; the answerable fields are captured in the address history block."
+        },
+        {
+          "name": "Information About Your Marital History",
+          "reason": "Subsection heading only; the answerable fields are captured as separate items."
+        },
+        {
+          "name": "Information About Your Current Marriage",
+          "reason": "Subsection heading only; the answerable fields are captured as separate items."
+        }
+      ]
+    },
+    {
+      "page": 4,
+      "items": [
+        {
+          "id": "p2_current_spouse_details",
+          "code": "2.16-2.19",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Information About Your Current Marriage",
+          "condition": "If not filing this form concurrently with Form I-914/I-914A and the applicant is currently married or legally separated",
+          "optional": true,
+          "fields": [
+            {
+              "id": "spouse_date_of_birth",
+              "label": "Date of Birth",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "where_to_verify": "Birth Certificate; Passport; BIO CALL"
+            },
+            {
+              "id": "date_of_marriage",
+              "label": "Date of Marriage",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+            },
+            {
+              "id": "spouse_birth_city",
+              "label": "Place of Birth - City or Town",
+              "type": "text",
+              "where_to_verify": "Birth Certificate; Passport; BIO CALL"
+            },
+            {
+              "id": "spouse_birth_state_or_province",
+              "label": "Place of Birth - State or Province",
+              "type": "text",
+              "where_to_verify": "Birth Certificate; Passport; BIO CALL"
+            },
+            {
+              "id": "spouse_birth_country",
+              "label": "Place of Birth - Country",
+              "type": "text",
+              "where_to_verify": "Birth Certificate; Passport; BIO CALL"
+            },
+            {
+              "id": "marriage_city",
+              "label": "Place of Marriage - City or Town",
+              "type": "text",
+              "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+            },
+            {
+              "id": "marriage_state_or_province",
+              "label": "Place of Marriage - State or Province",
+              "type": "text",
+              "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+            },
+            {
+              "id": "marriage_country",
+              "label": "Place of Marriage - Country",
+              "type": "text",
+              "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+            }
+          ],
+          "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+        },
+        {
+          "id": "p2_prior_marriage",
+          "code": "2.20-2.25",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Information About Prior Marriages (if any)",
+          "instruction": "If you have been married before, anywhere in the world, provide the information requested in Item Numbers 20.-25. about your prior marriage. If you have had more than one previous marriage, use the space provided in Part 6. Additional Information to provide the answers to Item Numbers 20.-25. for each additional marriage.",
+          "condition": "If not filing this form concurrently with Form I-914/I-914A and the applicant has one or more prior marriages",
+          "optional": true,
+          "fields": [
+            {
+              "id": "prior_spouse_family_name",
+              "label": "Prior Spouse's Legal Name - Family Name (Last Name)",
+              "type": "text",
+              "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+            },
+            {
+              "id": "prior_spouse_given_name",
+              "label": "Prior Spouse's Legal Name - Given Name (First Name)",
+              "type": "text",
+              "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+            },
+            {
+              "id": "prior_spouse_middle_name",
+              "label": "Prior Spouse's Legal Name - Middle Name (if applicable)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+            },
+            {
+              "id": "prior_spouse_name_note",
+              "label": "Provide family name before marriage",
+              "type": "note",
+              "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+            },
+            {
+              "id": "prior_spouse_date_of_birth",
+              "label": "Date of Birth",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "where_to_verify": "Birth Certificate; Passport; BIO CALL"
+            },
+            {
+              "id": "prior_marriage_date",
+              "label": "Date of Marriage",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+            },
+            {
+              "id": "prior_marriage_city",
+              "label": "Place of Marriage - City or Town",
+              "type": "text",
+              "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+            },
+            {
+              "id": "prior_marriage_state_or_province",
+              "label": "Place of Marriage - State or Province",
+              "type": "text",
+              "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+            },
+            {
+              "id": "prior_marriage_country",
+              "label": "Place of Marriage - Country",
+              "type": "text",
+              "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+            },
+            {
+              "id": "date_marriage_legally_ended",
+              "label": "Date Marriage Legally Ended",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+            },
+            {
+              "id": "marriage_end_city",
+              "label": "Place Where Marriage Legally Ended - City or Town",
+              "type": "text",
+              "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+            },
+            {
+              "id": "marriage_end_state_or_province",
+              "label": "Place Where Marriage Legally Ended - State or Province",
+              "type": "text",
+              "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+            },
+            {
+              "id": "marriage_end_country",
+              "label": "Place Where Marriage Legally Ended - Country",
+              "type": "text",
+              "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+            }
+          ],
+          "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+        },
+        {
+          "id": "p2_26",
+          "code": "2.26",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "textarea",
+          "form_text": "Explain the grounds of inadmissibility that may apply in your case.",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "Information About Prior Marriages",
+          "reason": "Subsection heading only; the answerable fields are captured in the prior marriage block."
+        },
+        {
+          "name": "Immigration and Criminal History",
+          "reason": "Subsection heading only; the answerable field is Item 26."
+        }
+      ]
+    },
+    {
+      "page": 5,
+      "items": [
+        {
+          "id": "p2_27",
+          "code": "2.27",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Have you previously filed an application for advance permission to enter the United States as a nonimmigrant?",
+          "instruction": "If you answered 'Yes' to Item Number 27., provide the details in Item Numbers 28.-29. If you need extra space to complete this section, use the space provided in Part 6. Additional Information.",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_27_details",
+          "code": "2.28-2.29",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Previous Application for Advance Permission to Enter",
+          "condition": "If 'Yes' to Item 27",
+          "fields": [
+            {
+              "id": "date_application_filed",
+              "label": "Date Application Filed",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "filed_location_office_or_poe",
+              "label": "Location where you filed your application - USCIS Office or U.S. Port-of-Entry",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "filed_location_city",
+              "label": "Location where you filed your application - City or Town",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "filed_location_state_or_province",
+              "label": "Location where you filed your application - State or Province",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "filed_location_country",
+              "label": "Location where you filed your application - Country",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "previous_application_receipt_number",
+              "label": "Receipt Number (if available)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_30",
+          "code": "2.30",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Have you EVER been in the United States for a period of six months or more?",
+          "instruction": "If you answered 'Yes' to Item Number 30., provide the dates you were in the United States (from and to) and your immigration status at the time of entry into the United States in the space provided in Part 6. Additional Information.",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_31",
+          "code": "2.31",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Have you EVER filed an application or petition for immigration benefits with the U.S. Government, or has one ever been filed on your behalf?",
+          "instruction": "If you answered 'Yes' to Item Number 31., provide the information requested in Item Numbers 32.-34. If you have (or somebody else on your behalf has) filed multiple applications or petitions for immigration benefits with the U.S. Government, use the space provided in Part 6. Additional Information to provide the answers to Item Numbers 32.-34. for each of your additional applications or petitions.",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_31_details",
+          "code": "2.32-2.34",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "repeatable_group",
+          "form_text": "Application or Petition for Immigration Benefits",
+          "condition": "If 'Yes' to Item 31",
+          "fields": [
+            {
+              "id": "application_or_petition_type",
+              "label": "Type of application or petition filed",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "application_filed_location",
+              "label": "Location the application or petition was filed (for example, USCIS office or Port of Entry)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "application_outcome",
+              "label": "Outcome of the application or petition (for example, approved, denied, or pending)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_35",
+          "code": "2.35",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Have you EVER been denied or refused an immigration benefit by the U.S. Government, or had a benefit revoked or terminated (including but not limited to visas)?",
+          "instruction": "If you answered 'Yes' to Item Number 35., provide an explanation of the information in the space provided in Part 6. Additional Information.",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_36",
+          "code": "2.36",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Have you EVER, in or outside the United States, been arrested, cited, charged, indicted, fined, convicted, or imprisoned for breaking or violating any law or ordinance, excluding minor traffic violations?",
+          "instruction": "If you answered 'Yes' to Item Number 36., describe the incidents in detail and include all offenses where impaired driving may have been an issue in the space provided in Part 6. Additional Information.",
+          "optional": true,
+          "where_to_verify": "FBI Records; Court Disposition; LEA Report; Declaration"
+        }
+      ],
+      "excluded_sections": []
+    },
+    {
+      "page": 6,
+      "items": [
+        {
+          "id": "p2_travel_info",
+          "code": "2.37-2.43",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Travel Information",
+          "instruction": "If you are applying for T or U nonimmigrant status and are in the United States, you may skip Item Numbers 37.-43.",
+          "condition": "If not skipped under the T/U-in-the-United-States exception",
+          "fields": [
+            {
+              "id": "intended_entry_city",
+              "label": "Location at Which You Plan to Enter the United States - City",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "intended_entry_state",
+              "label": "Location at Which You Plan to Enter the United States - State",
+              "type": "select",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "name_of_port_of_entry",
+              "label": "Name of Port of Entry",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "travel_method",
+              "label": "How do you plan to travel to the United States? (For example, by plane, ship, car)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "planned_entry_date",
+              "label": "When do you plan to enter the United States?",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "approximate_length_of_stay",
+              "label": "Approximate Length of Stay in the United States",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "purpose_of_stay",
+              "label": "What is the purpose of your stay in the United States? Explain fully below.",
+              "type": "textarea",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_44",
+          "code": "2.44",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Employment History - Employer 1 (current or most recent)",
+          "instruction": "Provide your employment history for the last five years, whether inside or outside the United States. Provide the most recent employment first. If you need extra space to complete this section, use the space provided in Part 6. Additional Information.",
+          "fields": [
+            {
+              "id": "employer_name",
+              "label": "Name of Employer or Company",
+              "type": "text",
+              "where_to_verify": "Pay Stubs; Tax Records; BIO CALL"
+            },
+            {
+              "id": "employer_street_number_name",
+              "label": "Address of Employer or Company - Street Number and Name",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "employer_unit_type",
+              "label": "Apt./Ste./Flr.",
+              "type": "select",
+              "options": [
+                "Apt.",
+                "Ste.",
+                "Flr."
+              ],
+              "optional": true,
+              "where_to_verify": "Pay Stubs; Tax Records; BIO CALL"
+            },
+            {
+              "id": "employer_unit_number",
+              "label": "Number",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "Pay Stubs; Tax Records; BIO CALL"
+            },
+            {
+              "id": "employer_city",
+              "label": "Address of Employer or Company - City or Town",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "employer_state",
+              "label": "Address of Employer or Company - State",
+              "type": "select",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "employer_zip_code",
+              "label": "Address of Employer or Company - ZIP Code",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "employer_province",
+              "label": "Address of Employer or Company - Province",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "employer_postal_code",
+              "label": "Address of Employer or Company - Postal Code",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "employer_country",
+              "label": "Address of Employer or Company - Country",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "occupation",
+              "label": "Your Occupation",
+              "type": "text",
+              "where_to_verify": "Pay Stubs; Tax Records; BIO CALL"
+            },
+            {
+              "id": "employment_from_date",
+              "label": "Dates of Employment - From",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "where_to_verify": "Pay Stubs; Tax Records; BIO CALL"
+            },
+            {
+              "id": "employment_to_date",
+              "label": "Dates of Employment - To",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "where_to_verify": "Pay Stubs; Tax Records; BIO CALL"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "Pay Stubs; Tax Records; BIO CALL"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "Travel Information",
+          "reason": "Subsection heading only; the answerable fields are captured in the travel information block."
+        },
+        {
+          "name": "Employment History",
+          "reason": "Subsection heading only; the answerable fields are captured in the employment history block."
+        }
+      ]
+    },
+    {
+      "page": 7,
+      "items": [
+        {
+          "id": "p2_45",
+          "code": "2.45",
+          "section": "Part 2. Information About You (continued)",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Employment History - Employer 2",
+          "optional": true,
+          "fields": [
+            {
+              "id": "employer_name",
+              "label": "Name of Employer or Company",
+              "type": "text",
+              "where_to_verify": "Pay Stubs; Tax Records; BIO CALL"
+            },
+            {
+              "id": "employer_street_number_name",
+              "label": "Address of Employer or Company - Street Number and Name",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "employer_unit_type",
+              "label": "Apt./Ste./Flr.",
+              "type": "select",
+              "options": [
+                "Apt.",
+                "Ste.",
+                "Flr."
+              ],
+              "optional": true,
+              "where_to_verify": "Pay Stubs; Tax Records; BIO CALL"
+            },
+            {
+              "id": "employer_unit_number",
+              "label": "Number",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "Pay Stubs; Tax Records; BIO CALL"
+            },
+            {
+              "id": "employer_city",
+              "label": "Address of Employer or Company - City or Town",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "employer_state",
+              "label": "Address of Employer or Company - State",
+              "type": "select",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "employer_zip_code",
+              "label": "Address of Employer or Company - ZIP Code",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "employer_province",
+              "label": "Address of Employer or Company - Province",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "employer_postal_code",
+              "label": "Address of Employer or Company - Postal Code",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "employer_country",
+              "label": "Address of Employer or Company - Country",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "occupation",
+              "label": "Your Occupation",
+              "type": "text",
+              "where_to_verify": "Pay Stubs; Tax Records; BIO CALL"
+            },
+            {
+              "id": "employment_from_date",
+              "label": "Dates of Employment - From",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "where_to_verify": "Pay Stubs; Tax Records; BIO CALL"
+            },
+            {
+              "id": "employment_to_date",
+              "label": "Dates of Employment - To",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "where_to_verify": "Pay Stubs; Tax Records; BIO CALL"
+            }
+          ],
+          "where_to_verify": "Pay Stubs; Tax Records; BIO CALL"
+        },
+        {
+          "id": "p3_contact",
+          "code": "3.1-3.3",
+          "section": "Part 3. Applicant's Statement, Contact Information, Certification, and Signature",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Applicant's Contact Information",
+          "instruction": "Provide your daytime telephone number, mobile telephone number (if any), and email address (if any).",
+          "fields": [
+            {
+              "id": "applicant_daytime_telephone_number",
+              "label": "Applicant's Daytime Telephone Number",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake"
+            },
+            {
+              "id": "applicant_mobile_telephone_number",
+              "label": "Applicant's Mobile Telephone Number (if any)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake"
+            },
+            {
+              "id": "applicant_email_address",
+              "label": "Applicant's Email Address (if any)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "Declaration; Signed Form"
+        },
+        {
+          "id": "p3_signature",
+          "code": "3.4-3.5",
+          "section": "Part 3. Applicant's Statement, Contact Information, Certification, and Signature",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Applicant's Certification and Signature",
+          "fields": [
+            {
+              "id": "applicant_signature",
+              "label": "Applicant's Signature",
+              "type": "signature",
+              "where_to_verify": "Declaration; Signed Form"
+            },
+            {
+              "id": "applicant_signature_date",
+              "label": "Date of Signature",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "where_to_verify": "Declaration; Signed Form"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "Declaration; Signed Form"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "Applicant's Certification and Signature",
+          "reason": "The certification paragraph is declarative text tied to the applicant's signature, not a separate fillable field."
+        }
+      ]
+    }
+  ]
+}

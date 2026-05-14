@@ -331,6 +331,71 @@ _TOKEN_SUMMARY_KEYS = ("input", "output", "cached", "thoughts", "embedding", "gr
 ZERO_TOKEN_SUMMARY: dict[str, int] = {k: 0 for k in _TOKEN_SUMMARY_KEYS}
 
 
+_THINKING_LEVEL_MAP: dict[str, Any] = {}
+
+
+def _resolve_thinking_level_enum(level: str) -> Any | None:
+    """Map a normalized string to the SDK ThinkingLevel enum, if available.
+
+    Returns None when the SDK build does not expose the requested level.
+    """
+    normalized = (level or "").strip().lower()
+    if not normalized or normalized in {"off", "disabled", "0"}:
+        return None
+    global _THINKING_LEVEL_MAP
+    if not _THINKING_LEVEL_MAP:
+        try:
+            level_enum = getattr(types, "ThinkingLevel", None)
+            if level_enum is not None:
+                _THINKING_LEVEL_MAP = {
+                    "minimal": getattr(level_enum, "MINIMAL", None),
+                    "low": getattr(level_enum, "LOW", None),
+                    "medium": getattr(level_enum, "MEDIUM", None),
+                    "high": getattr(level_enum, "HIGH", None),
+                }
+        except Exception:
+            _THINKING_LEVEL_MAP = {}
+    return _THINKING_LEVEL_MAP.get(normalized)
+
+
+def build_thinking_config(level: str) -> Any | None:
+    """Return a ThinkingConfig honoring the requested speed-vs-quality level.
+
+    - "minimal" / "low" / "medium" / "high" -> uses thinking_level (Gemini 3+).
+    - "off" / "disabled" / "0" -> uses thinking_budget=0 (Gemini 2.5 fallback).
+    - "" or unsupported -> returns None (model default).
+
+    A returned None means we add nothing to GenerateContentConfig.
+    """
+    normalized = (level or "").strip().lower()
+    if not normalized:
+        return None
+
+    if normalized in {"off", "disabled", "0"}:
+        try:
+            return types.ThinkingConfig(thinking_budget=0)
+        except Exception:
+            return None
+
+    enum_value = _resolve_thinking_level_enum(normalized)
+    if enum_value is None:
+        return None
+    try:
+        return types.ThinkingConfig(thinking_level=enum_value)
+    except Exception:
+        return None
+
+
+def apply_thinking_config(
+    config_kwargs: dict[str, Any],
+    level: str,
+) -> None:
+    """Inject thinking_config into a GenerateContentConfig kwargs dict in-place."""
+    cfg = build_thinking_config(level)
+    if cfg is not None:
+        config_kwargs["thinking_config"] = cfg
+
+
 def compact_token_summary(raw: dict) -> dict[str, int]:
     """Extract a normalized {input, output, cached, thoughts, embedding, grand_total} dict."""
     return {k: int(raw.get(k, 0) or 0) for k in _TOKEN_SUMMARY_KEYS}

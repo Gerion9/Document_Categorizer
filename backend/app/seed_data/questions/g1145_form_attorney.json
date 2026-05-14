@@ -1,0 +1,15 @@
+{
+  "form": "G-1145",
+  "pages": [
+    {
+      "page": 1,
+      "items": [],
+      "excluded_sections": [
+        {
+          "name": "Entire form",
+          "reason": "Form G-1145 has no attorney-completed section; the only fillable fields are the applicant's name, email, and mobile phone number (all client-owned)."
+        }
+      ]
+    }
+  ]
+}

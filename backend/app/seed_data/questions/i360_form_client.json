@@ -1,0 +1,676 @@
+{
+  "form": "I-360",
+  "scope": "SIJS (Special Immigrant Juvenile Status) self-petition",
+  "pages": [
+    {
+      "page": 1,
+      "items": [
+        {
+          "id": "p1_petitioner_name",
+          "code": "1.a-1.c",
+          "section": "Part 1. Information About the Person Filing this Petition (Petitioner)",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Petitioner's Full Legal Name",
+          "instruction": "Use the juvenile petitioner's legal name exactly as it appears on the state court order and primary identity documents (birth certificate, passport). The juvenile is the petitioner in SIJS self-petitions.",
+          "fields": [
+            {
+              "id": "family_name",
+              "label": "Family Name (Last Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "given_name",
+              "label": "Given Name (First Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "middle_name",
+              "label": "Middle Name",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p1_uscis_account",
+          "code": "2",
+          "section": "Part 1. Information About the Person Filing this Petition (Petitioner)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "USCIS Online Account Number",
+          "instruction": "Provide the juvenile's USCIS Online Account Number if one has been created. Leave blank if the juvenile has never created a USCIS online account.",
+          "optional": true,
+          "where_to_verify": "USCIS Online Account; BIO CALL"
+        },
+        {
+          "id": "p1_ssn",
+          "code": "3",
+          "section": "Part 1. Information About the Person Filing this Petition (Petitioner)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Social Security Number (if any)",
+          "instruction": "Provide the juvenile's U.S. Social Security Number, if any. Leave blank if the juvenile has never been issued an SSN.",
+          "optional": true,
+          "where_to_verify": "SSN Card; Tax Records; BIO CALL"
+        },
+        {
+          "id": "p1_a_number",
+          "code": "4",
+          "section": "Part 1. Information About the Person Filing this Petition (Petitioner)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "A-Number (if any)",
+          "instruction": "Provide the juvenile's A-Number (omit the 'A-' prefix). Leave blank if no A-Number has been assigned.",
+          "optional": true,
+          "where_to_verify": "EAD Card; I-94; USCIS Receipt; BIO CALL"
+        },
+        {
+          "id": "p1_mailing_address",
+          "code": "6.a-6.i",
+          "section": "Part 1. Information About the Person Filing this Petition (Petitioner)",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Petitioner's Mailing Address",
+          "instruction": "Provide the juvenile's current U.S. mailing address. Use the firm address (P.O. Box 231704, Houston, TX 77223) only when the engagement letter directs notices to the firm.",
+          "fields": [
+            {
+              "id": "in_care_of",
+              "label": "In Care Of Name (if any)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "street_number_name",
+              "label": "Street Number and Name",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "unit_type",
+              "label": "Unit Type",
+              "type": "single_choice",
+              "options": [
+                {
+                  "value": "Apt",
+                  "label": "Apt."
+                },
+                {
+                  "value": "Ste",
+                  "label": "Ste."
+                },
+                {
+                  "value": "Flr",
+                  "label": "Flr."
+                }
+              ],
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "unit_number",
+              "label": "Unit Number",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "city",
+              "label": "City or Town",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "state",
+              "label": "State",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "zip_code",
+              "label": "ZIP Code",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "For USCIS Use Only",
+          "reason": "Completed by USCIS, not the client."
+        },
+        {
+          "name": "START HERE",
+          "reason": "Instructional text; not a fillable field."
+        },
+        {
+          "name": "Part 1, Item 5 (IRS Employer Identification Number)",
+          "reason": "Only applicable when the petitioner is an organization (Religious Worker, Broadcaster, etc.); not used for SIJS individual petitioners."
+        }
+      ]
+    },
+    {
+      "page": 2,
+      "items": [
+        {
+          "id": "p2_physical_address",
+          "code": "7.a-7.i",
+          "section": "Part 1. Information About the Person Filing this Petition (continued)",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Petitioner's Physical Address (if different from mailing address)",
+          "instruction": "Provide the juvenile's actual physical residence address. If identical to the mailing address in Items 6, leave blank.",
+          "optional": true,
+          "fields": [
+            {
+              "id": "street_number_name",
+              "label": "Street Number and Name",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "unit_type",
+              "label": "Unit Type",
+              "type": "single_choice",
+              "options": [
+                {
+                  "value": "Apt",
+                  "label": "Apt."
+                },
+                {
+                  "value": "Ste",
+                  "label": "Ste."
+                },
+                {
+                  "value": "Flr",
+                  "label": "Flr."
+                }
+              ],
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "unit_number",
+              "label": "Unit Number",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "city",
+              "label": "City or Town",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "state",
+              "label": "State",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "zip_code",
+              "label": "ZIP Code",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "Part 2 (Classification Requested)",
+          "reason": "Classification box selection (Special Immigrant Juvenile) is verified by the attorney; client does not select it."
+        }
+      ]
+    },
+    {
+      "page": 3,
+      "items": [
+        {
+          "id": "p3_beneficiary_name",
+          "code": "1.a-1.c",
+          "section": "Part 3. Information About the Person this Petition is For (Beneficiary)",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Beneficiary's Full Legal Name",
+          "instruction": "In SIJS self-petitions the petitioner and the beneficiary are the same juvenile; restate the juvenile's name exactly as in Part 1.",
+          "fields": [
+            {
+              "id": "family_name",
+              "label": "Family Name (Last Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "given_name",
+              "label": "Given Name (First Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "middle_name",
+              "label": "Middle Name",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p3_address",
+          "code": "2.a-2.i",
+          "section": "Part 3. Information About the Person this Petition is For (Beneficiary)",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Beneficiary's Address",
+          "instruction": "Provide the juvenile's residence address. Typically matches Part 1 mailing or physical address.",
+          "fields": [
+            {
+              "id": "in_care_of",
+              "label": "In Care Of Name (if any)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "street_number_name",
+              "label": "Street Number and Name",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "unit_type",
+              "label": "Unit Type",
+              "type": "single_choice",
+              "options": [
+                {
+                  "value": "Apt",
+                  "label": "Apt."
+                },
+                {
+                  "value": "Ste",
+                  "label": "Ste."
+                },
+                {
+                  "value": "Flr",
+                  "label": "Flr."
+                }
+              ],
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "unit_number",
+              "label": "Unit Number",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "city",
+              "label": "City or Town",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "state",
+              "label": "State",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "zip_code",
+              "label": "ZIP Code",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p3_date_of_birth",
+          "code": "3",
+          "section": "Part 3. Information About the Person this Petition is For (Beneficiary)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Date of Birth (Mmm DD YYYY)",
+          "instruction": "Provide the juvenile's date of birth in 'Mmm DD YYYY' format (e.g., Mar 21 2008). Must match the birth certificate; the juvenile must be under 21 on the date the petition is filed.",
+          "where_to_verify": "Birth Certificate; Passport; BIO CALL"
+        },
+        {
+          "id": "p3_country_of_birth",
+          "code": "4",
+          "section": "Part 3. Information About the Person this Petition is For (Beneficiary)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Country of Birth",
+          "instruction": "Provide the country where the juvenile was born; must match the birth certificate and passport.",
+          "where_to_verify": "Birth Certificate; Passport; BIO CALL"
+        },
+        {
+          "id": "p3_ssn",
+          "code": "5",
+          "section": "Part 3. Information About the Person this Petition is For (Beneficiary)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Social Security Number (if any)",
+          "instruction": "Restate the juvenile's SSN, if any. Must match Part 1, Item 3.",
+          "optional": true,
+          "where_to_verify": "SSN Card; Tax Records; BIO CALL"
+        },
+        {
+          "id": "p3_a_number",
+          "code": "6",
+          "section": "Part 3. Information About the Person this Petition is For (Beneficiary)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "A-Number (if any)",
+          "instruction": "Restate the juvenile's A-Number (without 'A-' prefix). Must match Part 1, Item 4.",
+          "optional": true,
+          "where_to_verify": "EAD Card; I-94; USCIS Receipt; BIO CALL"
+        },
+        {
+          "id": "p3_marital_status",
+          "code": "7",
+          "section": "Part 3. Information About the Person this Petition is For (Beneficiary)",
+          "responsible_party": "client",
+          "type": "single_choice",
+          "form_text": "Marital Status",
+          "instruction": "An SIJS beneficiary must be unmarried at the time of filing and through adjudication. If the juvenile has ever been married (annulled, divorced, widowed), select the applicable status; for never-married, select Single.",
+          "options": [
+            {
+              "value": "single",
+              "label": "Single, Never Married"
+            },
+            {
+              "value": "married",
+              "label": "Married"
+            },
+            {
+              "value": "divorced",
+              "label": "Divorced"
+            },
+            {
+              "value": "widowed",
+              "label": "Widowed"
+            }
+          ],
+          "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+        },
+        {
+          "id": "p3_last_arrival",
+          "code": "8",
+          "section": "Part 3. Information About the Person this Petition is For (Beneficiary)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Date of Last Arrival in the United States (Mmm DD YYYY)",
+          "instruction": "Provide the most recent U.S. entry date in 'Mmm DD YYYY' format. Source from I-94, passport entry stamp, or the juvenile's recollection if no record exists.",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p3_i94",
+          "code": "9",
+          "section": "Part 3. Information About the Person this Petition is For (Beneficiary)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "I-94 Arrival/Departure Record Number",
+          "instruction": "Provide the 11-digit I-94 number (if any). Retrieve from i94.cbp.dhs.gov or the most recent I-94 print-out in the case file.",
+          "optional": true,
+          "where_to_verify": "Form I-94; CBP Records; BIO CALL"
+        },
+        {
+          "id": "p3_passport",
+          "code": "10",
+          "section": "Part 3. Information About the Person this Petition is For (Beneficiary)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Passport Number",
+          "instruction": "Provide the juvenile's passport number, if any. Source from a copy of the passport biographic page in the case file.",
+          "optional": true,
+          "where_to_verify": "Passport; BIO CALL; Intake"
+        },
+        {
+          "id": "p3_travel_doc",
+          "code": "11",
+          "section": "Part 3. Information About the Person this Petition is For (Beneficiary)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Travel Document Number (if applicable)",
+          "instruction": "Provide a travel document number only if the juvenile entered with a travel document instead of a passport.",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p3_passport_issuance_country",
+          "code": "12",
+          "section": "Part 3. Information About the Person this Petition is For (Beneficiary)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Country of Issuance for Passport or Travel Document",
+          "instruction": "Provide the country that issued the passport or travel document above.",
+          "optional": true,
+          "where_to_verify": "Passport; BIO CALL; Intake"
+        },
+        {
+          "id": "p3_passport_expiration",
+          "code": "13",
+          "section": "Part 3. Information About the Person this Petition is For (Beneficiary)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Passport or Travel Document Expiration Date (Mmm DD YYYY)",
+          "instruction": "Provide the expiration date in 'Mmm DD YYYY' format.",
+          "optional": true,
+          "where_to_verify": "Passport; BIO CALL; Intake"
+        },
+        {
+          "id": "p3_current_status",
+          "code": "14",
+          "section": "Part 3. Information About the Person this Petition is For (Beneficiary)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Current USCIS / Immigration Status",
+          "instruction": "Provide the juvenile's current immigration status (e.g., 'No status / EWI', 'Parole', 'TPS', 'F-1', 'Pending asylum'). Source: prior USCIS filings and I-797 receipts.",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p3_status_expiration",
+          "code": "15",
+          "section": "Part 3. Information About the Person this Petition is For (Beneficiary)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Status Expiration Date (Mmm DD YYYY)",
+          "instruction": "Provide the expiration date of the current status, if any.",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        }
+      ]
+    },
+    {
+      "page": 4,
+      "items": [
+        {
+          "id": "p4_sex",
+          "code": "3",
+          "section": "Part 4. Processing Information",
+          "responsible_party": "client",
+          "type": "single_choice",
+          "form_text": "Sex",
+          "instruction": "Mark the juvenile's sex as listed on the birth certificate or government-issued identity document.",
+          "options": [
+            {
+              "value": "male",
+              "label": "Male"
+            },
+            {
+              "value": "female",
+              "label": "Female"
+            }
+          ],
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "Part 4 - Consular/processing items (Items 1.a, 1.b, 2.a, 2.b, 4.a, 4.b, 5, 6, 7)",
+          "reason": "Processing strategy (adjustment vs. consular, prior removal proceedings, etc.) is determined and entered by the attorney."
+        },
+        {
+          "name": "Part 5 (Spouse and Children)",
+          "reason": "SIJS beneficiaries must be unmarried; spouse never applies. Children are listed only when the juvenile actually has biological children, which is uncommon."
+        },
+        {
+          "name": "Part 6 (Amerasian) and Part 7 (Widow(er))",
+          "reason": "Classification-specific; not applicable to SIJS."
+        }
+      ]
+    },
+    {
+      "page": 8,
+      "items": [
+        {
+          "id": "p8_sij_current_name",
+          "code": "1.a-1.c",
+          "section": "Part 8. Complete Only If Filing for a Special Immigrant Juvenile",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "SIJ Current Legal Name",
+          "instruction": "Restate the juvenile's current legal name exactly as in Part 1, Items 1.a-1.c.",
+          "fields": [
+            {
+              "id": "family_name",
+              "label": "Family Name (Last Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "given_name",
+              "label": "Given Name (First Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "middle_name",
+              "label": "Middle Name",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "where_to_verify": "Juvenile Court Order; Predicate Order; Declaration"
+        },
+        {
+          "id": "p8_sij_name_on_court_order",
+          "code": "1.d-1.f",
+          "section": "Part 8. Complete Only If Filing for a Special Immigrant Juvenile",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Other Names Used (including name on the state court order)",
+          "instruction": "Provide the juvenile's name exactly as it appears on the state court order if it differs from the current legal name. Include any prior legal names, maiden names, or aliases used in immigration filings.",
+          "optional": true,
+          "fields": [
+            {
+              "id": "family_name",
+              "label": "Family Name (Last Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "given_name",
+              "label": "Given Name (First Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "middle_name",
+              "label": "Middle Name",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "where_to_verify": "Juvenile Court Order; Predicate Order; Declaration"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "Part 8 - Court order findings, custody, and reunification checkboxes (Items 2.a-2.c, 3.a, 3.b, 3.A_Checkbox, 3.b_Checkbox, 4.a, 4.b, 5, 6.a, 6.b)",
+          "reason": "These items reflect the contents and legal effect of the state court order. They are completed by the attorney based on the order itself, not by the juvenile client."
+        }
+      ]
+    },
+    {
+      "page": 15,
+      "items": [
+        {
+          "id": "p11_petitioner_daytime_phone",
+          "code": "3",
+          "section": "Part 11. Petitioner's Statement, Contact Information, Declaration, Certification, and Signature",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Petitioner's Daytime Telephone Number",
+          "instruction": "Provide a daytime number where the juvenile or the juvenile's legal guardian can be reached. Source: intake / BioCall.",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake"
+        },
+        {
+          "id": "p11_petitioner_mobile",
+          "code": "4",
+          "section": "Part 11. Petitioner's Statement, Contact Information, Declaration, Certification, and Signature",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Petitioner's Mobile Telephone Number (if any)",
+          "instruction": "Provide the juvenile's (or guardian's) mobile number if different from the daytime number.",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake"
+        },
+        {
+          "id": "p11_petitioner_email",
+          "code": "5",
+          "section": "Part 11. Petitioner's Statement, Contact Information, Declaration, Certification, and Signature",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Petitioner's Email Address (if any)",
+          "instruction": "Provide a current email; client email is preferred when available.",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p11_petitioner_signature_date",
+          "code": "6.b",
+          "section": "Part 11. Petitioner's Statement, Contact Information, Declaration, Certification, and Signature",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Petitioner's Date of Signature (Mmm DD YYYY)",
+          "instruction": "Date the petitioner (juvenile) signs Item 6.a in ink. Must use 'Mmm DD YYYY' format. The signature itself is wet-ink only and is not auto-filled.",
+          "where_to_verify": "Declaration; Signed Form"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "Part 11, Items 1.a-1.b (Petitioner statement language) and Item 2 (interpreter checkbox)",
+          "reason": "Whether an interpreter was used and the language are entered by the attorney based on the firm's intake notes."
+        },
+        {
+          "name": "Part 11, Item 6.a (signature)",
+          "reason": "Wet-ink signature only; never auto-filled."
+        },
+        {
+          "name": "Part 12 (Authorized Signatory for Organizations)",
+          "reason": "Only applies when the petitioner is an organization (Religious Worker, Broadcaster). Not used in SIJS individual petitions."
+        }
+      ]
+    }
+  ]
+}

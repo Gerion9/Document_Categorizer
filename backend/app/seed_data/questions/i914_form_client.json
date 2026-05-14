@@ -1,0 +1,1711 @@
+{
+  "form": "I-914",
+  "pages": [
+    {
+      "page": 1,
+      "items": [
+        {
+          "id": "p1_1",
+          "code": "1",
+          "section": "Part 1. Purpose for Filing This Application",
+          "responsible_party": "client",
+          "type": "single_choice",
+          "form_text": "Purpose for Filing This Application",
+          "default_value": "A",
+          "options": [
+            {
+              "value": "A",
+              "label": "I am filing for T-1 nonimmigrant status and have not previously filed for such status."
+            },
+            {
+              "value": "B",
+              "label": "I am filing for T-1 nonimmigrant status and have previously filed for such status."
+            }
+          ],
+          "also_validate_with": [
+            "attorney"
+          ],
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_1",
+          "code": "2.1",
+          "section": "Part 2. General Information About You",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Your Full Legal Name",
+          "fields": [
+            {
+              "id": "family_name",
+              "label": "Family Name (Last Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "given_name",
+              "label": "Given Name (First Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "middle_name",
+              "label": "Middle Name (if any)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_2",
+          "code": "2.2",
+          "section": "Part 2. General Information About You",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Other Names Used",
+          "instruction": "Provide any other names you have used since birth, including aliases, maiden names, and nicknames.",
+          "optional": true,
+          "fields": [
+            {
+              "id": "other_family_name",
+              "label": "Family Name (Last Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "other_given_name",
+              "label": "Given Name (First Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "other_middle_name",
+              "label": "Middle Name (if any)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_3",
+          "code": "2.3",
+          "section": "Part 2. General Information About You",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Physical Address",
+          "fields": [
+            {
+              "id": "street_number_name",
+              "label": "Street Number and Name",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "unit_type",
+              "label": "Apt./Ste./Flr.",
+              "type": "select",
+              "options": [
+                "Apt.",
+                "Ste.",
+                "Flr."
+              ],
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "unit_number",
+              "label": "Number",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "city",
+              "label": "City or Town",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "state",
+              "label": "State",
+              "type": "select",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "zip_code",
+              "label": "ZIP Code",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_4",
+          "code": "2.4",
+          "section": "Part 2. General Information About You",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Safe Mailing Address",
+          "instruction": "If you do not want USCIS to send notices about this application to your home address, you may provide an alternate safe mailing address.",
+          "optional": true,
+          "fields": [
+            {
+              "id": "in_care_of_name",
+              "label": "In Care Of Name",
+              "type": "text",
+              "optional": true,
+              "default_value": "Law Offices of Manuel E. Solis",
+              "force_default": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "safe_street_number_name",
+              "label": "Street Number and Name",
+              "type": "text",
+              "default_value": "P.O. Box 231704",
+              "force_default": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "safe_unit_type",
+              "label": "Apt./Ste./Flr.",
+              "type": "select",
+              "options": [
+                "Apt.",
+                "Ste.",
+                "Flr."
+              ],
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "safe_unit_number",
+              "label": "Number",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "safe_city",
+              "label": "City or Town",
+              "type": "text",
+              "default_value": "Houston",
+              "force_default": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "safe_state",
+              "label": "State",
+              "type": "select",
+              "default_value": "TX",
+              "force_default": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "safe_zip_code",
+              "label": "ZIP Code",
+              "type": "text",
+              "default_value": "77223",
+              "force_default": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "For USCIS Use Only",
+          "reason": "Neither the client nor the attorney completes this section."
+        }
+      ]
+    },
+    {
+      "page": 2,
+      "items": [
+        {
+          "id": "p2_5",
+          "code": "2.5",
+          "section": "Part 2. General Information About You (continued)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Alien Registration Number (A-Number) (if any)",
+          "prefix": "A-",
+          "optional": true,
+          "where_to_verify": "EAD Card; I-94; USCIS Receipt; BIO CALL"
+        },
+        {
+          "id": "p2_6",
+          "code": "2.6",
+          "section": "Part 2. General Information About You (continued)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "USCIS Online Account Number (if any)",
+          "optional": true,
+          "where_to_verify": "USCIS Online Account; BIO CALL"
+        },
+        {
+          "id": "p2_7",
+          "code": "2.7",
+          "section": "Part 2. General Information About You (continued)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "U.S. Social Security Number (SSN) (if any)",
+          "optional": true,
+          "where_to_verify": "SSN Card; Tax Records; BIO CALL"
+        },
+        {
+          "id": "p2_8",
+          "code": "2.8",
+          "section": "Part 2. General Information About You (continued)",
+          "responsible_party": "client",
+          "type": "single_choice",
+          "form_text": "Sex",
+          "options": [
+            "Male",
+            "Female"
+          ],
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_9",
+          "code": "2.9",
+          "section": "Part 2. General Information About You (continued)",
+          "responsible_party": "client",
+          "type": "single_choice",
+          "form_text": "Marital Status",
+          "options": [
+            "Single/Never Married",
+            "Married",
+            "Divorced",
+            "Widowed"
+          ],
+          "optional": true,
+          "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+        },
+        {
+          "id": "p2_10",
+          "code": "2.10",
+          "section": "Part 2. General Information About You (continued)",
+          "responsible_party": "client",
+          "type": "date",
+          "form_text": "Date of Birth",
+          "format": "Mmm DD YYYY",
+          "optional": true,
+          "where_to_verify": "Birth Certificate; Passport; BIO CALL"
+        },
+        {
+          "id": "p2_11",
+          "code": "2.11",
+          "section": "Part 2. General Information About You (continued)",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Place of Birth",
+          "fields": [
+            {
+              "id": "birth_city",
+              "label": "City or Town",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "birth_state_province",
+              "label": "State or Province",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "birth_country",
+              "label": "Country",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "Birth Certificate; Passport; BIO CALL"
+        },
+        {
+          "id": "p2_12",
+          "code": "2.12",
+          "section": "Part 2. General Information About You (continued)",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Country of Citizenship or Nationality",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_passport",
+          "code": "2.13-2.16",
+          "section": "Part 2. General Information About You (continued)",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Passport or Travel Document Information",
+          "optional": true,
+          "fields": [
+            {
+              "id": "passport_or_travel_document_number",
+              "label": "Passport or Travel Document Number (if any)",
+              "type": "text",
+              "where_to_verify": "Passport; BIO CALL; Intake"
+            },
+            {
+              "id": "issuing_country",
+              "label": "Country That Issued Your Passport or Travel Document (if any)",
+              "type": "text",
+              "where_to_verify": "Passport; BIO CALL; Intake"
+            },
+            {
+              "id": "passport_issue_date",
+              "label": "Issue Date for Passport or Travel Document (if any)",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "where_to_verify": "Passport; BIO CALL; Intake"
+            },
+            {
+              "id": "passport_expiration_date",
+              "label": "Expiration Date for Passport or Travel Document (if any)",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "where_to_verify": "Passport; BIO CALL; Intake"
+            }
+          ],
+          "where_to_verify": "Passport; BIO CALL; Intake"
+        },
+        {
+          "id": "p2_last_entry",
+          "code": "2.17-2.19",
+          "section": "Part 2. General Information About You (continued)",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Last Entry Into the United States",
+          "fields": [
+            {
+              "id": "last_entry_city",
+              "label": "Place of Your Last Entry Into the United States - City or Town",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "last_entry_state",
+              "label": "Place of Your Last Entry Into the United States - State",
+              "type": "select",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "last_entry_date",
+              "label": "Date of Your Last Entry Into the United States, On or About",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "i94_record_number",
+              "label": "Form I-94 Arrival-Departure Record Number (if any)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "Form I-94; CBP Records; BIO CALL"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p2_20",
+          "code": "2.20",
+          "section": "Part 2. General Information About You (continued)",
+          "responsible_party": "client",
+          "type": "text",
+          "default_value": "T-Visa Applicant",
+          "form_text": "Your Current Nonimmigrant Status",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p3_1",
+          "code": "3.1",
+          "section": "Part 3. Additional Information About Your Application",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "default_value": "yes",
+          "form_text": "I am or have been a victim of a severe form of trafficking in persons.",
+          "optional": true,
+          "where_to_verify": "LEA Report; Declaration; Intake"
+        },
+        {
+          "id": "p3_2a",
+          "code": "3.2.A",
+          "section": "Part 3. Additional Information About Your Application",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "default_value": "yes",
+          "form_text": "I have cooperated with reasonable requests for assistance from law enforcement.",
+          "optional": true,
+          "where_to_verify": "LEA Report; Declaration; Intake"
+        },
+        {
+          "id": "p3_2b",
+          "code": "3.2.B",
+          "section": "Part 3. Additional Information About Your Application",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Due to my age or the trauma I have suffered, I am exempt from the requirement to cooperate with reasonable requests for assistance from law enforcement.",
+          "optional": true,
+          "where_to_verify": "LEA Report; Declaration; Intake"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "Part 3 Instructions",
+          "reason": "Instructional text only; not a direct question or fillable field."
+        }
+      ]
+    },
+    {
+      "page": 3,
+      "items": [
+        {
+          "id": "p3_3",
+          "code": "3.3",
+          "section": "Part 3. Additional Information About Your Application (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "default_value": "yes",
+          "form_text": "I am physically present in the United States, American Samoa, or the Commonwealth of the Northern Mariana Islands, or at a port of entry, on account of trafficking, or have been allowed entry into the United States to participate in investigative or judicial processes associated with an act or perpetrator of trafficking.",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p3_4",
+          "code": "3.4",
+          "section": "Part 3. Additional Information About Your Application (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "default_value": "yes",
+          "form_text": "I fear that I will suffer extreme hardship involving unusual and severe harm upon removal.",
+          "optional": true,
+          "where_to_verify": "EOIR Portal; ICE Records; Declaration"
+        },
+        {
+          "id": "p3_5",
+          "code": "3.5",
+          "section": "Part 3. Additional Information About Your Application (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "default_value": "yes",
+          "form_text": "I have reported the trafficking crime of which I am claiming to be a victim.",
+          "instruction": "If you selected 'Yes,' indicate to which law enforcement agency and office you have made the report, the address and phone number of that office, and the case number assigned, if any. If you selected 'No,' explain the circumstances below.",
+          "details_fields": [
+            {
+              "id": "lea_agency_office",
+              "label": "Law Enforcement Agency and Office",
+              "type": "text",
+              "default_value": "Human Trafficking Prosecution Unit of the U.S. Department of Justice",
+              "force_default": true,
+              "condition": "If 'Yes'",
+              "where_to_verify": "LEA Report; Declaration; Intake"
+            },
+            {
+              "id": "lea_street_number_name",
+              "label": "Street Number and Name",
+              "type": "text",
+              "default_value": "950 Pennsylvania Ave NW",
+              "force_default": true,
+              "condition": "If 'Yes'",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "lea_unit_type",
+              "label": "Apt./Ste./Flr.",
+              "type": "select",
+              "options": [
+                "Apt.",
+                "Ste.",
+                "Flr."
+              ],
+              "optional": true,
+              "condition": "If 'Yes'",
+              "where_to_verify": "LEA Report; Declaration; Intake"
+            },
+            {
+              "id": "lea_unit_number",
+              "label": "Number",
+              "type": "text",
+              "optional": true,
+              "condition": "If 'Yes'",
+              "where_to_verify": "LEA Report; Declaration; Intake"
+            },
+            {
+              "id": "lea_city",
+              "label": "City or Town",
+              "type": "text",
+              "default_value": "Washington",
+              "force_default": true,
+              "condition": "If 'Yes'",
+              "where_to_verify": "LEA Report; Declaration; Intake"
+            },
+            {
+              "id": "lea_state",
+              "label": "State",
+              "type": "select",
+              "default_value": "DC",
+              "force_default": true,
+              "condition": "If 'Yes'",
+              "where_to_verify": "LEA Report; Declaration; Intake"
+            },
+            {
+              "id": "lea_zip_code",
+              "label": "ZIP Code",
+              "type": "text",
+              "default_value": "20530",
+              "force_default": true,
+              "condition": "If 'Yes'",
+              "where_to_verify": "LEA Report; Declaration; Intake"
+            },
+            {
+              "id": "lea_daytime_telephone",
+              "label": "Daytime Telephone Number",
+              "type": "text",
+              "default_value": "2025142000",
+              "force_default": true,
+              "condition": "If 'Yes'",
+              "where_to_verify": "BIO CALL; Intake"
+            },
+            {
+              "id": "lea_case_number",
+              "label": "Case Number",
+              "type": "text",
+              "optional": true,
+              "default_value": "Pending - Online submission via E-mail",
+              "force_default": true,
+              "condition": "If 'Yes'",
+              "where_to_verify": "LEA Report; Declaration; Intake"
+            },
+            {
+              "id": "lea_circumstances",
+              "label": "Circumstances",
+              "type": "textarea",
+              "default_value": "",
+              "condition": "If 'No'",
+              "where_to_verify": "LEA Report; Declaration; Intake"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "LEA Report; Declaration; Intake"
+        },
+        {
+          "id": "p3_6",
+          "code": "3.6",
+          "section": "Part 3. Additional Information About Your Application (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "I was under 18 years of age at the time at least one of the acts of trafficking occurred.",
+          "optional": true,
+          "where_to_verify": "LEA Report; Declaration; Intake"
+        },
+        {
+          "id": "p3_7",
+          "code": "3.7",
+          "section": "Part 3. Additional Information About Your Application (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "default_value": "yes",
+          "form_text": "I have complied with reasonable requests from Federal, State, Tribal, or local law enforcement authorities for assistance in the investigation or prosecution of acts of trafficking, or am unable to cooperate with such requests due to physical or psychological trauma.",
+          "instruction": "If the trafficking experience occurred before the age of 15, select 'No'. If you selected 'No,' and you were over 18 years of age at the time one of the acts of trafficking occurred, explain the circumstances.",
+          "details_fields": [
+            {
+              "id": "explanation",
+              "label": "Explanation",
+              "type": "textarea",
+              "condition": "If 'No' and you were over 18 years of age at the time one of the acts of trafficking occurred",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p3_8",
+          "code": "3.8",
+          "section": "Part 3. Additional Information About Your Application (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "This is the first time I have entered the United States.",
+          "instruction": "If you selected 'No,' list each date, place of entry, and under which status you entered the United States for the past five years, and explain the circumstances of your most recent arrival. If you need extra space, use the space provided in Part 9. Additional Information.",
+          "details_fields": [
+            {
+              "id": "prior_entry_date",
+              "label": "Date of Entry",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "condition": "If 'No'",
+              "repeatable": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "prior_entry_city",
+              "label": "Place of Entry - City or Town",
+              "type": "text",
+              "condition": "If 'No'",
+              "repeatable": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "prior_entry_state",
+              "label": "Place of Entry - State",
+              "type": "select",
+              "condition": "If 'No'",
+              "repeatable": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "prior_entry_status",
+              "label": "Status",
+              "type": "text",
+              "condition": "If 'No'",
+              "repeatable": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p3_9",
+          "code": "3.9",
+          "section": "Part 3. Additional Information About Your Application (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "default_value": "yes",
+          "form_text": "My most recent entry was on account of the trafficking that forms the basis for my claim.",
+          "instruction": "Explain the circumstances of your most recent arrival.",
+          "details_fields": [
+            {
+              "id": "arrival_circumstances",
+              "label": "Circumstances of Your Most Recent Arrival",
+              "type": "textarea",
+              "instruction": "Describe how you entered, where you entered, and what happened afterward, including any detention, processing, release, or parole.",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "LEA Report; Declaration; Intake"
+        },
+        {
+          "id": "p3_10",
+          "code": "3.10",
+          "section": "Part 3. Additional Information About Your Application (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "default_value": "yes",
+          "form_text": "I am requesting an Employment Authorization Document (EAD) when I am granted T nonimmigrant status.",
+          "optional": true,
+          "where_to_verify": "Pay Stubs; Tax Records; BIO CALL"
+        },
+        {
+          "id": "p3_11",
+          "code": "3.11",
+          "section": "Part 3. Additional Information About Your Application (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "I am now applying for one or more eligible family members.",
+          "default_value": true,
+          "instruction": "If you selected 'Yes,' complete and include a Form I-914, Supplement A, Application for Derivative T Nonimmigrant Status, for each family member for whom you are now applying. You may also apply to bring eligible family members to the United States at a later date.",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        }
+      ]
+    },
+    {
+      "page": 4,
+      "items": [
+        {
+          "id": "p4_1a",
+          "code": "4.1.A",
+          "section": "Part 4. Processing Information",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Committed a crime or offense for which you have not been arrested?",
+          "optional": true,
+          "where_to_verify": "FBI Records; Court Disposition; LEA Report; Declaration"
+        },
+        {
+          "id": "p4_1b",
+          "code": "4.1.B",
+          "section": "Part 4. Processing Information",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Been arrested, cited, or detained by any law enforcement officer (including Department of Homeland Security (DHS), former Immigration and Naturalization Service (INS), and military officers) for any reason?",
+          "optional": true,
+          "where_to_verify": "FBI Records; Court Disposition; LEA Report; Declaration"
+        },
+        {
+          "id": "p4_1c",
+          "code": "4.1.C",
+          "section": "Part 4. Processing Information",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Been charged with committing any crime or offense?",
+          "optional": true,
+          "where_to_verify": "FBI Records; Court Disposition; LEA Report; Declaration"
+        },
+        {
+          "id": "p4_1d",
+          "code": "4.1.D",
+          "section": "Part 4. Processing Information",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Been convicted of a crime or offense (even if violation was subsequently expunged or pardoned)?",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_1e",
+          "code": "4.1.E",
+          "section": "Part 4. Processing Information",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Been placed in an alternative sentencing or a rehabilitative program (for example: diversion, deferred prosecution, withheld adjudication, deferred adjudication)?",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_1f",
+          "code": "4.1.F",
+          "section": "Part 4. Processing Information",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Received a suspended sentence, been placed on probation, or been paroled?",
+          "optional": true,
+          "where_to_verify": "FBI Records; Court Disposition; LEA Report; Declaration"
+        },
+        {
+          "id": "p4_1g",
+          "code": "4.1.G",
+          "section": "Part 4. Processing Information",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Been in jail or prison?",
+          "optional": true,
+          "where_to_verify": "FBI Records; Court Disposition; LEA Report; Declaration"
+        },
+        {
+          "id": "p4_1h",
+          "code": "4.1.H",
+          "section": "Part 4. Processing Information",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Been the beneficiary of a pardon, amnesty, rehabilitation, or other act of clemency or similar action?",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_1i",
+          "code": "4.1.I",
+          "section": "Part 4. Processing Information",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Exercised diplomatic immunity to avoid prosecution for a criminal offense in the United States?",
+          "optional": true,
+          "where_to_verify": "FBI Records; Court Disposition; LEA Report; Declaration"
+        },
+        {
+          "id": "p4_1_details",
+          "code": "4.1.details",
+          "section": "Part 4. Processing Information",
+          "responsible_party": "client",
+          "type": "table",
+          "form_text": "If you answered 'Yes' to any of the above questions, complete the following table.",
+          "instruction": "If you need extra space, use the space provided in Part 9. Additional Information.",
+          "condition": "If any of 4.1.A through 4.1.I is 'Yes'",
+          "repeatable": true,
+          "fields": [
+            {
+              "id": "incident_reason",
+              "label": "Why were you arrested, cited, detained, or charged?",
+              "type": "textarea",
+              "where_to_verify": "FBI Records; Court Disposition; LEA Report; Declaration"
+            },
+            {
+              "id": "incident_date",
+              "label": "Date of arrest, citation, detention, charge",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "where_to_verify": "FBI Records; Court Disposition; LEA Report; Declaration"
+            },
+            {
+              "id": "incident_location",
+              "label": "Where were you arrested, cited, detained, or charged? (City or Town, State, Country)",
+              "type": "text",
+              "where_to_verify": "FBI Records; Court Disposition; LEA Report; Declaration"
+            },
+            {
+              "id": "incident_outcome",
+              "label": "Outcome or disposition",
+              "type": "textarea",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_2a",
+          "code": "4.2.A",
+          "section": "Part 4. Processing Information",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Engaged in prostitution or procurement of prostitution or do you intend to engage in prostitution or procurement of prostitution?",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_2b",
+          "code": "4.2.B",
+          "section": "Part 4. Processing Information",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "EVER engaged in any unlawful commercialized vice, including, but not limited to illegal gambling?",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_2c",
+          "code": "4.2.C",
+          "section": "Part 4. Processing Information",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "EVER knowingly encouraged, induced, assisted, abetted, or aided any alien to try to enter the United States illegally?",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_2d",
+          "code": "4.2.D",
+          "section": "Part 4. Processing Information",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "EVER illicitly trafficked in any controlled substance, or knowingly assisted, abetted, or colluded in the illicit trafficking of any controlled substance?",
+          "optional": true,
+          "where_to_verify": "LEA Report; Declaration; Intake"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "Part 4 Instructions",
+          "reason": "Instructional text only; not a direct question or fillable field."
+        }
+      ]
+    },
+    {
+      "page": 5,
+      "items": [
+        {
+          "id": "p4_3a",
+          "code": "4.3.A",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Hijacking or sabotage of any conveyance (including an aircraft, vessel, or vehicle)?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_3b",
+          "code": "4.3.B",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Seizing or detaining, and threatening to kill, injure, or continue to detain, another individual in order to compel a third person (including a governmental organization) to do or abstain from doing any act as an explicit or implicit condition for the release of the individual seized or detained?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "EOIR Portal; ICE Records; Declaration"
+        },
+        {
+          "id": "p4_3c",
+          "code": "4.3.C",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Assassination?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_3d",
+          "code": "4.3.D",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "The use of any firearm with intent to endanger, directly or indirectly, the safety of one or more individuals or to cause substantial damage to property?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_3e",
+          "code": "4.3.E",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "The use of any biological agent; chemical agent; or nuclear weapon or device; explosive; or other weapon or dangerous device, with intent to endanger, directly or indirectly, the safety of one or more individuals or to cause substantial damage to property?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "LEA Report; Declaration; Intake"
+        },
+        {
+          "id": "p4_4a",
+          "code": "4.4.A",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "default_value": "no",
+          "form_text": "Designated as a terrorist organization under the Immigration and Nationality Act section 219?",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_4b_1",
+          "code": "4.4.B.1",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Any other group of two or more individuals, whether organized or not, which has engaged in or has a subgroup which has engaged in: Hijacking or sabotage of any conveyance (including an aircraft, vessel, or vehicle)?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_4b_2",
+          "code": "4.4.B.2",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Any other group of two or more individuals, whether organized or not, which has engaged in or has a subgroup which has engaged in: Seizing or detaining, and threatening to kill, injure, or continue to detain another individual in order to compel a third person (including a governmental organization) to do or abstain from doing any act as an explicit or implicit condition for the release of the individual seized or detained?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "EOIR Portal; ICE Records; Declaration"
+        },
+        {
+          "id": "p4_4b_3",
+          "code": "4.4.B.3",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Any other group of two or more individuals, whether organized or not, which has engaged in or has a subgroup which has engaged in: Assassination?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_4b_4",
+          "code": "4.4.B.4",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Any other group of two or more individuals, whether organized or not, which has engaged in or has a subgroup which has engaged in: The use of any firearm with intent to endanger, directly or indirectly, the safety of one or more individuals or to cause substantial damage to property?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_4b_5",
+          "code": "4.4.B.5",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Any other group of two or more individuals, whether organized or not, which has engaged in or has a subgroup which has engaged in: Soliciting money or members or otherwise providing material support to a terrorist organization?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_4b_6",
+          "code": "4.4.B.6",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Any other group of two or more individuals, whether organized or not, which has engaged in or has a subgroup which has engaged in: The use of any biological agent; chemical agent; or nuclear weapon or device; explosive; or other weapon or dangerous device, with intent to endanger, directly or indirectly, the safety of one or more individuals or to cause substantial damage to property?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "LEA Report; Declaration; Intake"
+        },
+        {
+          "id": "p4_5a",
+          "code": "4.5.A",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Do you intend to engage in the United States in: Espionage?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_5b",
+          "code": "4.5.B",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Do you intend to engage in the United States in: Any unlawful activity, or any activity the purpose of which is in opposition to, control, or overthrow of the government of the United States?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_5c",
+          "code": "4.5.C",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Do you intend to engage in the United States in: Solely, principally, or incidentally in any activity related to espionage or sabotage or to violate any law involving the export of goods, technology, or sensitive information?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "EOIR Portal; ICE Records; Declaration"
+        },
+        {
+          "id": "p4_6",
+          "code": "4.6",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Have you ever been or do you continue to be a member of the Communist or other totalitarian party, except when membership was involuntary?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "EOIR Portal; ICE Records; Declaration"
+        },
+        {
+          "id": "p4_7",
+          "code": "4.7",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Have you, during the period of March 23, 1933, to May 8, 1945, in association with either the Nazi Government of Germany or any organization or government associated or allied with the Nazi Government of Germany, ever ordered, incited, assisted, or otherwise participated in the persecution of any person because of race, religion, nationality, membership in a particular social group, or political opinion?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "Part 4 Continued Intro",
+          "reason": "The lead-in text for items 3 and 4 is contextual only; the actual answerable fields are captured as separate yes/no questions."
+        }
+      ]
+    },
+    {
+      "page": 6,
+      "items": [
+        {
+          "id": "p4_8a",
+          "code": "4.8.A",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Intentionally killed, tortured, beaten, or injured?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_8b",
+          "code": "4.8.B",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Displaced or moved from their residence by force, compulsion, or duress?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_8c",
+          "code": "4.8.C",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "In any way compelled or forced to engage in any kind of sexual contact or relations?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "EOIR Portal; ICE Records; Declaration"
+        },
+        {
+          "id": "p4_9a",
+          "code": "4.9.A",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Are removal, exclusion, rescission, or deportation proceedings pending against you?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "EOIR Portal; ICE Records; Declaration"
+        },
+        {
+          "id": "p4_9b",
+          "code": "4.9.B",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Have removal, exclusion, rescission, or deportation proceedings EVER been initiated against you?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "EOIR Portal; ICE Records; Declaration"
+        },
+        {
+          "id": "p4_9c",
+          "code": "4.9.C",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Have you EVER been removed, excluded, or deported from the United States?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "EOIR Portal; ICE Records; Declaration"
+        },
+        {
+          "id": "p4_9d",
+          "code": "4.9.D",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Have you EVER been ordered to be removed, excluded, or deported from the United States?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "EOIR Portal; ICE Records; Declaration"
+        },
+        {
+          "id": "p4_9e",
+          "code": "4.9.E",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Have you EVER been denied a visa or denied admission to the United States?",
+          "instruction": "If a visa was denied, use the space provided in Part 9. Additional Information.",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_9f",
+          "code": "4.9.F",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Have you EVER been granted voluntary departure by an immigration officer or an immigration judge and failed to depart within the allotted time?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "EOIR Portal; ICE Records; Declaration"
+        },
+        {
+          "id": "p4_10a",
+          "code": "4.10.A",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Acts involving torture or genocide?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_10b",
+          "code": "4.10.B",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Killing any person?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_10c",
+          "code": "4.10.C",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Intentionally and severely injuring any person?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_10d",
+          "code": "4.10.D",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Engaging in any kind of sexual contact or relations with any person who was being forced or threatened?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "EOIR Portal; ICE Records; Declaration"
+        },
+        {
+          "id": "p4_10e",
+          "code": "4.10.E",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Limiting or denying any person's ability to exercise religious beliefs?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_11a",
+          "code": "4.11.A",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Served in, been a member of, assisted in, or participated in any military unit, paramilitary unit, police unit, self-defense unit, vigilante unit, rebel group, guerrilla group, militia, or insurgent organization?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_11b",
+          "code": "4.11.B",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Served in any prison, jail, prison camp, detention facility, labor camp, or any other situation that involved detaining persons?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "FBI Records; Court Disposition; LEA Report; Declaration"
+        },
+        {
+          "id": "p4_12",
+          "code": "4.12",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Have you EVER been a member of, assisted in, or participated in any group, unit, or organization of any kind in which you or other persons used any type of weapon against any person or threatened to do so?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_13",
+          "code": "4.13",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Have you EVER assisted or participated in selling or providing weapons to any person who to your knowledge used them against another person, or in transporting weapons to any person who to your knowledge used them against another person?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_14",
+          "code": "4.14",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Have you EVER received any type of military, paramilitary, or weapons training?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_15",
+          "code": "4.15",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Are you under a final order or civil penalty for violating section 274C (producing and/or using false documentation to unlawfully satisfy a requirement of the Immigration and Nationality Act)?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "EOIR Portal; ICE Records; Declaration"
+        },
+        {
+          "id": "p4_16",
+          "code": "4.16",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Have you EVER, by fraud or willful misrepresentation of a material fact, sought to procure, or procured, a visa or other documentation, for entry into the United States or any immigration benefit?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "EOIR Portal; ICE Records; Declaration"
+        },
+        {
+          "id": "p4_17",
+          "code": "4.17",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Have you EVER left the United States to avoid being drafted into the U.S. Armed Forces?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_18",
+          "code": "4.18",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Have you EVER detained, retained, or withheld the custody of a child, having a lawful claim to U.S. citizenship, outside the United States from a U.S. citizen granted custody?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_19",
+          "code": "4.19",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Do you plan to practice polygamy in the United States?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_20",
+          "code": "4.20",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Have you entered the United States as a stowaway?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "Part 4 Continued Group Headers",
+          "reason": "The lead-in text for items 8, 10, and 11 is contextual only; the actual answerable fields are captured as separate yes/no questions."
+        }
+      ]
+    },
+    {
+      "page": 7,
+      "items": [
+        {
+          "id": "p4_21a",
+          "code": "4.21.A",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Do you have a communicable disease of public health significance?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_21b",
+          "code": "4.21.B",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Do you have or have you had a physical or mental disorder and behavior (or a history of behavior that is likely to recur) associated with the disorder which has posed or may pose a threat to the property, safety, or welfare of yourself or others?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_21c",
+          "code": "4.21.C",
+          "section": "Part 4. Processing Information (continued)",
+          "responsible_party": "client",
+          "type": "yes_no",
+          "form_text": "Are you now or have you been a drug abuser or drug addict?",
+          "default_value": "no",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p5_1",
+          "code": "5.1",
+          "section": "Part 5. Information About Your Family Members",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Information About Your Spouse",
+          "instruction": "Provide the following information about your spouse, if applicable.",
+          "optional": true,
+          "fields": [
+            {
+              "id": "spouse_family_name",
+              "label": "Family Name (Last Name)",
+              "type": "text",
+              "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+            },
+            {
+              "id": "spouse_given_name",
+              "label": "Given Name (First Name)",
+              "type": "text",
+              "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+            },
+            {
+              "id": "spouse_middle_name",
+              "label": "Middle Name (if any)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+            },
+            {
+              "id": "spouse_date_of_birth",
+              "label": "Date of Birth",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "where_to_verify": "Birth Certificate; Passport; BIO CALL"
+            },
+            {
+              "id": "spouse_country_of_birth",
+              "label": "Country of Birth",
+              "type": "text",
+              "where_to_verify": "Birth Certificate; Passport; BIO CALL"
+            },
+            {
+              "id": "spouse_residence_city",
+              "label": "Current Location - City or Town of Residence",
+              "type": "text",
+              "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+            },
+            {
+              "id": "spouse_residence_country",
+              "label": "Current Location - Country of Residence",
+              "type": "text",
+              "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+            }
+          ],
+          "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+        },
+        {
+          "id": "p5_children",
+          "code": "5.2",
+          "section": "Part 5. Information About Your Family Members",
+          "responsible_party": "client",
+          "type": "repeatable_group",
+          "form_text": "Information About Your Children",
+          "optional": true,
+          "visible_on_pages": [
+            7,
+            8
+          ],
+          "visible_slots": [
+            "Child 1",
+            "Child 2",
+            "Child 3"
+          ],
+          "fields": [
+            {
+              "id": "family_name",
+              "label": "Family Name (Last Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "given_name",
+              "label": "Given Name (First Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "middle_name",
+              "label": "Middle Name (if any)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "date_of_birth",
+              "label": "Date of Birth",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "where_to_verify": "Birth Certificate; Passport; BIO CALL"
+            },
+            {
+              "id": "country_of_birth",
+              "label": "Country of Birth",
+              "type": "text",
+              "where_to_verify": "Birth Certificate; Passport; BIO CALL"
+            },
+            {
+              "id": "current_city",
+              "label": "Current Location - City or Town",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "current_state",
+              "label": "Current Location - State",
+              "type": "select",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "current_country",
+              "label": "Current Location - Country",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "Part 5 Instructions",
+          "reason": "Instructional text only; the answerable family-member fields are captured as groups below."
+        }
+      ]
+    },
+    {
+      "page": 8,
+      "items": [
+        {
+          "id": "p6_1",
+          "code": "6.1",
+          "section": "Part 6. Applicant's Statement, Contact Information, Declaration, Certification, and Signature",
+          "responsible_party": "client",
+          "type": "single_choice",
+          "default_value": "B",
+          "form_text": "Applicant's Statement Regarding the Interpreter",
+          "instruction": "Select the box for either Item A. or B. in Item Number 1.",
+          "options": [
+            {
+              "value": "A",
+              "label": "I can read and understand English, and I have read and understand every question and instruction on this application and my answer to every question."
+            },
+            {
+              "value": "B",
+              "label": "The interpreter named in Part 7. read to me every question and instruction on this application and my answer to every question in a language in which I am fluent, and I understood everything."
+            }
+          ],
+          "details_fields": [
+            {
+              "id": "interpreter_language",
+              "label": "Language in which I am fluent",
+              "type": "text",
+              "condition": "If option 'B' is selected",
+              "default_value": "Spanish",
+              "where_to_verify": "Interpreter Certification; Intake"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "Declaration; Signed Form"
+        },
+        {
+          "id": "p6_2",
+          "code": "6.2",
+          "section": "Part 6. Applicant's Statement, Contact Information, Declaration, Certification, and Signature",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Applicant's Statement Regarding the Preparer",
+          "instruction": "If applicable, select the box for Item Number 2.",
+          "fields": [
+            {
+              "id": "preparer_statement_selected",
+              "label": "At my request, the preparer named in Part 8. prepared this application for me based only upon information I provided or authorized.",
+              "type": "checkbox",
+              "default_value": true,
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "preparer_name_in_statement",
+              "label": "Preparer name",
+              "type": "text",
+              "condition": "If the checkbox is selected",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        },
+        {
+          "id": "p6_contact",
+          "code": "6.3-6.5",
+          "section": "Part 6. Applicant's Contact Information",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Applicant's Contact Information",
+          "fields": [
+            {
+              "id": "applicant_daytime_telephone_number",
+              "label": "Applicant's Daytime Telephone Number",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake"
+            },
+            {
+              "id": "applicant_safe_daytime_telephone_number",
+              "label": "Applicant's Safe Daytime Telephone Number",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake"
+            },
+            {
+              "id": "applicant_email_address",
+              "label": "Applicant's Email Address (if any)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "EOIR Portal; ICE Records; Declaration"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "Part 6 Notes",
+          "reason": "The penalties notice and subsection headings are instructional text only; the answerable fields are captured separately."
+        }
+      ]
+    },
+    {
+      "page": 9,
+      "items": [
+        {
+          "id": "p6_6",
+          "code": "6.6",
+          "section": "Part 6. Applicant's Statement, Contact Information, Declaration, Certification, and Signature (continued)",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Applicant's Signature",
+          "fields": [
+            {
+              "id": "applicant_signature",
+              "label": "Applicant's Signature",
+              "type": "signature",
+              "where_to_verify": "Declaration; Signed Form"
+            },
+            {
+              "id": "applicant_signature_date",
+              "label": "Date of Signature",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "where_to_verify": "Declaration; Signed Form"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "Declaration; Signed Form"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "Part 6 Declaration and Certification",
+          "reason": "Certification paragraphs are declarative text tied to the applicant's signature, not separate fillable fields."
+        },
+        {
+          "name": "Part 6 Note To All Applicants",
+          "reason": "Instructional warning text only; not a direct question or fillable field."
+        },
+        {
+          "name": "Part 7 Intro",
+          "reason": "Lead-in text only; the visible interpreter fields are captured separately."
+        }
+      ]
+    }
+  ]
+}

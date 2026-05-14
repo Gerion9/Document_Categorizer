@@ -5,17 +5,20 @@ Responsibilities:
   - Split multi-page PDFs into individual page images.
   - Generate thumbnail images for each page.
   - Convert standalone images into single-page entries.
+
+All file I/O goes through S3StorageService (no local disk writes).
 """
 
-import os
+import io
 import uuid
 from pathlib import Path
 
 import fitz  # PyMuPDF
 from PIL import Image
 
-from .paths import PAGES_DIR, STORAGE_DIR, THUMBNAILS_DIR, UPLOADS_DIR
+from .paths import PAGES_PREFIX, THUMBNAILS_PREFIX, UPLOADS_PREFIX
 from .rag_config import get_rag_settings
+from .storage_service import S3StorageService
 
 THUMBNAIL_SIZE = (280, 360)
 
@@ -35,70 +38,80 @@ def _page_ext() -> str:
     return ".jpg" if settings.page_image_format == "JPEG" else ".png"
 
 
-def _save_page_image(img: Image.Image, path: Path) -> None:
+def _image_to_bytes(img: Image.Image) -> bytes:
+    """Serialize a PIL Image to bytes according to the configured format."""
     settings = get_rag_settings()
+    buf = io.BytesIO()
     if settings.page_image_format == "JPEG":
-        img.save(str(path), "JPEG", quality=settings.page_image_quality, optimize=True)
+        img.save(buf, "JPEG", quality=settings.page_image_quality, optimize=True)
     else:
-        img.save(str(path), "PNG")
+        img.save(buf, "PNG")
+    return buf.getvalue()
 
 
-def _save_page_and_thumbnail(img: Image.Image) -> dict[str, str]:
-    """Save a full-size page image and its thumbnail, return relative paths."""
+def _content_type() -> str:
+    settings = get_rag_settings()
+    return "image/jpeg" if settings.page_image_format == "JPEG" else "image/png"
+
+
+def _save_page_and_thumbnail(img: Image.Image, s3: S3StorageService) -> dict[str, str]:
+    """Upload a full-size page image and its thumbnail to S3, return relative keys."""
     ext = _page_ext()
+    ct = _content_type()
     page_filename = f"{uuid.uuid4().hex}{ext}"
-    page_path = PAGES_DIR / page_filename
-    _save_page_image(img, page_path)
+
+    page_key = f"{PAGES_PREFIX}/{page_filename}"
+    s3.upload_bytes(_image_to_bytes(img), page_key, ct)
 
     thumb = img.copy()
     thumb.thumbnail(THUMBNAIL_SIZE, Image.LANCZOS)
-    thumb_path = THUMBNAILS_DIR / f"thumb_{page_filename}"
-    _save_page_image(thumb, thumb_path)
+    thumb_key = f"{THUMBNAILS_PREFIX}/thumb_{page_filename}"
+    s3.upload_bytes(_image_to_bytes(thumb), thumb_key, ct)
 
-    return {
-        "file_path": str(page_path.relative_to(STORAGE_DIR)),
-        "thumbnail_path": str(thumb_path.relative_to(STORAGE_DIR)),
-    }
+    return {"file_path": page_key, "thumbnail_path": thumb_key}
 
 
-def save_uploaded_file(content: bytes, filename: str) -> str:
-    """Persist an uploaded file and return the relative path inside storage/."""
+def save_uploaded_file(content: bytes, filename: str, s3: S3StorageService) -> str:
+    """Upload a raw file to S3 and return its key."""
     ext = Path(filename).suffix.lower()
     unique_name = f"{uuid.uuid4().hex}{ext}"
-    dest = UPLOADS_DIR / unique_name
-    dest.write_bytes(content)
-    return str(dest.relative_to(STORAGE_DIR))
+    key = f"{UPLOADS_PREFIX}/{unique_name}"
+
+    content_type = "application/pdf" if ext == ".pdf" else "application/octet-stream"
+    s3.upload_bytes(content, key, content_type)
+    return key
 
 
-def split_pdf(upload_path: str) -> list[dict]:
+def split_pdf(upload_path: str, s3: S3StorageService) -> list[dict]:
     """
     Split a PDF into individual page images + thumbnails.
 
+    Downloads the PDF from S3, processes in memory, uploads results back.
     Returns a list of dicts, one per page:
       { "page_number": int, "file_path": str, "thumbnail_path": str }
     """
-    abs_path = STORAGE_DIR / upload_path
-    doc = fitz.open(str(abs_path))
+    pdf_bytes = s3.download_bytes(upload_path)
+    doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     results: list[dict] = []
 
     for page_num in range(len(doc)):
         page = doc[page_num]
         img = _render_page_image(page)
-        paths = _save_page_and_thumbnail(img)
+        paths = _save_page_and_thumbnail(img, s3)
         results.append({"page_number": page_num + 1, **paths})
 
     doc.close()
     return results
 
 
-def process_image(upload_path: str) -> dict:
+def process_image(upload_path: str, s3: S3StorageService) -> dict:
     """
     Process a standalone image (JPG, PNG, etc.) as a single page.
 
+    Downloads from S3, processes in memory, uploads results back.
     Returns a dict: { "page_number": 1, "file_path": str, "thumbnail_path": str }
     """
-    abs_path = STORAGE_DIR / upload_path
-    img = Image.open(str(abs_path)).convert("RGB")
-    paths = _save_page_and_thumbnail(img)
+    img_bytes = s3.download_bytes(upload_path)
+    img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+    paths = _save_page_and_thumbnail(img, s3)
     return {"page_number": 1, **paths}
-

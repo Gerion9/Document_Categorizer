@@ -14,10 +14,11 @@ import re
 from typing import Any
 
 from ..prompts.form_detection_prompts import FORM_DETECTOR_PROMPT
+from .form_registry import supported_form_types
 
 log = logging.getLogger("qc_autopilot")
 
-SUPPORTED_FORM_TYPES = {"i-914", "i-914a"}
+SUPPORTED_FORM_TYPES = supported_form_types()
 
 _KNOWN_FORMS: list[dict[str, Any]] = [
     {
@@ -41,6 +42,57 @@ _KNOWN_FORMS: list[dict[str, Any]] = [
         ],
         "priority": 5,
     },
+    {
+        "type": "i-765",
+        "keywords": [
+            re.compile(r"form\s+i[- ]?765\b", re.IGNORECASE),
+            re.compile(r"i[- ]?765\b", re.IGNORECASE),
+            re.compile(r"application\s+for\s+employment\s+authorization", re.IGNORECASE),
+            re.compile(r"employment\s+authorization\s+document", re.IGNORECASE),
+        ],
+        "priority": 3,
+    },
+    {
+        "type": "i-192",
+        "keywords": [
+            re.compile(r"form\s+i[- ]?192\b", re.IGNORECASE),
+            re.compile(r"i[- ]?192\b", re.IGNORECASE),
+            re.compile(r"advance\s+permission\s+to\s+enter", re.IGNORECASE),
+            re.compile(r"application\s+for\s+advance\s+permission", re.IGNORECASE),
+        ],
+        "priority": 3,
+    },
+    {
+        "type": "i-360",
+        "keywords": [
+            re.compile(r"form\s+i[- ]?360\b", re.IGNORECASE),
+            re.compile(r"i[- ]?360\b", re.IGNORECASE),
+            re.compile(r"petition\s+for\s+amerasian", re.IGNORECASE),
+            re.compile(r"special\s+immigrant\s+juvenile", re.IGNORECASE),
+            re.compile(r"\bsij(s)?\b", re.IGNORECASE),
+        ],
+        "priority": 3,
+    },
+    {
+        "type": "g-28",
+        "keywords": [
+            re.compile(r"form\s+g[- ]?28\b", re.IGNORECASE),
+            re.compile(r"\bg[- ]?28\b", re.IGNORECASE),
+            re.compile(r"notice\s+of\s+entry\s+of\s+appearance\s+as\s+attorney", re.IGNORECASE),
+            re.compile(r"accredited\s+representative", re.IGNORECASE),
+        ],
+        "priority": 2,
+    },
+    {
+        "type": "g-1145",
+        "keywords": [
+            re.compile(r"form\s+g[- ]?1145\b", re.IGNORECASE),
+            re.compile(r"\bg[- ]?1145\b", re.IGNORECASE),
+            re.compile(r"e[- ]?notification\s+of\s+application", re.IGNORECASE),
+            re.compile(r"e[- ]?notification\s+of\s+petition\s+acceptance", re.IGNORECASE),
+        ],
+        "priority": 2,
+    },
 ]
 
 
@@ -52,12 +104,10 @@ def _score_by_keywords(text: str, form_def: dict[str, Any]) -> int:
 
 
 def _normalize_form_code(raw: str) -> str:
-    compact = re.sub(r"^form\s+", "", raw.strip().lower())
-    compact = re.sub(r"^i[\s-]?", "", compact)
-    compact = re.sub(r"\s+", "", compact)
-    if not compact:
-        return ""
-    return f"i-{compact}"
+    """Thin str-returning wrapper around the canonical normalizer."""
+    from .form_registry import normalize_form_type
+
+    return normalize_form_type(raw) or ""
 
 
 def _extract_explicit_form_code(text: str) -> str:
@@ -109,14 +159,18 @@ def _detect_by_llm(text: str) -> dict[str, str]:
         settings = get_rag_settings()
 
         from google.genai import types
+        from .gemini_runtime_service import apply_thinking_config
+
+        config_kwargs: dict[str, object] = {
+            "temperature": settings.form_detection_temperature,
+            "max_output_tokens": settings.form_detection_max_output_tokens,
+            "response_mime_type": "application/json",
+        }
+        apply_thinking_config(config_kwargs, settings.gemini_form_detection_thinking_level)
         response = client.models.generate_content(
             model=settings.gemini_model,
             contents=[prompt],
-            config=types.GenerateContentConfig(
-                temperature=settings.form_detection_temperature,
-                max_output_tokens=settings.form_detection_max_output_tokens,
-                response_mime_type="application/json",
-            )
+            config=types.GenerateContentConfig(**config_kwargs),
         )
         import json
         raw_text = response.text or ""

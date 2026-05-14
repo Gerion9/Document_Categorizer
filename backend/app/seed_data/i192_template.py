@@ -43,13 +43,13 @@ I192_TEMPLATE = {
                     "questions": [
                         {"code": "3", "description": "Did you verify Alien Registration Number (A-Number) (if any)?", "where_to_verify": "BioCall, FBI, Intake, previous immigration documents (NTA, Asylum, etc.)"},
                         {"code": "4", "description": "Did you verify if client has USCIS Online Account number?", "where_to_verify": "Documents from prior submissions; BioCall"},
-                        {"code": "5", "description": "Did you verify Date of birth? REMEMBER TO USE THE RIGHT FORMAT MM/DD/YYYY", "where_to_verify": "BioCall, Intake, Birth Certificate, Passport"},
+                        {"code": "5", "description": "Did you verify Date of birth? REMEMBER TO USE THE RIGHT FORMAT 'Mmm DD YYYY' (e.g. Mar 21 1979)", "where_to_verify": "BioCall, Intake, Birth Certificate, Passport"},
                         {"code": "6", "description": "Did you verify the client's place of birth?", "where_to_verify": "Birth Certificate, Passport"},
                         {"code": "7", "description": "Did you verify the client's Country of citizenship or nationality?", "where_to_verify": "Birth Certificate, Passport, Intake"},
                         {"code": "8", "description": "Did you verify the client's sex? Male / female", "where_to_verify": "Birth Certificate, Intake"},
                         {"code": "9", "description": "Did you verify the Mailing Address is complete and safe (including \"In Care Of\" Law Offices of Manuel E. Solis, P.O. Box 231704, Houston, Texas 77223?", "where_to_verify": "Law Offices of Manuel E. Solis, P.O. Box 231704, Houston, Texas 77223"},
-                        {"code": "10", "description": "Did you verify the Physical Address 1 (current address) is complete with dates of residence? Remember to use the right format (mm/dd/yyyy)", "where_to_verify": "Bio Call + confirm in Google Maps"},
-                        {"code": "11", "description": "Did you verify the applicant listed Physical Address history with From/To dates (last 5 years)? Remember to use the right format (mm/dd/yyyy) (If you need extra space, use Part 6. Additional Information on Page 9)", "where_to_verify": "Bio Call / Intake; prior filings"},
+                        {"code": "10", "description": "Did you verify the Physical Address 1 (current address) is complete with dates of residence? Remember to use the right format (Mmm DD YYYY)", "where_to_verify": "Bio Call + confirm in Google Maps"},
+                        {"code": "11", "description": "Did you verify the applicant listed Physical Address history with From/To dates (last 5 years)? Remember to use the right format (Mmm DD YYYY) (If you need extra space, use Part 6. Additional Information on Page 9)", "where_to_verify": "Bio Call / Intake; prior filings"},
                     ],
                 },
                 {
@@ -70,7 +70,7 @@ I192_TEMPLATE = {
                     "name": "Prior I-192 / U.S. presence / prior immigration filings / denials / criminal history (Items 27-36)",
                     "questions": [
                         {"code": "27", "description": "Did you verify whether the applicant has previously filed an application for advance permission to enter the U.S. as a nonimmigrant (Form I-192 or similar advance permission request)?", "where_to_verify": "Client interview/Bio Call; USCIS receipts; FOIA USCIS/CBP"},
-                        {"code": "28", "description": "If \"Yes\" to #27: Did you verify the Date Application Filed (mm/dd/yyyy)?", "where_to_verify": "Prior I-192 copy; I-797 receipt notice; FOIA"},
+                        {"code": "28", "description": "If \"Yes\" to #27: Did you verify the Date Application Filed (Mmm DD YYYY)?", "where_to_verify": "Prior I-192 copy; I-797 receipt notice; FOIA"},
                         {"code": "29-1", "description": "If \"Yes\" to #27: Did you verify the location where the application was filed (USCIS Office or U.S. Port-of-Entry; City/Town)?", "where_to_verify": "I-797 receipt; prior filing copy; FOIA"},
                         {"code": "29-2", "description": "If \"Yes\" to #27: Did you verify the State/Province for the filing location?", "where_to_verify": "Same as above"},
                         {"code": "29-3", "description": "If \"Yes\" to #27: Did you verify the Country for the filing location?", "where_to_verify": "Same as above"},
@@ -120,7 +120,7 @@ I192_TEMPLATE = {
                 {"code": "3-2", "description": "Did you verify the applicant's Mobile Telephone Number (if any) is entered and correct?", "where_to_verify": "Client confirmation"},
                 {"code": "3-3", "description": "Did you verify the applicant's Email Address (if any) is entered and correct?", "where_to_verify": "Client confirmation; written verification"},
                 {"code": "3-4", "description": "Did you verify the applicant's signature is present and properly placed?", "where_to_verify": "Final packet review (Page 7)"},
-                {"code": "3-5", "description": "Did you verify the Date of Signature is completed in mm/dd/yyyy and matches the filing plan?", "where_to_verify": "Final packet review; mailing date strategy"},
+                {"code": "3-5", "description": "Did you verify the Date of Signature is completed in 'Mmm DD YYYY' format and matches the filing plan?", "where_to_verify": "Final packet review; mailing date strategy"},
             ],
         },
         {
@@ -136,7 +136,7 @@ I192_TEMPLATE = {
                 {"code": "4.CERT-LANG", "description": "Did you verify the interpreter entered the language interpreted and it matches the applicant's language needs?", "where_to_verify": "Part 4, Interpreter's Certification language field"},
                 {"code": "4.CERT-TEXT", "description": "Did you verify the interpreter certification is consistent (fluent in English + interpreted every question/instruction + applicant understood)?", "where_to_verify": "Part 4, Interpreter's Certification paragraph"},
                 {"code": "4.6", "description": "Did you verify the interpreter signed the form (ink signature on final packet)?", "where_to_verify": "Part 4, Interpreter's Signature"},
-                {"code": "4.DATE", "description": "Did you verify the interpreter date of signature is completed and in mm/dd/yyyy format?", "where_to_verify": "Part 4, Date of Signature"},
+                {"code": "4.DATE", "description": "Did you verify the interpreter date of signature is completed and in 'Mmm DD YYYY' format?", "where_to_verify": "Part 4, Date of Signature"},
             ],
         },
         {
@@ -152,7 +152,7 @@ I192_TEMPLATE = {
                 {"code": "5.5", "description": "Did you verify the preparer's Email Address (if any) is complete and accurate (and formatted correctly)?", "where_to_verify": "Part 5, Item 5"},
                 {"code": "5.CERT-TEXT", "description": "Did you verify the preparer certification/declaration is completed and consistent (prepared at request/consent; info is complete/true/correct as provided by applicant; applicant reviewed and understood)?", "where_to_verify": "Part 5, Preparer's Certification paragraph"},
                 {"code": "5.6", "description": "Did you verify the preparer signed the form (ink signature on final packet)?", "where_to_verify": "Part 5, Preparer's Signature"},
-                {"code": "5.DATE", "description": "Did you verify the preparer date of signature is completed and in mm/dd/yyyy format?", "where_to_verify": "Part 5, Date of Signature"},
+                {"code": "5.DATE", "description": "Did you verify the preparer date of signature is completed and in 'Mmm DD YYYY' format?", "where_to_verify": "Part 5, Date of Signature"},
             ],
         },
         {

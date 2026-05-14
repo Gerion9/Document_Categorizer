@@ -4,13 +4,15 @@ import logging
 from datetime import datetime, timezone
 
 from ..database import SessionLocal
+from ..dependencies import get_s3_service
 from ..models import AuditLog, ExtractionStatus, IndexStatus, Page
+from .case_pipeline_lock import CasePipelineBusy, case_pipeline_lock
 from .embedding_service import is_embeddings_configured
 from .extraction_service import extract_text
 from .gemini_runtime_service import compact_token_summary, create_token_tracker, log_token_summary
 from .ocr_index_service import index_case_ocr_json, upsert_page_ocr_chunks
-from .paths import STORAGE_DIR
 from .pinecone_client import is_pinecone_configured
+from .storage_service import S3StorageService
 
 INDEX_METHOD = "gemini_embedding_pinecone"
 log = logging.getLogger("gemini_usage")
@@ -193,6 +195,7 @@ def index_existing_page_ocr(page_id: str) -> None:
 def process_page_extraction(page_id: str, has_tables: bool) -> dict | None:
     """Extract a single page and persist OCR text. Returns a summary dict or None on failure."""
     db = SessionLocal()
+    s3: S3StorageService = get_s3_service()
     tracker = create_token_tracker(label=f"page-extraction-{page_id[:8]}")
     method = "gemini_tables" if has_tables else "gemini_ocr"
     try:
@@ -204,16 +207,17 @@ def process_page_extraction(page_id: str, has_tables: bool) -> dict | None:
         _set_page_index_state(page, status=IndexStatus.PENDING.value, method=INDEX_METHOD, vectors_count=0)
         db.commit()
 
-        image_path = STORAGE_DIR / page.file_path
-        if not image_path.exists():
-            raise FileNotFoundError(f"Image not found for OCR: {image_path.name}")
+        image_bytes = s3.download_bytes(page.file_path)
+        if not image_bytes:
+            raise FileNotFoundError(f"Image not found in S3 for OCR: {page.file_path}")
 
         try:
             text = extract_text(
-                str(image_path),
+                image_bytes,
                 has_tables=has_tables,
                 tracker=tracker,
                 step_label=f"ocr-extract-{page.id[:8]}",
+                page_label=page.file_path,
             )
             tracker_summary = _compact_token_summary(tracker.get_summary())
             page.ocr_text = text
@@ -289,7 +293,10 @@ def process_page_extraction(page_id: str, has_tables: bool) -> dict | None:
 def reindex_case_pages(case_id: str) -> None:
     tracker = create_token_tracker(label=f"case-reindex-{case_id[:8]}")
     try:
-        index_case_ocr_json(case_id, tracker=tracker)
+        with case_pipeline_lock(case_id, blocking=False):
+            index_case_ocr_json(case_id, tracker=tracker)
         log_token_summary(tracker, label=f"Reindex case {case_id[:8]}", logger=log)
+    except CasePipelineBusy:
+        log.warning("Skipping reindex: case %s pipeline busy", case_id[:8])
     except Exception:
         log.exception("Case reindex failed for %s", case_id[:8])

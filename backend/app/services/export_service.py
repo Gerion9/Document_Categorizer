@@ -5,10 +5,11 @@ Export service – generates:
 """
 
 import io
-import os
+import logging
 from pathlib import Path
 
 import fitz  # PyMuPDF
+from PIL import Image as PILImage
 from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter
 from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
@@ -38,7 +39,11 @@ from ..models import (
     Section,
 )
 
-from .paths import EXPORTS_DIR, STORAGE_DIR
+from .paths import EXPORTS_PREFIX
+from .rag_config import get_rag_settings
+from .storage_service import S3StorageService
+
+log = logging.getLogger(__name__)
 
 # ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -66,9 +71,38 @@ def _collect_sections_recursive(db: Session, dt: DocumentType) -> list[dict]:
     return _walk(None, 0)
 
 
+def _optimize_image_for_export(img_bytes: bytes) -> bytes:
+    """Downscale and re-encode an image if it exceeds the export size threshold.
+    Returns the original bytes unchanged when the image is already small enough."""
+    settings = get_rag_settings()
+    max_edge = settings.export_pdf_max_long_edge
+    quality = settings.export_pdf_jpeg_quality
+
+    img = PILImage.open(io.BytesIO(img_bytes))
+    w, h = img.size
+
+    needs_resize = max(w, h) > max_edge
+    is_jpeg = img_bytes[:3] == b"\xff\xd8\xff"
+    needs_recompress = is_jpeg and quality < 85
+
+    if not needs_resize and not needs_recompress:
+        return img_bytes
+
+    if img.mode != "RGB":
+        img = img.convert("RGB")
+
+    if needs_resize:
+        ratio = max_edge / max(w, h)
+        img = img.resize((int(w * ratio), int(h * ratio)), PILImage.LANCZOS)
+
+    buf = io.BytesIO()
+    img.save(buf, "JPEG", quality=quality, optimize=True)
+    return buf.getvalue()
+
+
 # ── Consolidated PDF ──────────────────────────────────────────────────────
 
-def build_consolidated_pdf(db: Session, case_id: str) -> str:
+def build_consolidated_pdf(db: Session, case_id: str, s3: S3StorageService) -> str:
     """Build consolidated PDF using PageSectionLink for primary pages only.
     Secondary links appear as text references in the TOC, not as duplicate images."""
 
@@ -85,7 +119,7 @@ def build_consolidated_pdf(db: Session, case_id: str) -> str:
 
     toc_entries: list[dict] = []
     page_files: list[str] = []
-    inserted_page_ids: set[str] = set()  # Track pages already inserted physically
+    inserted_page_ids: set[str] = set[str]()  # Track pages already inserted physically
     current_page = 2  # page 1 = TOC
 
     for dt in doc_types:
@@ -118,7 +152,7 @@ def build_consolidated_pdf(db: Session, case_id: str) -> str:
             if not primary_links and not secondary_links:
                 legacy_pages = (
                     db.query(Page)
-                    .filter(Page.section_id == sec.id, Page.status == PageStatus.CLASSIFIED.value)
+                    .filter(Page.section_id == sec.id, Page.status == PageStatus.CLASSIFIED.value, Page.deleted_at.is_(None))
                     .order_by(Page.order_in_section)
                     .all()
                 )
@@ -164,8 +198,7 @@ def build_consolidated_pdf(db: Session, case_id: str) -> str:
                 })
 
             for p in new_pages:
-                abs_path = str(STORAGE_DIR / p.file_path)
-                page_files.append(abs_path)
+                page_files.append(p.file_path)
                 inserted_page_ids.add(p.id)
                 current_page += 1
 
@@ -174,6 +207,7 @@ def build_consolidated_pdf(db: Session, case_id: str) -> str:
         db.query(Page)
         .filter(
             Page.case_id == case_id,
+            Page.deleted_at.is_(None),
             Page.status.in_([PageStatus.UNCLASSIFIED.value, PageStatus.EXTRA.value]),
         )
         .order_by(Page.created_at)
@@ -182,7 +216,7 @@ def build_consolidated_pdf(db: Session, case_id: str) -> str:
     if extras:
         toc_entries.append({"label": "Extras / Sin clasificar", "start_page": current_page, "count": len(extras), "depth": 0, "refs": []})
         for p in extras:
-            page_files.append(str(STORAGE_DIR / p.file_path))
+            page_files.append(p.file_path)
             current_page += 1
 
     # Build TOC page
@@ -235,15 +269,30 @@ def build_consolidated_pdf(db: Session, case_id: str) -> str:
     # Merge into final PDF
     final_pdf = fitz.open("pdf", toc_buffer.read())
 
-    for img_path in page_files:
-        if os.path.exists(img_path):
+    LETTER_W, LETTER_H = 612, 792  # 8.5 × 11 in at 72 dpi
+
+    for s3_key in page_files:
+        try:
+            raw_bytes = s3.download_bytes(s3_key)
+            img_bytes = _optimize_image_for_export(raw_bytes)
+
+            pix = fitz.Pixmap(img_bytes)
+            iw, ih = pix.width, pix.height
+            pix = None
+
+            scale = min(LETTER_W / iw, LETTER_H / ih)
+            fit_w, fit_h = iw * scale, ih * scale
+            x0 = (LETTER_W - fit_w) / 2
+            y0 = (LETTER_H - fit_h) / 2
+
             img_doc = fitz.open()
-            img = fitz.Pixmap(img_path)
-            rect = fitz.Rect(0, 0, img.width, img.height)
-            page = img_doc.new_page(width=img.width, height=img.height)
-            page.insert_image(rect, pixmap=img)
+            page = img_doc.new_page(width=LETTER_W, height=LETTER_H)
+            rect = fitz.Rect(x0, y0, x0 + fit_w, y0 + fit_h)
+            page.insert_image(rect, stream=img_bytes)
             final_pdf.insert_pdf(img_doc)
             img_doc.close()
+        except Exception:
+            log.warning("Could not load image %s for consolidated PDF, skipping", s3_key)
 
     # Bookmarks
     toc_list = []
@@ -253,29 +302,29 @@ def build_consolidated_pdf(db: Session, case_id: str) -> str:
     if toc_list:
         final_pdf.set_toc(toc_list)
 
-    out_filename = f"expediente_{case_id[:8]}.pdf"
-    out_path = EXPORTS_DIR / out_filename
-    final_pdf.save(str(out_path))
+    out_key = f"{EXPORTS_PREFIX}/expediente_{case_id[:8]}.pdf"
+    pdf_bytes = final_pdf.tobytes(garbage=3, deflate=True, clean=True)
     final_pdf.close()
+    s3.upload_bytes(pdf_bytes, out_key, "application/pdf")
 
-    return str(out_path.relative_to(STORAGE_DIR))
+    return out_key
 
 
 # ── QC Compliance Report ──────────────────────────────────────────────────
 
-def build_qc_compliance_report(db: Session, case_id: str) -> str:
+def build_qc_compliance_report(db: Session, case_id: str, s3: S3StorageService, *, checklist_id: str | None = None) -> str:
     """Generate a PDF compliance report from QC checklists with
-    hierarchical parts, AI verification results, and evidence references."""
+    hierarchical parts, AI verification results, and evidence references.
+    If checklist_id is given, only that single checklist is included."""
 
     case = db.query(Case).filter(Case.id == case_id).first()
     if not case:
         raise ValueError("Case not found")
 
-    qc_checklists = (
-        db.query(QCChecklist)
-        .filter(QCChecklist.case_id == case_id, QCChecklist.is_template == False)
-        .all()
-    )
+    query = db.query(QCChecklist).filter(QCChecklist.case_id == case_id, QCChecklist.is_template == False)
+    if checklist_id:
+        query = query.filter(QCChecklist.id == checklist_id)
+    qc_checklists = query.all()
 
     buf = io.BytesIO()
     doc = SimpleDocTemplate(buf, pagesize=letter, topMargin=0.75 * inch, bottomMargin=0.5 * inch)
@@ -372,7 +421,9 @@ def build_qc_compliance_report(db: Session, case_id: str) -> str:
                     if ev_refs:
                         desc_text += f"<br/><i>[Evidencia: {', '.join(ev_refs)}]</i>"
                     if q.ai_notes:
-                        desc_text += f"<br/><font color='#7c3aed' size='6'>[AI: {q.ai_notes}]</font>"
+                        ai_display = q.ai_notes.split("\n\nFuentes OCR:")[0].strip()
+                        if ai_display:
+                            desc_text += f"<br/><font color='#7c3aed' size='6'>[AI: {ai_display}]</font>"
 
                     ans_color = (
                         "#16a34a" if ans_label == "Yes"
@@ -429,16 +480,16 @@ def build_qc_compliance_report(db: Session, case_id: str) -> str:
     doc.build(elements)
     buf.seek(0)
 
-    out_filename = f"qc_reporte_{case_id[:8]}.pdf"
-    out_path = EXPORTS_DIR / out_filename
-    out_path.write_bytes(buf.read())
+    suffix = f"_{checklist_id[:8]}" if checklist_id else ""
+    out_key = f"{EXPORTS_PREFIX}/qc_reporte_{case_id[:8]}{suffix}.pdf"
+    s3.upload_bytes(buf.read(), out_key, "application/pdf")
 
-    return str(out_path.relative_to(STORAGE_DIR))
+    return out_key
 
 
 # ── Legacy compliance report (kept for backward compat) ───────────────────
 
-def build_compliance_report(db: Session, case_id: str) -> str:
+def build_compliance_report(db: Session, case_id: str, s3: S3StorageService) -> str:
     """Generate a compliance report from old-style checklists."""
     from ..models import Checklist, ChecklistItem, ChecklistItemStatus, EvidenceLink
 
@@ -503,8 +554,7 @@ def build_compliance_report(db: Session, case_id: str) -> str:
     doc.build(elements)
     buf.seek(0)
 
-    out_filename = f"reporte_{case_id[:8]}.pdf"
-    out_path = EXPORTS_DIR / out_filename
-    out_path.write_bytes(buf.read())
+    out_key = f"{EXPORTS_PREFIX}/reporte_{case_id[:8]}.pdf"
+    s3.upload_bytes(buf.read(), out_key, "application/pdf")
 
-    return str(out_path.relative_to(STORAGE_DIR))
+    return out_key

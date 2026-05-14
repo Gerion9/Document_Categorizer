@@ -1,0 +1,77 @@
+{
+  "form": "G-1145",
+  "pages": [
+    {
+      "page": 1,
+      "items": [
+        {
+          "id": "p1_applicant_name",
+          "code": "1.a-1.c",
+          "section": "E-Notification of Application/Petition Acceptance",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Applicant's Full Name",
+          "instruction": "Use the applicant's legal name exactly as it appears on the primary application or petition being filed with USCIS.",
+          "fields": [
+            {
+              "id": "family_name",
+              "label": "Family Name (Last Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "given_name",
+              "label": "Given Name (First Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "middle_name",
+              "label": "Middle Name",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p1_email",
+          "code": "2",
+          "section": "E-Notification of Application/Petition Acceptance",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Applicant's Email Address",
+          "instruction": "Provide a current email address where USCIS may send an electronic notification of acceptance.",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p1_mobile",
+          "code": "3",
+          "section": "E-Notification of Application/Petition Acceptance",
+          "responsible_party": "client",
+          "type": "text",
+          "form_text": "Applicant's Mobile Phone Number (Text Message)",
+          "instruction": "Provide a U.S. mobile phone number capable of receiving SMS text messages from USCIS.",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "For USCIS Use Only",
+          "reason": "This section is completed by USCIS, not by the client or attorney."
+        },
+        {
+          "name": "What Is the Purpose of This Form?",
+          "reason": "Instructional text only; not a direct question or fillable field."
+        },
+        {
+          "name": "General Instructions",
+          "reason": "Instructional text only; not a direct question or fillable field."
+        }
+      ]
+    }
+  ]
+}

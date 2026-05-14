@@ -1,0 +1,700 @@
+{
+  "form": "G-28",
+  "pages": [
+    {
+      "page": 1,
+      "items": [
+        {
+          "id": "p1_attorney_name",
+          "code": "1.a-1.c",
+          "section": "Part 1. Information About Attorney or Accredited Representative",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Name of Attorney or Accredited Representative",
+          "fields": [
+            {
+              "id": "attorney_family_name",
+              "label": "Family Name (Last Name)",
+              "type": "text",
+              "default_value": "Solis",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "attorney_given_name",
+              "label": "Given Name (First Name)",
+              "type": "text",
+              "default_value": "Manuel",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "attorney_middle_name",
+              "label": "Middle Name",
+              "type": "text",
+              "optional": true,
+              "default_value": "E.",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            }
+          ],
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        },
+        {
+          "id": "p1_attorney_address",
+          "code": "2.a-2.i",
+          "section": "Part 1. Information About Attorney or Accredited Representative",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Address of Attorney or Accredited Representative",
+          "fields": [
+            {
+              "id": "attorney_in_care_of_name",
+              "label": "In Care Of Name (if any)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "attorney_street_number_name",
+              "label": "Street Number and Name",
+              "type": "text",
+              "default_value": "P.O. Box 231704",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "attorney_unit_type",
+              "label": "Apt./Ste./Flr.",
+              "type": "select",
+              "options": [
+                "Apt.",
+                "Ste.",
+                "Flr."
+              ],
+              "optional": true,
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "attorney_unit_number",
+              "label": "Number",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "attorney_city",
+              "label": "City or Town",
+              "type": "text",
+              "default_value": "Houston",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "attorney_state",
+              "label": "State",
+              "type": "select",
+              "optional": true,
+              "default_value": "TX",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "attorney_zip_code",
+              "label": "ZIP Code",
+              "type": "text",
+              "optional": true,
+              "default_value": "77223",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "attorney_province",
+              "label": "Province",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "attorney_postal_code",
+              "label": "Postal Code",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "attorney_country",
+              "label": "Country",
+              "type": "text",
+              "default_value": "United States",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            }
+          ],
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p1_attorney_contact",
+          "code": "3-7",
+          "section": "Part 1. Information About Attorney or Accredited Representative",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Contact Information of Attorney or Accredited Representative",
+          "fields": [
+            {
+              "id": "attorney_daytime_telephone_number",
+              "label": "Daytime Telephone Number",
+              "type": "text",
+              "default_value": "7138442700",
+              "where_to_verify": "BIO CALL; Intake"
+            },
+            {
+              "id": "attorney_mobile_telephone_number",
+              "label": "Mobile Telephone Number (if any)",
+              "type": "text",
+              "optional": true,
+              "default_value": "7138442700",
+              "where_to_verify": "BIO CALL; Intake"
+            },
+            {
+              "id": "attorney_fax_number",
+              "label": "Fax Number (if any)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "attorney_email_address",
+              "label": "Email Address (if any)",
+              "type": "text",
+              "optional": true,
+              "default_value": "uscism@manuelsolis.com",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "attorney_uscis_online_account_number",
+              "label": "USCIS Online Account Number (if any)",
+              "type": "text",
+              "optional": true,
+              "default_value": "087361245002",
+              "where_to_verify": "USCIS Online Account; BIO CALL"
+            }
+          ],
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "START HERE",
+          "reason": "Instructional text only; not a direct question or fillable field."
+        }
+      ]
+    },
+    {
+      "page": 2,
+      "items": [
+        {
+          "id": "p2_eligibility",
+          "code": "1.a-1.e",
+          "section": "Part 2. Eligibility Information for Attorney or Accredited Representative",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Attorney Eligibility (Bar Membership)",
+          "instruction": "Complete only if the representative is an attorney.",
+          "optional": true,
+          "fields": [
+            {
+              "id": "is_attorney_in_good_standing",
+              "label": "I am an attorney eligible to practice law in, and a member in good standing of, the bar of the highest courts of the following states, possessions, territories, commonwealths, or the District of Columbia.",
+              "type": "checkbox",
+              "default_value": "yes",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "attorney_licensing_authority",
+              "label": "Licensing Authority",
+              "type": "text",
+              "default_value": "The Supreme Court of Texas",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "attorney_bar_number",
+              "label": "Bar Number (if applicable)",
+              "type": "text",
+              "optional": true,
+              "default_value": "18826790",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "is_not_subject_to_discipline",
+              "label": "I am not subject to any order of any court or administrative agency disbarring, suspending, enjoining, restraining, or otherwise restricting me in the practice of law.",
+              "type": "checkbox",
+              "default_value": "yes",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "attorney_restriction_explanation",
+              "label": "If you are subject to any restrictions, explain in Part 9. Additional Information.",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            }
+          ],
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        },
+        {
+          "id": "p2_accredited",
+          "code": "2.a-2.b",
+          "section": "Part 2. Eligibility Information for Attorney or Accredited Representative",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Accredited Representative",
+          "optional": true,
+          "condition": "If the representative is an accredited representative.",
+          "fields": [
+            {
+              "id": "is_accredited_representative",
+              "label": "I am an accredited representative of the following qualified nonprofit religious, charitable, social service, or similar organization established in the United States, so recognized by the Department of Justice.",
+              "type": "checkbox",
+              "where_to_verify": "EOIR Portal; ICE Records; Declaration"
+            },
+            {
+              "id": "accredited_organization_name",
+              "label": "Name of Recognized Organization",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "accreditation_expiration_date",
+              "label": "Date Accreditation Expires",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        },
+        {
+          "id": "p2_law_student",
+          "code": "3.a-3.c",
+          "section": "Part 2. Eligibility Information for Attorney or Accredited Representative",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Law Student or Law Graduate",
+          "optional": true,
+          "condition": "If the representative is a law student or recent law graduate.",
+          "fields": [
+            {
+              "id": "is_law_student_or_graduate",
+              "label": "I am a law student or law graduate working under the direct supervision of a licensed attorney or accredited representative.",
+              "type": "checkbox",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            }
+          ],
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        },
+        {
+          "id": "p2_other",
+          "code": "4",
+          "section": "Part 2. Eligibility Information for Attorney or Accredited Representative",
+          "responsible_party": "attorney",
+          "type": "text",
+          "form_text": "Name of Law Firm or Recognized Organization (if applicable)",
+          "optional": true,
+          "default_value": "Law Offices of Manuel E. Solis, PLLC",
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        }
+      ],
+      "excluded_sections": []
+    },
+    {
+      "page": 3,
+      "items": [
+        {
+          "id": "p3_appearance_matter",
+          "code": "1.a-4",
+          "section": "Part 3. Notice of Appearance as Attorney or Accredited Representative",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Immigration Matters Before DHS",
+          "fields": [
+            {
+              "id": "appearance_before_uscis",
+              "label": "U.S. Citizenship and Immigration Services (USCIS)",
+              "type": "checkbox",
+              "default_value": "yes",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "uscis_form_numbers",
+              "label": "List the form numbers or specific matter in which appearance is entered",
+              "type": "text",
+              "default_value": "I-914, I-192, I-765",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "appearance_before_ice",
+              "label": "U.S. Immigration and Customs Enforcement (ICE)",
+              "type": "checkbox",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "ice_matter",
+              "label": "List the specific matter in which appearance is entered for ICE",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "appearance_before_cbp",
+              "label": "U.S. Customs and Border Protection (CBP)",
+              "type": "checkbox",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "cbp_matter",
+              "label": "List the specific matter in which appearance is entered for CBP",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "receipt_number",
+              "label": "Receipt Number (if any)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        },
+        {
+          "id": "p3_appearance",
+          "code": "1-2",
+          "section": "Part 3. Notice of Appearance as Attorney or Accredited Representative",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Appearance and Role",
+          "fields": [
+            {
+              "id": "date_of_appearance",
+              "label": "Date of Appearance",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "appearance_event_indicator",
+              "label": "I am appearing for an interview, examination, hearing, or other USCIS-scheduled event.",
+              "type": "checkbox",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        },
+        {
+          "id": "p3_represented_party",
+          "code": "3",
+          "section": "Part 3. Notice of Appearance as Attorney or Accredited Representative",
+          "responsible_party": "attorney",
+          "type": "single_choice",
+          "form_text": "I am the attorney or accredited representative and the client is the (Select only one box):",
+          "options": [
+            {
+              "value": "applicant",
+              "label": "Applicant"
+            },
+            {
+              "value": "petitioner",
+              "label": "Petitioner"
+            },
+            {
+              "value": "requestor",
+              "label": "Requestor"
+            },
+            {
+              "value": "beneficiary",
+              "label": "Beneficiary/Derivative"
+            },
+            {
+              "value": "respondent",
+              "label": "Respondent (DHS)"
+            }
+          ],
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        },
+        {
+          "id": "p3_entity_title",
+          "code": "4-5",
+          "section": "Part 3. Notice of Appearance as Attorney or Accredited Representative",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "If the client is an Entity",
+          "optional": true,
+          "condition": "If the client is a corporation, partnership, or other entity.",
+          "fields": [
+            {
+              "id": "entity_name",
+              "label": "Name of Entity (if applicable)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "entity_title",
+              "label": "Title of Authorized Signer for Entity (if applicable)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        },
+        {
+          "id": "p3_client_name",
+          "code": "6.a-6.c",
+          "section": "Part 3. Notice of Appearance as Attorney or Accredited Representative",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Client's Full Legal Name (Person on whose behalf this appearance is filed)",
+          "fields": [
+            {
+              "id": "client_family_name",
+              "label": "Family Name (Last Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "client_given_name",
+              "label": "Given Name (First Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "client_middle_name",
+              "label": "Middle Name",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        },
+        {
+          "id": "p3_client_identity",
+          "code": "7-8",
+          "section": "Part 3. Notice of Appearance as Attorney or Accredited Representative",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Client's USCIS Identifiers",
+          "fields": [
+            {
+              "id": "client_a_number",
+              "label": "Client's Alien Registration Number (A-Number) (if any)",
+              "type": "text",
+              "prefix": "A-",
+              "optional": true,
+              "where_to_verify": "EAD Card; I-94; USCIS Receipt; BIO CALL"
+            },
+            {
+              "id": "client_uscis_online_account_number",
+              "label": "Client's USCIS Online Account Number (if any)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "USCIS Online Account; BIO CALL"
+            }
+          ],
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        }
+      ],
+      "excluded_sections": []
+    },
+    {
+      "page": 4,
+      "items": [
+        {
+          "id": "p3_client_contact",
+          "code": "9-11",
+          "section": "Part 3. Notice of Appearance as Attorney or Accredited Representative (continued)",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Client's Contact Information",
+          "fields": [
+            {
+              "id": "client_daytime_telephone_number",
+              "label": "Client's Daytime Telephone Number",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake"
+            },
+            {
+              "id": "client_mobile_telephone_number",
+              "label": "Client's Mobile Telephone Number (if any)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake"
+            },
+            {
+              "id": "client_email_address",
+              "label": "Client's Email Address (if any)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        },
+        {
+          "id": "p3_client_mailing_address",
+          "code": "12.a-12.h",
+          "section": "Part 3. Notice of Appearance as Attorney or Accredited Representative (continued)",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Mailing Address of Client",
+          "fields": [
+            {
+              "id": "mailing_street_number_name",
+              "label": "Street Number and Name",
+              "type": "text",
+              "default_value": "P.O. Box 231704",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "mailing_unit_type",
+              "label": "Apt./Ste./Flr.",
+              "type": "select",
+              "options": [
+                "Apt.",
+                "Ste.",
+                "Flr."
+              ],
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "mailing_unit_number",
+              "label": "Number",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "mailing_city",
+              "label": "City or Town",
+              "type": "text",
+              "default_value": "Houston",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "mailing_state",
+              "label": "State",
+              "type": "select",
+              "optional": true,
+              "default_value": "TX",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "mailing_zip_code",
+              "label": "ZIP Code",
+              "type": "text",
+              "optional": true,
+              "default_value": "77223",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "mailing_province",
+              "label": "Province",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "mailing_postal_code",
+              "label": "Postal Code",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "mailing_country",
+              "label": "Country",
+              "type": "text",
+              "default_value": "United States",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p5_attorney_signature",
+          "code": "1-3",
+          "section": "Part 5. Signature of Attorney or Accredited Representative",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Attorney's Certification and Signature",
+          "fields": [
+            {
+              "id": "attorney_signature",
+              "label": "Signature of Attorney or Accredited Representative",
+              "type": "signature",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "attorney_signature_date",
+              "label": "Date of Signature",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            }
+          ],
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        },
+        {
+          "id": "p9_additional",
+          "code": "Part 9",
+          "section": "Part 9. Additional Information",
+          "responsible_party": "attorney",
+          "type": "repeatable_group",
+          "form_text": "Additional Information Entries",
+          "optional": true,
+          "visible_slots": [
+            1,
+            2,
+            3,
+            4,
+            5
+          ],
+          "fields": [
+            {
+              "id": "page_number",
+              "label": "Page Number",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "part_number",
+              "label": "Part Number",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "item_number",
+              "label": "Item Number",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "additional_information",
+              "label": "Additional Information",
+              "type": "textarea",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "Attorney's Certification",
+          "reason": "Certification paragraphs are declarative text tied to the attorney's signature, not separate fillable fields."
+        }
+      ]
+    }
+  ]
+}

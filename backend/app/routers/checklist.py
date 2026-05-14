@@ -34,7 +34,7 @@ router = APIRouter(tags=["checklist"])
 # ── helpers ───────────────────────────────────────────────────────────────
 
 def _evidence_out(ev: EvidenceLink, db: Session) -> EvidenceLinkOut:
-    page = db.query(Page).filter(Page.id == ev.page_id).first()
+    page = db.query(Page).filter(Page.id == ev.page_id, Page.deleted_at.is_(None)).first()
     return EvidenceLinkOut(
         id=ev.id,
         checklist_item_id=ev.checklist_item_id,
@@ -202,7 +202,7 @@ def create_evidence_link(item_id: str, body: EvidenceLinkCreate, db: Session = D
     item = db.query(ChecklistItem).filter(ChecklistItem.id == item_id).first()
     if not item:
         raise HTTPException(404, "ChecklistItem not found")
-    page = db.query(Page).filter(Page.id == body.page_id).first()
+    page = db.query(Page).filter(Page.id == body.page_id, Page.deleted_at.is_(None)).first()
     if not page:
         raise HTTPException(400, "Page not found")
     ev = EvidenceLink(checklist_item_id=item_id, page_id=body.page_id, notes=body.notes)

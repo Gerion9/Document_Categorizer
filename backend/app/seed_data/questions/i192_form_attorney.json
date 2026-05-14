@@ -1,0 +1,366 @@
+{
+  "form": "I-192",
+  "pages": [
+    {
+      "page": 1,
+      "items": [
+        {
+          "id": "p_global_attorney_info",
+          "code": "Global.1-3",
+          "section": "To be completed by an attorney or accredited representative (if any)",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Attorney or Accredited Representative Information",
+          "optional": true,
+          "fields": [
+            {
+              "id": "g28_attached",
+              "label": "Select this box if Form G-28 or Form G-28I is attached.",
+              "type": "checkbox",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "volag_number",
+              "label": "Volag Number (if any)",
+              "type": "text",
+              "optional": true,
+              "instruction": "Leave blank unless specifically applicable.",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "attorney_state_bar_number",
+              "label": "Attorney State Bar Number (if applicable)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "attorney_uscis_online_account_number",
+              "label": "Attorney or Accredited Representative USCIS Online Account Number (if any)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "USCIS Online Account; BIO CALL"
+            }
+          ],
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "For DHS Use Only",
+          "reason": "This section is completed by DHS, not by the client or attorney."
+        },
+        {
+          "name": "Action by the Department of Homeland Security",
+          "reason": "This section is completed by DHS, not by the client or attorney."
+        },
+        {
+          "name": "START HERE",
+          "reason": "Instructional text only; not a direct question or fillable field."
+        },
+        {
+          "name": "Part 1 Instructions",
+          "reason": "The paragraph and skip instruction are explanatory text; the actual answerable field is Item 1."
+        }
+      ]
+    },
+    {
+      "page": 8,
+      "items": [
+        {
+          "id": "p4_identity",
+          "code": "4.1-4.2",
+          "section": "Part 4. Interpreter's Contact Information, Certification, and Signature",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Interpreter's Full Name",
+          "optional": true,
+          "condition": "If an interpreter was used",
+          "fields": [
+            {
+              "id": "interpreter_family_name",
+              "label": "Interpreter's Family Name (Last Name)",
+              "type": "text",
+              "where_to_verify": "Interpreter Certification; Intake"
+            },
+            {
+              "id": "interpreter_given_name",
+              "label": "Interpreter's Given Name (First Name)",
+              "type": "text",
+              "where_to_verify": "Interpreter Certification; Intake"
+            },
+            {
+              "id": "interpreter_business_or_organization_name",
+              "label": "Interpreter's Business or Organization Name",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "Interpreter Certification; Intake"
+            }
+          ],
+          "where_to_verify": "Declaration; Signed Form"
+        },
+        {
+          "id": "p4_contact",
+          "code": "4.3-4.5",
+          "section": "Part 4. Interpreter's Contact Information, Certification, and Signature",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Interpreter's Contact Information",
+          "optional": true,
+          "condition": "If an interpreter was used",
+          "fields": [
+            {
+              "id": "interpreter_daytime_telephone_number",
+              "label": "Interpreter's Daytime Telephone Number",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake"
+            },
+            {
+              "id": "interpreter_mobile_telephone_number",
+              "label": "Interpreter's Mobile Telephone Number (if any)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake"
+            },
+            {
+              "id": "interpreter_email_address",
+              "label": "Interpreter's Email Address (if any)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "where_to_verify": "Declaration; Signed Form"
+        },
+        {
+          "id": "p4_signature",
+          "code": "4.CERT-4.6",
+          "section": "Part 4. Interpreter's Contact Information, Certification, and Signature",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Interpreter's Certification and Signature",
+          "optional": true,
+          "condition": "If an interpreter was used",
+          "fields": [
+            {
+              "id": "interpreter_fluent_language",
+              "label": "I am fluent in English and",
+              "type": "text",
+              "where_to_verify": "Interpreter Certification; Intake"
+            },
+            {
+              "id": "interpreter_signature",
+              "label": "Interpreter's Signature",
+              "type": "signature",
+              "where_to_verify": "Declaration; Signed Form"
+            },
+            {
+              "id": "interpreter_signature_date",
+              "label": "Date of Signature",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "where_to_verify": "Declaration; Signed Form"
+            }
+          ],
+          "where_to_verify": "Declaration; Signed Form"
+        },
+        {
+          "id": "p5_identity",
+          "code": "5.1-5.2",
+          "section": "Part 5. Contact Information, Declaration, and Signature of the Person Preparing this Application, if Other Than the Applicant",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Preparer's Full Name",
+          "optional": true,
+          "condition": "If the application was prepared by someone other than the applicant",
+          "fields": [
+            {
+              "id": "preparer_family_name",
+              "label": "Preparer's Family Name (Last Name)",
+              "type": "text",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "preparer_given_name",
+              "label": "Preparer's Given Name (First Name)",
+              "type": "text",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "preparer_business_or_organization_name",
+              "label": "Preparer's Business or Organization Name",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            }
+          ],
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        },
+        {
+          "id": "p5_contact",
+          "code": "5.3-5.5",
+          "section": "Part 5. Contact Information, Declaration, and Signature of the Person Preparing this Application, if Other Than the Applicant",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Preparer's Contact Information",
+          "optional": true,
+          "condition": "If the application was prepared by someone other than the applicant",
+          "fields": [
+            {
+              "id": "preparer_daytime_telephone_number",
+              "label": "Preparer's Daytime Telephone Number",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake"
+            },
+            {
+              "id": "preparer_mobile_telephone_number",
+              "label": "Preparer's Mobile Telephone Number (if any)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake"
+            },
+            {
+              "id": "preparer_email_address",
+              "label": "Preparer's Email Address (if any)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        },
+        {
+          "id": "p5_signature",
+          "code": "5.CERT-5.6",
+          "section": "Part 5. Contact Information, Declaration, and Signature of the Person Preparing this Application, if Other Than the Applicant",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Preparer's Certification and Signature",
+          "optional": true,
+          "condition": "If the application was prepared by someone other than the applicant",
+          "fields": [
+            {
+              "id": "preparer_signature",
+              "label": "Preparer's Signature",
+              "type": "signature",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "preparer_signature_date",
+              "label": "Date of Signature",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            }
+          ],
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "Interpreter's Certification",
+          "reason": "The certification paragraph is declarative text tied to the interpreter's language field and signature, not a separate fillable field."
+        },
+        {
+          "name": "Preparer's Certification",
+          "reason": "The certification paragraph is declarative text tied to the preparer's signature, not a separate fillable field."
+        }
+      ]
+    },
+    {
+      "page": 9,
+      "items": [
+        {
+          "id": "p6_header",
+          "code": "6.1-6.2",
+          "section": "Part 6. Additional Information",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Applicant Identity for Additional Information Page",
+          "optional": true,
+          "fields": [
+            {
+              "id": "part6_family_name",
+              "label": "Family Name (Last Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "part6_given_name",
+              "label": "Given Name (First Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "part6_middle_name",
+              "label": "Middle Name (if applicable)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "part6_a_number",
+              "label": "A-Number (if any)",
+              "type": "text",
+              "prefix": "A-",
+              "optional": true,
+              "where_to_verify": "EAD Card; I-94; USCIS Receipt; BIO CALL"
+            }
+          ],
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p6_entries",
+          "code": "6.3-6.6",
+          "section": "Part 6. Additional Information",
+          "responsible_party": "attorney",
+          "type": "repeatable_group",
+          "form_text": "Additional Information Entries",
+          "optional": true,
+          "visible_on_pages": [
+            9
+          ],
+          "visible_slots": [
+            3,
+            4,
+            5,
+            6
+          ],
+          "fields": [
+            {
+              "id": "page_number",
+              "label": "Page Number",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "part_number",
+              "label": "Part Number",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "item_number",
+              "label": "Item Number",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "additional_information",
+              "label": "Additional Information",
+              "type": "textarea",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "Part 6 Instructions",
+          "reason": "Instructional text only; the actual identity fields and additional-information entries are captured separately."
+        }
+      ]
+    }
+  ]
+}

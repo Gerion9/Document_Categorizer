@@ -115,6 +115,15 @@ def _section_scopes_for_page(page: Page) -> list[dict[str, Any]]:
     ]
 
 
+def _ocr_case_prefix(case_id: Any) -> str:
+    """Stable prefix for all OCR vectors belonging to a case."""
+    return f"ocr-{sanitize_identifier(str(case_id or ''), 24) or 'unknown'}"
+
+
+def _ocr_page_prefix(case_id: Any, page_id: Any) -> str:
+    return f"{_ocr_case_prefix(case_id)}-{sanitize_identifier(str(page_id or ''), 40) or 'page'}"
+
+
 def _build_chunk_records_for_page_text(
     page: Page,
     text: str,
@@ -137,6 +146,7 @@ def _build_chunk_records_for_page_text(
 
     records: list[dict[str, Any]] = []
     scopes = _section_scopes_for_page(page)
+    page_prefix = _ocr_page_prefix(page.case_id, page.id)
 
     for scope in scopes:
         document_title = " | ".join(
@@ -150,8 +160,7 @@ def _build_chunk_records_for_page_text(
             if part
         )
         for idx, chunk in enumerate(valid_chunks, start=1):
-            base_document_id = sanitize_identifier(document_id or page.id, 40) or str(page.id)
-            chunk_id = f"{base_document_id}-{page.id}-{scope['scope_id']}-c{idx}"
+            chunk_id = f"{page_prefix}-{scope['scope_id']}-c{idx}"
             records.append(
                 {
                     "id": chunk_id,
@@ -188,40 +197,75 @@ def _build_chunk_records_for_page(page: Page) -> list[dict[str, Any]]:
     return _build_chunk_records_for_page_text(page, page.ocr_text or "")
 
 
-def delete_page_ocr_chunks(page_id: str, case_id: str | None = None) -> None:
-    """Delete vectors for a single page by listing IDs with prefix match.
-
-    Pinecone Starter/Serverless does not support filter-based delete,
-    so we list vectors whose ID starts with the page_id and delete by ID.
-    """
-    index = get_index()
-    namespace = get_namespace(case_id)
-    prefix = str(page_id)
+def _list_ids_by_prefix(index, namespace: str, prefix: str) -> list[str]:
+    """List all vector IDs in *namespace* whose ID starts with *prefix*."""
+    ids: list[str] = []
     try:
         listed = index.list(namespace=namespace, prefix=prefix)
-        ids_to_delete: list[str] = []
         if hasattr(listed, "__iter__"):
             for batch in listed:
                 if isinstance(batch, list):
-                    ids_to_delete.extend(batch)
+                    ids.extend(batch)
                 elif isinstance(batch, str):
-                    ids_to_delete.append(batch)
+                    ids.append(batch)
+    except Exception as exc:
+        if _is_namespace_not_found_error(exc):
+            return []
+        raise
+    return ids
+
+
+def _delete_ids_in_batches(
+    index, namespace: str, ids: list[str], *, batch_size: int = 100,
+) -> None:
+    for start in range(0, len(ids), batch_size):
+        batch = ids[start : start + batch_size]
+        _with_retries(lambda batch=batch: index.delete(ids=batch, namespace=namespace))
+
+
+def delete_page_ocr_chunks(page_id: str, case_id: str | None = None) -> None:
+    """Delete vectors for a single page by listing IDs with prefix match."""
+    index = get_index()
+    namespace = get_namespace(case_id)
+    try:
+        ids_to_delete: list[str] = []
+        if case_id:
+            ids_to_delete.extend(
+                _list_ids_by_prefix(index, namespace, _ocr_page_prefix(case_id, page_id)),
+            )
+        ids_to_delete.extend(
+            vid
+            for vid in _list_ids_by_prefix(index, namespace, str(page_id))
+            if vid not in ids_to_delete
+        )
         if ids_to_delete:
-            _with_retries(lambda: index.delete(ids=ids_to_delete, namespace=namespace))
+            _delete_ids_in_batches(index, namespace, ids_to_delete)
     except Exception:
         pass
 
 
 def delete_case_ocr_chunks(case_id: str) -> None:
+    """Delete all OCR vectors for a case using the ``ocr-<case_id>`` prefix."""
     index = get_index()
     namespace = get_namespace(case_id)
+    prefix = _ocr_case_prefix(case_id)
     try:
-        _with_retries(
-            lambda: index.delete(delete_all=True, namespace=namespace)
-        )
+        ids_to_delete = _list_ids_by_prefix(index, namespace, prefix)
+        if ids_to_delete:
+            log.info(
+                "Indexing [%s]: deleting %d vectors with prefix %s",
+                str(case_id)[:8],
+                len(ids_to_delete),
+                prefix,
+            )
+            _delete_ids_in_batches(index, namespace, ids_to_delete)
+        else:
+            log.info(
+                "Indexing [%s]: no vectors found with prefix %s; nothing to clear",
+                str(case_id)[:8],
+                prefix,
+            )
     except Exception as exc:
-        # First-time indexing can hit a 404 when the namespace does not exist yet.
-        # Treat it as an empty namespace and continue with upsert.
         if _is_namespace_not_found_error(exc):
             log.info(
                 "Indexing [%s]: namespace %s not found; skipping clear step",

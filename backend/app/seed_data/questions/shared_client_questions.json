@@ -1,0 +1,520 @@
+{
+  "form": "SHARED-CLIENT",
+  "pages": [
+    {
+      "page": 1,
+      "items": [
+        {
+          "id": "shared.name",
+          "code": "BIO.1",
+          "section": "Basic Identity",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Your Full Legal Name",
+          "where_to_verify": "Birth Certificate, Passport, BIO Call intake",
+          "fields": [
+            {
+              "id": "family_name",
+              "label": "Family Name (Last Name)",
+              "type": "text"
+            },
+            {
+              "id": "given_name",
+              "label": "Given Name (First Name)",
+              "type": "text"
+            },
+            {
+              "id": "middle_name",
+              "label": "Middle Name",
+              "type": "text",
+              "optional": true
+            }
+          ]
+        },
+        {
+          "id": "shared.other_names_used",
+          "code": "BIO.2",
+          "section": "Basic Identity",
+          "responsible_party": "client",
+          "type": "repeatable_group",
+          "form_text": "Other Names Used",
+          "where_to_verify": "FBI Records, BIO Call intake, Previous immigration documents",
+          "instruction": "Include aliases, maiden names, nicknames, and any other names used on records or applications.",
+          "optional": true,
+          "visible_slots": [
+            "Other Name 1",
+            "Other Name 2",
+            "Other Name 3"
+          ],
+          "fields": [
+            {
+              "id": "family_name",
+              "label": "Family Name (Last Name)",
+              "type": "text",
+              "optional": true
+            },
+            {
+              "id": "given_name",
+              "label": "Given Name (First Name)",
+              "type": "text",
+              "optional": true
+            },
+            {
+              "id": "middle_name",
+              "label": "Middle Name",
+              "type": "text",
+              "optional": true
+            },
+            {
+              "id": "note",
+              "label": "Note",
+              "type": "text",
+              "optional": true
+            }
+          ]
+        },
+        {
+          "id": "shared.identifiers",
+          "code": "BIO.3",
+          "section": "Basic Identity",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Government Identifiers",
+          "where_to_verify": "Previous immigration documents, BIO Call intake",
+          "fields": [
+            {
+              "id": "a_number",
+              "label": "Alien Registration Number (A-Number)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "Previous USCIS notices, EAD card, BIO Call intake, FBI Rapsheet"
+            },
+            {
+              "id": "ssn",
+              "label": "Social Security Number (SSN)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "Social Security card, BIO Call intake"
+            },
+            {
+              "id": "uscis_online_account_number",
+              "label": "USCIS Online Account Number",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "USCIS notices, USCIS online account, BIO Call intake"
+            },
+            {
+              "id": "i94_record_number",
+              "label": "Form I-94 Arrival-Departure Record Number",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "I-94 record, CBP records, Passport stamp"
+            },
+            {
+              "id": "passport_number",
+              "label": "Passport Number",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "Passport bio page"
+            },
+            {
+              "id": "travel_document_number",
+              "label": "Travel Document Number",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "Travel document, Re-entry permit"
+            },
+            {
+              "id": "sevis_number",
+              "label": "SEVIS Number",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "I-20, DS-2019 form"
+            }
+          ]
+        }
+      ],
+      "excluded_sections": []
+    },
+    {
+      "page": 2,
+      "items": [
+        {
+          "id": "shared.biographics",
+          "code": "BIO.4",
+          "section": "Biographic Information",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Biographic Information",
+          "where_to_verify": "Birth Certificate, Passport, BIO Call intake",
+          "fields": [
+            {
+              "id": "date_of_birth",
+              "label": "Date of Birth",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "where_to_verify": "Birth Certificate, Passport bio page"
+            },
+            {
+              "id": "sex",
+              "label": "Sex",
+              "type": "single_choice",
+              "options": [
+                "Male",
+                "Female"
+              ],
+              "where_to_verify": "Birth Certificate, Passport bio page"
+            },
+            {
+              "id": "marital_status",
+              "label": "Marital Status",
+              "type": "single_choice",
+              "options": [
+                "Single",
+                "Married",
+                "Divorced",
+                "Widowed"
+              ],
+              "where_to_verify": "BIO Call intake, Marriage certificate, Divorce decree"
+            },
+            {
+              "id": "times_married",
+              "label": "Number of Times Married",
+              "type": "number",
+              "optional": true,
+              "where_to_verify": "BIO Call intake, Client declaration"
+            },
+            {
+              "id": "birth_city",
+              "label": "City/Town/Village of Birth",
+              "type": "text",
+              "where_to_verify": "Birth Certificate"
+            },
+            {
+              "id": "birth_state_or_province",
+              "label": "State/Province of Birth",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "Birth Certificate"
+            },
+            {
+              "id": "birth_country",
+              "label": "Country of Birth",
+              "type": "text",
+              "where_to_verify": "Birth Certificate, Passport bio page"
+            }
+          ]
+        },
+        {
+          "id": "shared.country_of_citizenship",
+          "code": "BIO.5",
+          "section": "Biographic Information",
+          "responsible_party": "client",
+          "type": "repeatable_group",
+          "form_text": "Country or Countries of Citizenship or Nationality",
+          "where_to_verify": "Passport bio page, BIO Call intake",
+          "instruction": "List all countries where you are currently a citizen or national.",
+          "visible_slots": [
+            "Country 1",
+            "Country 2",
+            "Country 3"
+          ],
+          "fields": [
+            {
+              "id": "country",
+              "label": "Country",
+              "type": "text"
+            }
+          ]
+        },
+        {
+          "id": "shared.contact",
+          "code": "BIO.6",
+          "section": "Contact Information",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Contact Information",
+          "where_to_verify": "BIO Call intake, Client declaration",
+          "fields": [
+            {
+              "id": "daytime_telephone_number",
+              "label": "Daytime Telephone Number",
+              "type": "text",
+              "optional": true
+            },
+            {
+              "id": "mobile_telephone_number",
+              "label": "Mobile Telephone Number",
+              "type": "text",
+              "optional": true
+            },
+            {
+              "id": "safe_daytime_telephone_number",
+              "label": "Safe Daytime Telephone Number",
+              "type": "text",
+              "optional": true
+            },
+            {
+              "id": "email_address",
+              "label": "Email Address",
+              "type": "text",
+              "optional": true
+            }
+          ]
+        }
+      ],
+      "excluded_sections": []
+    },
+    {
+      "page": 3,
+      "items": [
+        {
+          "id": "shared.current_physical_address",
+          "code": "ADDR.1",
+          "section": "Address Information",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Current Physical Address",
+          "where_to_verify": "Proof of address, BIO Call intake, Client declaration, Utility bills",
+          "fields": [
+            {
+              "id": "street_number_name",
+              "label": "Street Number and Name",
+              "type": "text"
+            },
+            {
+              "id": "unit_type",
+              "label": "Apt./Ste./Flr.",
+              "type": "select",
+              "options": [
+                "Apt.",
+                "Ste.",
+                "Flr."
+              ],
+              "optional": true
+            },
+            {
+              "id": "unit_number",
+              "label": "Number",
+              "type": "text",
+              "optional": true
+            },
+            {
+              "id": "city",
+              "label": "City or Town",
+              "type": "text"
+            },
+            {
+              "id": "state",
+              "label": "State",
+              "type": "text",
+              "optional": true
+            },
+            {
+              "id": "zip_code",
+              "label": "ZIP Code",
+              "type": "text",
+              "optional": true
+            },
+            {
+              "id": "province",
+              "label": "Province",
+              "type": "text",
+              "optional": true
+            },
+            {
+              "id": "postal_code",
+              "label": "Postal Code",
+              "type": "text",
+              "optional": true
+            },
+            {
+              "id": "country",
+              "label": "Country",
+              "type": "text",
+              "default_value": "EE. UU."
+            }
+          ]
+        },
+        {
+          "id": "shared.safe_mailing_address",
+          "code": "ADDR.2",
+          "section": "Address Information",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Safe Mailing Address",
+          "where_to_verify": "BIO Call intake, Client declaration",
+          "instruction": "Only provide this address if it is different from your current physical address.",
+          "optional": true,
+          "fields": [
+            {
+              "id": "in_care_of_name",
+              "label": "In Care Of Name",
+              "type": "text",
+              "optional": true,
+              "default_value": "Law Offices of Manuel E. Solis",
+              "force_default": true
+            },
+            {
+              "id": "street_number_name",
+              "label": "Street Number and Name",
+              "type": "text",
+              "default_value": "P.O. Box 231704",
+              "force_default": true
+            },
+            {
+              "id": "unit_type",
+              "label": "Apt./Ste./Flr.",
+              "type": "select",
+              "options": [
+                "Apt.",
+                "Ste.",
+                "Flr."
+              ],
+              "optional": true
+            },
+            {
+              "id": "unit_number",
+              "label": "Number",
+              "type": "text",
+              "optional": true
+            },
+            {
+              "id": "city",
+              "label": "City or Town",
+              "type": "text",
+              "default_value": "Houston",
+              "force_default": true
+            },
+            {
+              "id": "state",
+              "label": "State",
+              "type": "text",
+              "optional": true,
+              "default_value": "TX",
+              "force_default": true
+            },
+            {
+              "id": "zip_code",
+              "label": "ZIP Code",
+              "type": "text",
+              "optional": true,
+              "default_value": "77223",
+              "force_default": true
+            },
+            {
+              "id": "province",
+              "label": "Province",
+              "type": "text",
+              "optional": true
+            },
+            {
+              "id": "postal_code",
+              "label": "Postal Code",
+              "type": "text",
+              "optional": true
+            },
+            {
+              "id": "country",
+              "label": "Country",
+              "type": "text",
+              "default_value": "United States",
+              "force_default": true
+            }
+          ]
+        }
+      ],
+      "excluded_sections": []
+    },
+    {
+      "page": 4,
+      "items": [
+        {
+          "id": "shared.address_history_last_five_years",
+          "code": "ADDR.3",
+          "section": "Address Information",
+          "responsible_party": "client",
+          "type": "repeatable_group",
+          "form_text": "Address History for the Last Five Years",
+          "where_to_verify": "BIO Call intake, Client declaration, Previous applications",
+          "instruction": "List your addresses in reverse chronological order, starting with the most recent address.",
+          "visible_slots": [
+            "Address 1",
+            "Address 2",
+            "Address 3"
+          ],
+          "fields": [
+            {
+              "id": "street_number_name",
+              "label": "Street Number and Name",
+              "type": "text"
+            },
+            {
+              "id": "unit_type",
+              "label": "Apt./Ste./Flr.",
+              "type": "select",
+              "options": [
+                "Apt.",
+                "Ste.",
+                "Flr."
+              ],
+              "optional": true
+            },
+            {
+              "id": "unit_number",
+              "label": "Number",
+              "type": "text",
+              "optional": true
+            },
+            {
+              "id": "city",
+              "label": "City or Town",
+              "type": "text"
+            },
+            {
+              "id": "state",
+              "label": "State",
+              "type": "text",
+              "optional": true
+            },
+            {
+              "id": "zip_code",
+              "label": "ZIP Code",
+              "type": "text",
+              "optional": true
+            },
+            {
+              "id": "province",
+              "label": "Province",
+              "type": "text",
+              "optional": true
+            },
+            {
+              "id": "postal_code",
+              "label": "Postal Code",
+              "type": "text",
+              "optional": true
+            },
+            {
+              "id": "country",
+              "label": "Country",
+              "type": "text"
+            },
+            {
+              "id": "from_date",
+              "label": "From Date",
+              "type": "date",
+              "format": "Mmm DD YYYY"
+            },
+            {
+              "id": "to_date",
+              "label": "To Date",
+              "type": "text"
+            }
+          ]
+        }
+      ],
+      "excluded_sections": []
+    }
+  ]
+}

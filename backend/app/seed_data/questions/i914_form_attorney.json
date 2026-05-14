@@ -1,0 +1,602 @@
+{
+  "form": "I-914",
+  "pages": [
+    {
+      "page": 1,
+      "items": [
+        {
+          "id": "p1_1_receipt",
+          "code": "1.B(1)",
+          "section": "Part 1. Purpose for Filing This Application",
+          "responsible_party": "attorney",
+          "type": "text",
+          "form_text": "Receipt Number EAC",
+          "condition": "If option 'B' is selected in Item 1",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p_attorney_info",
+          "code": "ATTY.1-ATTY.3",
+          "section": "To be fully completed by an attorney or accredited representative, if any",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Attorney or Accredited Representative Information",
+          "optional": true,
+          "fields": [
+            {
+              "id": "g28_attached",
+              "label": "Select this box if Form G-28 is attached.",
+              "type": "checkbox",
+              "default_value": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "attorney_state_license_bar_number",
+              "label": "Attorney State License Bar Number",
+              "type": "text",
+              "optional": true,
+              "default_value": "18826790",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "attorney_uscis_online_account_number",
+              "label": "Attorney or Accredited Representative USCIS Online Account Number",
+              "type": "text",
+              "optional": true,
+              "default_value": "087361245002",
+              "where_to_verify": "USCIS Online Account; BIO CALL"
+            }
+          ],
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "For USCIS Use Only",
+          "reason": "Neither the client nor the attorney completes this section."
+        }
+      ]
+    },
+    {
+      "page": 9,
+      "items": [
+        {
+          "id": "p7_identity",
+          "code": "7.1-7.2",
+          "section": "Part 7. Interpreter's Contact Information, Certification, and Signature (if any)",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Interpreter Identification",
+          "optional": true,
+          "condition": "If an interpreter was used / if 6.1.B is selected",
+          "fields": [
+            {
+              "id": "interpreter_family_name",
+              "label": "Interpreter's Family Name (Last Name)",
+              "type": "text",
+              "where_to_verify": "Interpreter Certification; Intake"
+            },
+            {
+              "id": "interpreter_given_name",
+              "label": "Interpreter's Given Name (First Name)",
+              "type": "text",
+              "where_to_verify": "Interpreter Certification; Intake"
+            },
+            {
+              "id": "interpreter_business_or_organization_name",
+              "label": "Interpreter's Business or Organization Name (if any)",
+              "type": "text",
+              "optional": true,
+              "default_value": "Law Offices of Manuel E. Solis, PLLC",
+              "where_to_verify": "Interpreter Certification; Intake"
+            }
+          ],
+          "where_to_verify": "Declaration; Signed Form"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "Part 6 Declaration and Certification",
+          "reason": "Certification paragraphs are declarative text tied to the applicant's signature, not separate fillable fields."
+        },
+        {
+          "name": "Part 6 Note To All Applicants",
+          "reason": "Instructional warning text only; not a direct question or fillable field."
+        },
+        {
+          "name": "Part 7 Intro",
+          "reason": "Lead-in text only; the visible interpreter fields are captured separately."
+        }
+      ]
+    },
+    {
+      "page": 10,
+      "items": [
+        {
+          "id": "p7_3",
+          "code": "7.3",
+          "section": "Part 7. Interpreter's Contact Information, Certification, and Signature (if any) (continued)",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Interpreter's Mailing Address",
+          "optional": true,
+          "condition": "If an interpreter was used / if 6.1.B is selected",
+          "fields": [
+            {
+              "id": "interpreter_street_number_name",
+              "label": "Street Number and Name",
+              "type": "text",
+              "default_value": "P.O. Box 231704",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "interpreter_unit_type",
+              "label": "Apt./Ste./Flr.",
+              "type": "select",
+              "options": [
+                "Apt.",
+                "Ste.",
+                "Flr."
+              ],
+              "optional": true,
+              "where_to_verify": "Interpreter Certification; Intake"
+            },
+            {
+              "id": "interpreter_unit_number",
+              "label": "Number",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "Interpreter Certification; Intake"
+            },
+            {
+              "id": "interpreter_city",
+              "label": "City or Town",
+              "type": "text",
+              "default_value": "Houston",
+              "where_to_verify": "Interpreter Certification; Intake"
+            },
+            {
+              "id": "interpreter_state",
+              "label": "State",
+              "type": "select",
+              "optional": true,
+              "default_value": "TX",
+              "where_to_verify": "Interpreter Certification; Intake"
+            },
+            {
+              "id": "interpreter_zip_code",
+              "label": "ZIP Code",
+              "type": "text",
+              "optional": true,
+              "default_value": "77223",
+              "where_to_verify": "Interpreter Certification; Intake"
+            },
+            {
+              "id": "interpreter_province",
+              "label": "Province",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "Interpreter Certification; Intake"
+            },
+            {
+              "id": "interpreter_postal_code",
+              "label": "Postal Code",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "Interpreter Certification; Intake"
+            },
+            {
+              "id": "interpreter_country",
+              "label": "Country",
+              "type": "text",
+              "default_value": "United States",
+              "where_to_verify": "Interpreter Certification; Intake"
+            }
+          ],
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p7_contact",
+          "code": "7.4-7.6",
+          "section": "Part 7. Interpreter's Contact Information, Certification, and Signature (if any) (continued)",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Interpreter's Contact Information",
+          "optional": true,
+          "condition": "If an interpreter was used / if 6.1.B is selected",
+          "fields": [
+            {
+              "id": "interpreter_daytime_telephone_number",
+              "label": "Interpreter's Daytime Telephone Number",
+              "type": "text",
+              "default_value": "7138442700",
+              "where_to_verify": "BIO CALL; Intake"
+            },
+            {
+              "id": "interpreter_mobile_telephone_number",
+              "label": "Interpreter's Mobile Telephone Number (if any)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake"
+            },
+            {
+              "id": "interpreter_email_address",
+              "label": "Interpreter's Email Address (if any)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "where_to_verify": "Declaration; Signed Form"
+        },
+        {
+          "id": "p7_7",
+          "code": "7.7",
+          "section": "Part 7. Interpreter's Contact Information, Certification, and Signature (if any) (continued)",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Interpreter's Certification and Signature",
+          "optional": true,
+          "condition": "If an interpreter was used / if 6.1.B is selected",
+          "fields": [
+            {
+              "id": "interpreter_fluent_language",
+              "label": "I am fluent in English and",
+              "type": "text",
+              "default_value": "Spanish",
+              "where_to_verify": "Interpreter Certification; Intake"
+            },
+            {
+              "id": "interpreter_signature",
+              "label": "Interpreter's Signature",
+              "type": "signature",
+              "where_to_verify": "Declaration; Signed Form"
+            },
+            {
+              "id": "interpreter_signature_date",
+              "label": "Date of Signature",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "where_to_verify": "Declaration; Signed Form"
+            }
+          ],
+          "where_to_verify": "Declaration; Signed Form"
+        },
+        {
+          "id": "p8_identity",
+          "code": "8.1-8.2",
+          "section": "Part 8. Contact Information, Declaration, and Signature of the Person Preparing this Application, if Other Than the Applicant",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Preparer Identification",
+          "optional": true,
+          "fields": [
+            {
+              "id": "preparer_family_name",
+              "label": "Preparer's Family Name (Last Name)",
+              "type": "text",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "preparer_given_name",
+              "label": "Preparer's Given Name (First Name)",
+              "type": "text",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "preparer_business_or_organization_name",
+              "label": "Preparer's Business or Organization Name (if any)",
+              "type": "text",
+              "optional": true,
+              "default_value": "Law Offices of Manuel E. Solis, PLLC",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            }
+          ],
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "Part 7 Certification Text",
+          "reason": "Most of the certification paragraph is declarative text; only the language blank and signature fields are captured as answerable inputs."
+        },
+        {
+          "name": "Part 8 Intro",
+          "reason": "Lead-in text only; the visible preparer fields are captured separately."
+        }
+      ]
+    },
+    {
+      "page": 11,
+      "items": [
+        {
+          "id": "p8_3",
+          "code": "8.3",
+          "section": "Part 8. Contact Information, Declaration, and Signature of the Person Preparing this Application, if Other Than the Applicant (continued)",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Preparer's Mailing Address",
+          "optional": true,
+          "fields": [
+            {
+              "id": "preparer_street_number_name",
+              "label": "Street Number and Name",
+              "type": "text",
+              "default_value": "P.O. Box 231704",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "preparer_unit_type",
+              "label": "Apt./Ste./Flr.",
+              "type": "select",
+              "options": [
+                "Apt.",
+                "Ste.",
+                "Flr."
+              ],
+              "optional": true,
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "preparer_unit_number",
+              "label": "Number",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "preparer_city",
+              "label": "City or Town",
+              "type": "text",
+              "default_value": "Houston",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "preparer_state",
+              "label": "State",
+              "type": "select",
+              "optional": true,
+              "default_value": "TX",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "preparer_zip_code",
+              "label": "ZIP Code",
+              "type": "text",
+              "optional": true,
+              "default_value": "77223",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "preparer_province",
+              "label": "Province",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "preparer_postal_code",
+              "label": "Postal Code",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "preparer_country",
+              "label": "Country",
+              "type": "text",
+              "default_value": "United States",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            }
+          ],
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p8_contact",
+          "code": "8.4-8.6",
+          "section": "Part 8. Contact Information, Declaration, and Signature of the Person Preparing this Application, if Other Than the Applicant (continued)",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Preparer's Contact Information",
+          "optional": true,
+          "fields": [
+            {
+              "id": "preparer_daytime_telephone_number",
+              "label": "Preparer's Daytime Telephone Number",
+              "type": "text",
+              "default_value": "7138442700",
+              "where_to_verify": "BIO CALL; Intake"
+            },
+            {
+              "id": "preparer_mobile_telephone_number",
+              "label": "Preparer's Mobile Telephone Number (if any)",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake"
+            },
+            {
+              "id": "preparer_email_address",
+              "label": "Preparer's Email Address (if any)",
+              "type": "text",
+              "optional": true,
+              "default_value": "uscism@manuelsolis.com",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        },
+        {
+          "id": "p8_7",
+          "code": "8.7",
+          "section": "Part 8. Contact Information, Declaration, and Signature of the Person Preparing this Application, if Other Than the Applicant (continued)",
+          "responsible_party": "attorney",
+          "type": "single_choice",
+          "default_value": "A",
+          "form_text": "Preparer's Statement",
+          "optional": true,
+          "options": [
+            {
+              "value": "A",
+              "label": "I am not an attorney or accredited representative but have prepared this application on behalf of the applicant and with the applicant's consent."
+            },
+            {
+              "value": "B",
+              "label": "I am an attorney or accredited representative and my representation of the applicant in this case."
+            }
+          ],
+          "details_fields": [
+            {
+              "id": "preparer_representation_scope",
+              "label": "Representation scope",
+              "type": "single_choice",
+              "options": [
+                {
+                  "value": "extends",
+                  "label": "extends"
+                },
+                {
+                  "value": "does_not_extend",
+                  "label": "does not extend beyond the preparation of this application."
+                }
+              ],
+              "condition": "If option 'B' is selected",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            }
+          ],
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        },
+        {
+          "id": "p8_8",
+          "code": "8.8",
+          "section": "Part 8. Contact Information, Declaration, and Signature of the Person Preparing this Application, if Other Than the Applicant (continued)",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Preparer's Signature",
+          "optional": true,
+          "fields": [
+            {
+              "id": "preparer_signature",
+              "label": "Preparer's Signature",
+              "type": "signature",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            },
+            {
+              "id": "preparer_signature_date",
+              "label": "Date of Signature",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "where_to_verify": "Firm Records; G-28; State Bar Records"
+            }
+          ],
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "Part 8 Note",
+          "reason": "The G-28 note is instructional text only; it is not a direct question or fillable field."
+        },
+        {
+          "name": "Part 8 Certification Text",
+          "reason": "The certification paragraph is declarative text tied to the preparer's signature, not a separate fillable field."
+        }
+      ]
+    },
+    {
+      "page": 12,
+      "items": [
+        {
+          "id": "p9_header",
+          "code": "9.1-9.2",
+          "section": "Part 9. Additional Information",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Applicant Identity for Additional Information Page",
+          "fields": [
+            {
+              "id": "part9_family_name",
+              "label": "Family Name (Last Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "part9_given_name",
+              "label": "Given Name (First Name)",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "part9_middle_name",
+              "label": "Middle Name",
+              "type": "text",
+              "optional": true,
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "part9_a_number",
+              "label": "A-Number",
+              "type": "text",
+              "prefix": "A-",
+              "optional": true,
+              "where_to_verify": "EAD Card; I-94; USCIS Receipt; BIO CALL"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p9_entries",
+          "code": "9.3-9.6",
+          "section": "Part 9. Additional Information",
+          "responsible_party": "attorney",
+          "type": "repeatable_group",
+          "form_text": "Additional Information Entries",
+          "visible_on_pages": [
+            12
+          ],
+          "visible_slots": [
+            3,
+            4,
+            5,
+            6
+          ],
+          "fields": [
+            {
+              "id": "page_number",
+              "label": "Page Number",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "part_number",
+              "label": "Part Number",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "item_number",
+              "label": "Item Number",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "additional_information",
+              "label": "Additional Information",
+              "type": "textarea",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "Part 9 Instructions",
+          "reason": "Instructional text only; the actual addendum identity fields and entry blocks are captured separately."
+        }
+      ]
+    }
+  ]
+}

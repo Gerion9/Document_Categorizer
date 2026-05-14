@@ -20,11 +20,13 @@ from sqlalchemy import (
     Boolean,
     Column,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     JSON,
     String,
     Text,
+    UniqueConstraint,
 )
 from sqlalchemy.orm import relationship
 
@@ -60,6 +62,14 @@ class ChecklistItemStatus(str, enum.Enum):
     NOT_APPLICABLE = "na"
 
 
+class FormFillingJobStatus(str, enum.Enum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    NEEDS_REVIEW = "needs_review"
+    FAILED = "failed"
+
+
 # ---------------------------------------------------------------------------
 # Models
 # ---------------------------------------------------------------------------
@@ -70,9 +80,14 @@ class Case(Base):
     id = Column(String, primary_key=True, default=_uuid)
     name = Column(String, nullable=False)
     description = Column(Text, default="")
+    form_filling_source_document_ids = Column(JSON, nullable=True)
+    qc_checklist_source_document_ids = Column(JSON, nullable=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
 
+    creator = relationship("User", foreign_keys=[created_by])
+    case_users = relationship("CaseUser", back_populates="case", cascade="all, delete-orphan")
     document_types = relationship(
         "DocumentType", back_populates="case", cascade="all, delete-orphan",
         order_by="DocumentType.order",
@@ -82,6 +97,12 @@ class Case(Base):
     )
     checklists = relationship(
         "Checklist", back_populates="case", cascade="all, delete-orphan",
+    )
+    form_filling_jobs = relationship(
+        "FormFillingJob", back_populates="case", cascade="all, delete-orphan",
+    )
+    questionnaire_answers = relationship(
+        "QuestionnaireAnswer", back_populates="case", cascade="all, delete-orphan",
     )
     audit_logs = relationship(
         "AuditLog", back_populates="case", cascade="all, delete-orphan",
@@ -175,6 +196,7 @@ class Page(Base):
     pinecone_document_id = Column(String, nullable=True)
     created_at = Column(DateTime, default=_utcnow)
     updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+    deleted_at = Column(DateTime, nullable=True)
 
     case = relationship("Case", back_populates="pages")
     document_type = relationship("DocumentType", back_populates="pages")
@@ -470,6 +492,108 @@ class QCLinkPresetMapping(Base):
 
 
 # ---------------------------------------------------------------------------
+# Form Templates (pre-loaded PDF forms in S3)
+# ---------------------------------------------------------------------------
+
+class FormTemplate(Base):
+    __tablename__ = "form_templates"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    name = Column(String, nullable=False)
+    form_type = Column(String, nullable=False, unique=True)
+    description = Column(String, default="")
+    s3_key = Column(String, nullable=False)
+    original_filename = Column(String, nullable=False)
+    file_size = Column(Integer, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+# ---------------------------------------------------------------------------
+# Questionnaire Answers
+# ---------------------------------------------------------------------------
+
+class QuestionnaireAnswer(Base):
+    __tablename__ = "questionnaire_answers"
+    __table_args__ = (
+        UniqueConstraint("case_id", "question_id", "form_type"),
+    )
+
+    id = Column(String, primary_key=True, default=_uuid)
+    case_id = Column(String, ForeignKey("cases.id"), nullable=False)
+    question_id = Column(String, nullable=False)
+    value = Column(Text, default="")
+    source = Column(String, default="shared")
+    form_type = Column(String, nullable=True)
+    verification_status = Column(String, nullable=True)
+    verification_reason = Column(Text, nullable=True)
+    verification_evidence = Column(Text, nullable=True)
+    verification_model = Column(String, nullable=True)
+    verified_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    case = relationship("Case", back_populates="questionnaire_answers")
+
+# ---------------------------------------------------------------------------
+# Form Filling Jobs
+# ---------------------------------------------------------------------------
+
+class FormFillingJob(Base):
+    __tablename__ = "form_filling_jobs"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    case_id = Column(String, ForeignKey("cases.id"), nullable=False)
+    form_type = Column(String, nullable=True)
+    status = Column(String, default=FormFillingJobStatus.QUEUED.value)
+    phase = Column(String, default="queued")
+    progress_pct = Column(Float, default=0.0)
+    original_pdf_path = Column(String, default="")
+    filled_pdf_path = Column(String, default="")
+    field_count = Column(Integer, default=0)
+    filled_count = Column(Integer, default=0)
+    client_field_count = Column(Integer, default=0)
+    client_filled_count = Column(Integer, default=0)
+    attorney_field_count = Column(Integer, default=0)
+    attorney_filled_count = Column(Integer, default=0)
+    error_message = Column(Text, nullable=True)
+    warnings = Column(JSON, default=list)
+    started_at = Column(DateTime, nullable=True)
+    completed_at = Column(DateTime, nullable=True)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    case = relationship("Case", back_populates="form_filling_jobs")
+    fields = relationship(
+        "FormFillingField", back_populates="job", cascade="all, delete-orphan",
+        order_by="FormFillingField.created_at",
+    )
+
+
+class FormFillingField(Base):
+    __tablename__ = "form_filling_fields"
+
+    id = Column(String, primary_key=True, default=_uuid)
+    job_id = Column(String, ForeignKey("form_filling_jobs.id"), nullable=False)
+    field_name = Column(String, nullable=False)
+    field_label = Column(String, default="")
+    field_type = Column(String, default="text")
+    questionnaire_item_id = Column(String, nullable=True)
+    questionnaire_field_id = Column(String, nullable=True)
+    questionnaire_option_value = Column(String, nullable=True)
+    page_number = Column(Integer, nullable=True)
+    responsible_party = Column(String, default="client")
+    extracted_value = Column(Text, default="")
+    confidence = Column(String, nullable=True)
+    evidence_source = Column(Text, default="")
+    manually_corrected = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    job = relationship("FormFillingJob", back_populates="fields")
+
+
+# ---------------------------------------------------------------------------
 # Audit
 # ---------------------------------------------------------------------------
 
@@ -486,4 +610,139 @@ class AuditLog(Base):
     created_at = Column(DateTime, default=_utcnow)
 
     case = relationship("Case", back_populates="audit_logs")
+
+
+# ---------------------------------------------------------------------------
+# Teams & Supervision
+# ---------------------------------------------------------------------------
+
+class Team(Base):
+    """Supervision team owned by a supervisor. Groups case managers."""
+    __tablename__ = "teams"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    uuid = Column(String, unique=True, nullable=False, default=_uuid)
+    name = Column(String, nullable=False)
+    supervisor_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+    deleted_at = Column(DateTime, nullable=True)
+
+    supervisor = relationship("User", back_populates="teams")
+    members = relationship("TeamUser", back_populates="team", cascade="all, delete-orphan")
+
+
+class TeamUser(Base):
+    """Pivot: which case managers belong to which team."""
+    __tablename__ = "team_user"
+    __table_args__ = (UniqueConstraint("team_id", "user_id"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    uuid = Column(String, unique=True, nullable=False, default=_uuid)
+    team_id = Column(Integer, ForeignKey("teams.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    is_primary = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+    deleted_at = Column(DateTime, nullable=True)
+
+    team = relationship("Team", back_populates="members")
+    user = relationship("User", back_populates="team_memberships")
+
+
+class CaseUser(Base):
+    """Pivot: which user is currently responsible for a case.
+    Soft-deleted rows preserve reassignment history."""
+    __tablename__ = "case_user"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    uuid = Column(String, unique=True, nullable=False, default=_uuid)
+    case_id = Column(String, ForeignKey("cases.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+    deleted_at = Column(DateTime, nullable=True)
+
+    case = relationship("Case", back_populates="case_users")
+    user = relationship("User", back_populates="case_assignments")
+
+
+# ---------------------------------------------------------------------------
+# RBAC – Users, Roles, Permissions
+# ---------------------------------------------------------------------------
+
+class User(Base):
+    __tablename__ = "users"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False)
+    email = Column(String, nullable=False, unique=True)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    user_roles = relationship("UserRole", back_populates="user", cascade="all, delete-orphan")
+    user_permissions = relationship("UserPermission", back_populates="user", cascade="all, delete-orphan")
+    teams = relationship("Team", back_populates="supervisor")
+    team_memberships = relationship("TeamUser", back_populates="user")
+    case_assignments = relationship("CaseUser", back_populates="user")
+
+
+class Role(Base):
+    __tablename__ = "roles"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False, unique=True)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    role_permissions = relationship("RolePermission", back_populates="role", cascade="all, delete-orphan")
+    user_roles = relationship("UserRole", back_populates="role", cascade="all, delete-orphan")
+
+
+class Permission(Base):
+    __tablename__ = "permissions"
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    name = Column(String, nullable=False, unique=True)
+    created_at = Column(DateTime, default=_utcnow)
+    updated_at = Column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+    role_permissions = relationship("RolePermission", back_populates="permission", cascade="all, delete-orphan")
+    user_permissions = relationship("UserPermission", back_populates="permission", cascade="all, delete-orphan")
+
+
+class UserRole(Base):
+    __tablename__ = "user_roles"
+    __table_args__ = (UniqueConstraint("user_id", "role_id"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    role_id = Column(Integer, ForeignKey("roles.id", ondelete="CASCADE"), nullable=False)
+
+    user = relationship("User", back_populates="user_roles")
+    role = relationship("Role", back_populates="user_roles")
+
+
+class RolePermission(Base):
+    __tablename__ = "role_permissions"
+    __table_args__ = (UniqueConstraint("role_id", "permission_id"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    role_id = Column(Integer, ForeignKey("roles.id", ondelete="CASCADE"), nullable=False)
+    permission_id = Column(Integer, ForeignKey("permissions.id", ondelete="CASCADE"), nullable=False)
+
+    role = relationship("Role", back_populates="role_permissions")
+    permission = relationship("Permission", back_populates="role_permissions")
+
+
+class UserPermission(Base):
+    __tablename__ = "user_permissions"
+    __table_args__ = (UniqueConstraint("user_id", "permission_id"),)
+
+    id = Column(Integer, primary_key=True, autoincrement=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    permission_id = Column(Integer, ForeignKey("permissions.id", ondelete="CASCADE"), nullable=False)
+
+    user = relationship("User", back_populates="user_permissions")
+    permission = relationship("Permission", back_populates="user_permissions")
 

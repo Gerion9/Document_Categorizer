@@ -3,7 +3,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import logging
 import re
-from typing import Any
+from typing import Any, Literal
 
 from .checklist_index_service import query_checklist_answers
 from .embedding_service import get_embedding
@@ -14,6 +14,8 @@ from .rag_config import get_rag_settings
 
 log = logging.getLogger("qc_autopilot")
 
+RetrievalProfile = Literal["generic", "qc_checklist"]
+
 # ---------------------------------------------------------------------------
 # Evidence ranking (ported from OCRDocPinecone checklistFiller.service.js)
 # ---------------------------------------------------------------------------
@@ -22,9 +24,91 @@ _SELECTION_CUE_RE = re.compile(
     re.IGNORECASE,
 )
 _YES_NO_RE = re.compile(r"\bYes\s+No\b", re.IGNORECASE)
+_FORM_REFERENCE_RE = re.compile(
+    r"\b(part|item|form|i\s*-\s*914a?|i\s*-\s*765|i\s*-\s*192)\b",
+    re.IGNORECASE,
+)
+_EXTERNAL_SOURCE_HINT_RE = re.compile(
+    r"\b(fbi|foia|lea|law enforcement|declaration|affidavit|criminal history|court|biocall|bio\s*call|intake)\b",
+    re.IGNORECASE,
+)
+_FORM_QA_ECHO_RE = re.compile(
+    r"(pregunta|question)\s*:\s*part\s+\d+\s+item",
+    re.IGNORECASE,
+)
+_CHECKBOX_ANSWER_RE = re.compile(
+    r"\[\s*[x ]\s*\]\s*yes|\[\s*[x ]\s*\]\s*no",
+    re.IGNORECASE,
+)
+
+_SOURCE_HIERARCHY_BONUS: list[tuple[re.Pattern[str], float]] = [
+    (re.compile(r"\bfbi\b|\bfederal bureau of investigation\b|\bcriminal history\b|\brap sheet\b", re.IGNORECASE), 0.30),
+    (re.compile(r"\bfoia\b", re.IGNORECASE), 0.25),
+    (re.compile(r"\blea\b|\blaw enforcement\b", re.IGNORECASE), 0.25),
+    (re.compile(r"\bcourt\b", re.IGNORECASE), 0.20),
+    (re.compile(r"\bcriminal\b", re.IGNORECASE), 0.20),
+    (re.compile(r"\bdeclaration\b|\bin support of\b", re.IGNORECASE), 0.15),
+    (re.compile(r"\baffidavit\b", re.IGNORECASE), 0.15),
+    (re.compile(r"\bbiocall\b|\bbio\s*call\b", re.IGNORECASE), 0.05),
+    (re.compile(r"\bintake\b", re.IGNORECASE), 0.05),
+]
 
 
-def _evidence_rank_score(match: dict[str, Any]) -> float:
+def _source_hierarchy_bonus(
+    metadata: dict[str, Any],
+    *,
+    retrieval_profile: RetrievalProfile = "generic",
+) -> float:
+    """Return the highest applicable source-hierarchy bonus for a match."""
+    haystack = " ".join(
+        str(metadata.get(k, "") or "")
+        for k in ("section_name", "document_type_code", "source_type", "original_filename")
+    )
+    text = str(metadata.get("text", "") or "")
+    if retrieval_profile == "qc_checklist" and text:
+        haystack = f"{haystack} {text[:1200]}"
+    if not haystack.strip():
+        return 0.0
+    best = 0.0
+    for pattern, bonus in _SOURCE_HIERARCHY_BONUS:
+        if pattern.search(haystack):
+            best = max(best, bonus)
+    return best
+
+
+def _form_echo_penalty(
+    match: dict[str, Any],
+    *,
+    where_to_verify: str = "",
+    retrieval_profile: RetrievalProfile = "generic",
+) -> float:
+    """Demote draft-form checkbox OCR when the question asks for outside records."""
+    if retrieval_profile != "qc_checklist":
+        return 0.0
+    if not where_to_verify.strip():
+        return 0.0
+    if _FORM_REFERENCE_RE.search(where_to_verify):
+        return 0.0
+    if not _EXTERNAL_SOURCE_HINT_RE.search(where_to_verify):
+        return 0.0
+
+    metadata = match.get("metadata", {}) or {}
+    text = str(metadata.get("text", "") or "")
+    if not text:
+        return 0.0
+    if not _FORM_QA_ECHO_RE.search(text):
+        return 0.0
+    if not _CHECKBOX_ANSWER_RE.search(text):
+        return 0.0
+    return 0.40
+
+
+def _evidence_rank_score(
+    match: dict[str, Any],
+    *,
+    where_to_verify: str = "",
+    retrieval_profile: RetrievalProfile = "generic",
+) -> float:
     score = float(match.get("score", 0))
     metadata = match.get("metadata", {}) or {}
     text = str(metadata.get("text", ""))
@@ -36,6 +120,12 @@ def _evidence_rank_score(match: dict[str, Any]) -> float:
         score += 0.05
     if source_type.startswith("gemini"):
         score += 0.08
+    score += _source_hierarchy_bonus(metadata, retrieval_profile=retrieval_profile)
+    score -= _form_echo_penalty(
+        match,
+        where_to_verify=where_to_verify,
+        retrieval_profile=retrieval_profile,
+    )
     return score
 
 
@@ -53,11 +143,30 @@ def _dedup_matches(matches: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return list(seen.values())
 
 
-def format_match_as_evidence(matches: list[dict[str, Any]], *, max_chars: int | None = None) -> list[dict[str, Any]]:
+def format_match_as_evidence(
+    matches: list[dict[str, Any]],
+    *,
+    max_chars: int | None = None,
+    where_to_verify: str = "",
+    preserve_order: bool = False,
+    retrieval_profile: RetrievalProfile = "generic",
+) -> list[dict[str, Any]]:
     """Return ranked evidence as structured objects preserving metadata."""
     if max_chars is None:
         max_chars = get_rag_settings().evidence_context_max_chars
-    ranked = sorted(matches, key=_evidence_rank_score, reverse=True)
+    ranked = (
+        list(matches)
+        if preserve_order
+        else sorted(
+            matches,
+            key=lambda match: _evidence_rank_score(
+                match,
+                where_to_verify=where_to_verify,
+                retrieval_profile=retrieval_profile,
+            ),
+            reverse=True,
+        )
+    )
     evidence: list[dict[str, Any]] = []
     remaining = max_chars
 
@@ -98,9 +207,22 @@ def format_match_as_evidence(matches: list[dict[str, Any]], *, max_chars: int | 
     return evidence
 
 
-def format_match_context(matches: list[dict[str, Any]], *, max_chars: int | None = None) -> str:
+def format_match_context(
+    matches: list[dict[str, Any]],
+    *,
+    max_chars: int | None = None,
+    where_to_verify: str = "",
+    preserve_order: bool = False,
+    retrieval_profile: RetrievalProfile = "generic",
+) -> str:
     """Format ranked evidence as a flat text string (legacy helper)."""
-    evidence = format_match_as_evidence(matches, max_chars=max_chars)
+    evidence = format_match_as_evidence(
+        matches,
+        max_chars=max_chars,
+        where_to_verify=where_to_verify,
+        preserve_order=preserve_order,
+        retrieval_profile=retrieval_profile,
+    )
     blocks: list[str] = []
     for item in evidence:
         parts: list[str] = []
@@ -122,6 +244,7 @@ def _build_retrieval_stages(
     *,
     evidence_page_ids: list[str] | None = None,
     target_section_ids: list[str] | None = None,
+    preferred_source_document_ids: list[str] | None = None,
     source_document_ids: list[str] | None = None,
     document_fallback_enabled: bool = True,
 ) -> list[tuple[str, dict[str, Any]]]:
@@ -130,8 +253,13 @@ def _build_retrieval_stages(
         stages.append(("evidence_pages", {"page_ids": evidence_page_ids}))
     if target_section_ids:
         stages.append(("target_sections", {"section_ids": target_section_ids}))
+    if preferred_source_document_ids:
+        stages.append(("preferred_source_document", {"source_document_ids": preferred_source_document_ids}))
     if source_document_ids:
-        stages.append(("source_document", {"source_document_ids": source_document_ids}))
+        preferred_scope = {str(source_document_id) for source_document_id in preferred_source_document_ids or [] if source_document_id}
+        full_scope = {str(source_document_id) for source_document_id in source_document_ids if source_document_id}
+        if full_scope and full_scope != preferred_scope:
+            stages.append(("source_document", {"source_document_ids": source_document_ids}))
     if document_fallback_enabled:
         stages.append(("case_wide", {}))
     elif not stages:
@@ -139,10 +267,57 @@ def _build_retrieval_stages(
     return stages
 
 
-def _rank_matches(matches: list[dict[str, Any]], *, top_k: int) -> list[dict[str, Any]]:
+_MAX_CHUNKS_PER_PAGE = 3
+_MAX_QUERY_CANDIDATES = 60
+
+
+def _candidate_query_k(
+    top_k: int,
+    *,
+    retrieval_profile: RetrievalProfile = "generic",
+) -> int:
+    if retrieval_profile != "qc_checklist":
+        return max(1, top_k)
+    return min(_MAX_QUERY_CANDIDATES, max(top_k, (top_k * 4), top_k + 8))
+
+
+def _rank_matches(
+    matches: list[dict[str, Any]],
+    *,
+    top_k: int,
+    where_to_verify: str = "",
+    retrieval_profile: RetrievalProfile = "generic",
+) -> list[dict[str, Any]]:
     deduped = _dedup_matches(matches)
-    ranked = sorted(deduped, key=_evidence_rank_score, reverse=True)
-    return ranked[:max(1, top_k)]
+    ranked = sorted(
+        deduped,
+        key=lambda match: _evidence_rank_score(
+            match,
+            where_to_verify=where_to_verify,
+            retrieval_profile=retrieval_profile,
+        ),
+        reverse=True,
+    )
+    limit = max(1, top_k)
+    result: list[dict[str, Any]] = []
+    page_counts: dict[str, int] = {}
+    deferred: list[dict[str, Any]] = []
+    for match in ranked:
+        page_id = str((match.get("metadata") or {}).get("page_id", "") or "")
+        count = page_counts.get(page_id, 0)
+        if count < _MAX_CHUNKS_PER_PAGE:
+            page_counts[page_id] = count + 1
+            result.append(match)
+            if len(result) >= limit:
+                break
+        else:
+            deferred.append(match)
+    if len(result) < limit:
+        for match in deferred:
+            result.append(match)
+            if len(result) >= limit:
+                break
+    return result
 
 
 def _source_pages_from_matches(matches: list[dict[str, Any]], *, max_items: int = 12) -> list[dict[str, Any]]:
@@ -180,21 +355,29 @@ def _query_best_stage_matches(
     question: str,
     *,
     case_id: str,
+    where_to_verify: str = "",
     top_k: int,
+    retrieval_profile: RetrievalProfile = "generic",
     step_prefix: str = "evidence-query",
     query_vector: list[float] | None = None,
     context_max_chars: int | None = None,
     tracker: GeminiTokenTracker | None = None,
     evidence_page_ids: list[str] | None = None,
     target_section_ids: list[str] | None = None,
+    preferred_source_document_ids: list[str] | None = None,
     source_document_ids: list[str] | None = None,
     document_fallback_enabled: bool = True,
 ) -> tuple[str | None, list[dict[str, Any]]]:
     stages = _build_retrieval_stages(
         evidence_page_ids=evidence_page_ids,
         target_section_ids=target_section_ids,
+        preferred_source_document_ids=preferred_source_document_ids,
         source_document_ids=source_document_ids,
         document_fallback_enabled=document_fallback_enabled,
+    )
+    candidate_top_k = _candidate_query_k(
+        max(1, top_k),
+        retrieval_profile=retrieval_profile,
     )
     resolved_query_vector = query_vector
     if resolved_query_vector is None:
@@ -213,15 +396,26 @@ def _query_best_stage_matches(
         matches = query_ocr_chunks(
             question,
             case_id=case_id,
-            top_k=top_k,
+            top_k=candidate_top_k,
             query_vector=resolved_query_vector,
             # query_vector is precomputed once to avoid repeated embeddings and tracker races.
             tracker=None,
             step_label=f"{step_prefix}-{stage_name}",
             **extra_filters,
         )
-        ranked_matches = _rank_matches(matches, top_k=top_k)
-        if ranked_matches and format_match_context(ranked_matches, max_chars=context_max_chars):
+        ranked_matches = _rank_matches(
+            matches,
+            top_k=top_k,
+            where_to_verify=where_to_verify,
+            retrieval_profile=retrieval_profile,
+        )
+        if ranked_matches and format_match_context(
+            ranked_matches,
+            max_chars=context_max_chars,
+            where_to_verify=where_to_verify,
+            preserve_order=True,
+            retrieval_profile=retrieval_profile,
+        ):
             return stage_name, ranked_matches
         return stage_name, []
 
@@ -247,10 +441,23 @@ def _query_best_stage_matches(
                 except Exception as exc:
                     log.warning("Evidence query failed (stage=%s): %s", stage_name, exc)
 
+    all_stage_matches: list[dict[str, Any]] = []
+    best_stage: str | None = None
     for stage_name, _ in stages:
-        ranked_matches = stage_results.get(stage_name) or []
-        if ranked_matches:
-            return stage_name, ranked_matches
+        stage_matches = stage_results.get(stage_name) or []
+        if stage_matches:
+            if best_stage is None:
+                best_stage = stage_name
+            all_stage_matches.extend(stage_matches)
+
+    if all_stage_matches:
+        merged = _rank_matches(
+            all_stage_matches,
+            top_k=top_k,
+            where_to_verify=where_to_verify,
+            retrieval_profile=retrieval_profile,
+        )
+        return best_stage, merged
     return None, []
 
 
@@ -266,7 +473,7 @@ def _ocr_text_from_db(case_id: str, *, max_chars: int | None = None) -> tuple[st
         pages = (
             db.query(Page)
             .filter(Page.case_id == case_id, Page.ocr_text.isnot(None))
-            .order_by(Page.created_at.asc())
+            .order_by(Page.original_page_number.asc())
             .all()
         )
         blocks: list[str] = []
@@ -310,13 +517,14 @@ def _query_ocr_priority_matches(
     top_k: int,
     query_vector: list[float] | None = None,
     source_document_ids: list[str] | None = None,
+    retrieval_profile: RetrievalProfile = "generic",
 ) -> list[dict[str, Any]]:
     """Secondary query filtered to OCR source types, like v1's ocrPriorityMatches."""
     try:
         matches = query_ocr_chunks(
             question,
             case_id=case_id,
-            top_k=max(1, top_k),
+            top_k=_candidate_query_k(max(1, top_k), retrieval_profile=retrieval_profile),
             query_vector=query_vector,
             tracker=None,
             step_label="evidence-ocr-priority",
@@ -333,13 +541,17 @@ def collect_evidence_bundle_for_question(
     question_text: str,
     *,
     case_id: str,
+    where_to_verify: str = "",
     evidence_page_ids: list[str] | None = None,
     target_section_ids: list[str] | None = None,
+    preferred_source_document_ids: list[str] | None = None,
     source_document_ids: list[str] | None = None,
     top_k: int | None = None,
     query_vector: list[float] | None = None,
     max_context_chars: int | None = None,
     tracker: GeminiTokenTracker | None = None,
+    document_fallback_enabled: bool | None = None,
+    retrieval_profile: RetrievalProfile = "generic",
 ) -> dict[str, Any]:
     """
     Collect, rank, dedup, and format evidence for a single QC question.
@@ -347,20 +559,36 @@ def collect_evidence_bundle_for_question(
     then merge, dedup, and rank all results together.
     When source_document_ids is provided, retrieval is scoped to those documents
     with configurable fallback to case-wide search.
+    When where_to_verify is provided and no pre-computed query_vector exists,
+    the embedding query is enriched with the verification-source hints so that
+    Pinecone returns chunks from supporting documents (declarations, reports, etc.).
     """
     settings = get_rag_settings()
     resolved_top_k = max(1, top_k or settings.retrieval_top_k)
+    resolved_document_fallback = (
+        settings.retrieval_document_fallback_enabled
+        if document_fallback_enabled is None
+        else bool(document_fallback_enabled)
+    )
 
     if is_pinecone_configured():
         evidence_page_ids = [str(pid) for pid in (evidence_page_ids or []) if pid]
         target_section_ids = [str(sid) for sid in (target_section_ids or []) if sid]
-        source_document_ids = [str(sd) for sd in (source_document_ids or []) if sd] if source_document_ids else None
+        normalized_preferred_source_document_ids = [
+            str(sd) for sd in (preferred_source_document_ids or []) if sd
+        ]
+        if source_document_ids is None:
+            normalized_source_document_ids: list[str] | None = None
+        else:
+            normalized_source_document_ids = [str(sd) for sd in source_document_ids if sd]
 
         resolved_query_vector = query_vector
         if resolved_query_vector is None:
+            wtv = (where_to_verify or "").strip()
+            search_query = f"{question_text} {wtv}".strip() if wtv else question_text
             try:
                 resolved_query_vector = get_embedding(
-                    question_text,
+                    search_query,
                     task_type=settings.embedding_task_type_query,
                     tracker=tracker,
                     step_label="evidence-query-embedding",
@@ -368,20 +596,26 @@ def collect_evidence_bundle_for_question(
             except Exception as exc:
                 log.warning("Evidence embedding generation failed: %s", exc)
 
-        use_doc_scope = source_document_ids and settings.retrieval_prefer_scoped_document
+        force_doc_scope = bool(normalized_source_document_ids) and not resolved_document_fallback
+        use_doc_scope = force_doc_scope or bool(
+            normalized_source_document_ids and settings.retrieval_prefer_scoped_document
+        )
 
         stage_name, primary_matches = _query_best_stage_matches(
             question_text,
             case_id=case_id,
+            where_to_verify=where_to_verify,
             top_k=resolved_top_k,
+            retrieval_profile=retrieval_profile,
             query_vector=resolved_query_vector,
             context_max_chars=max_context_chars,
             tracker=None,
             step_prefix="evidence-query",
             evidence_page_ids=evidence_page_ids,
             target_section_ids=target_section_ids,
-            source_document_ids=source_document_ids if use_doc_scope else None,
-            document_fallback_enabled=settings.retrieval_document_fallback_enabled,
+            preferred_source_document_ids=normalized_preferred_source_document_ids,
+            source_document_ids=normalized_source_document_ids if use_doc_scope else None,
+            document_fallback_enabled=resolved_document_fallback,
         )
 
         ocr_priority_matches = _query_ocr_priority_matches(
@@ -389,15 +623,37 @@ def collect_evidence_bundle_for_question(
             case_id=case_id,
             top_k=max(4, resolved_top_k // 2),
             query_vector=resolved_query_vector,
-            source_document_ids=source_document_ids if use_doc_scope else None,
+            source_document_ids=normalized_source_document_ids if use_doc_scope else None,
+            retrieval_profile=retrieval_profile,
         )
 
         all_matches = list(primary_matches) + list(ocr_priority_matches)
-        ranked_matches = _rank_matches(all_matches, top_k=resolved_top_k) if all_matches else []
+        ranked_matches = (
+            _rank_matches(
+                all_matches,
+                top_k=resolved_top_k,
+                where_to_verify=where_to_verify,
+                retrieval_profile=retrieval_profile,
+            )
+            if all_matches
+            else []
+        )
 
         if ranked_matches:
-            structured_evidence = format_match_as_evidence(ranked_matches, max_chars=max_context_chars)
-            text_context = format_match_context(ranked_matches, max_chars=max_context_chars)
+            structured_evidence = format_match_as_evidence(
+                ranked_matches,
+                max_chars=max_context_chars,
+                where_to_verify=where_to_verify,
+                preserve_order=True,
+                retrieval_profile=retrieval_profile,
+            )
+            text_context = format_match_context(
+                ranked_matches,
+                max_chars=max_context_chars,
+                where_to_verify=where_to_verify,
+                preserve_order=True,
+                retrieval_profile=retrieval_profile,
+            )
             log.debug(
                 "Evidence collected: stage=%s primary=%d ocr_priority=%d merged=%d",
                 stage_name or "unknown",

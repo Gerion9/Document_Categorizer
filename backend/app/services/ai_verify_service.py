@@ -21,6 +21,7 @@ from pydantic import BaseModel, Field, ValidationError
 from .extraction_service import _get_client
 from .gemini_runtime_service import (
     GeminiTokenTracker,
+    apply_thinking_config,
     get_or_create_ocr_prompt_cache,
     invalidate_ocr_prompt_cache,
     is_cached_content_error,
@@ -28,19 +29,19 @@ from .gemini_runtime_service import (
 )
 from .rag_config import get_rag_settings
 from ..prompts import (
-    OCR_MARKERS_INSTRUCTIONS,
     VERIFY_CACHE_PLACEHOLDER,
-    VERIFY_PROMPT,
+    VERIFY_CORRECTION_DESC,
+    VERIFY_DECISION_DESC,
+    VERIFY_JUSTIFICATION_DESC,
+    VERIFY_QUESTION_ID_DESC,
+    build_verify_prompt,
     build_rag_batch_toon_payload,
     build_rag_batch_request_prompt,
     build_rag_batch_system_prompt,
     build_rag_verify_request_prompt,
     build_rag_verify_system_prompt,
     build_rag_verify_toon_payload,
-    get_form_context,
 )
-
-from .paths import STORAGE_DIR
 
 log = logging.getLogger("qc_autopilot")
 
@@ -48,30 +49,20 @@ log = logging.getLogger("qc_autopilot")
 # ---------------------------------------------------------------------------
 # Schema models (sent to Gemini as response_json_schema)
 # ---------------------------------------------------------------------------
-_DECISION_LITERAL = Literal["YES", "NO", "INSUFFICIENT"]
+_DECISION_LITERAL = Literal["YES", "NO", "NA", "INSUFFICIENT"]
 
 
 class VerificationResult(BaseModel):
-    decision: _DECISION_LITERAL = Field(
-        description="YES if correct or present, NO if error or inconsistent, INSUFFICIENT only if absolutely no related information exists."
-    )
-    justification: str = Field(
-        description="Short justification referencing specific evidence and page numbers used."
-    )
-    correction: str = Field(
-        description="Required correction when decision is NO, otherwise an empty string."
-    )
+    decision: _DECISION_LITERAL = Field(description=VERIFY_DECISION_DESC)
+    justification: str = Field(description=VERIFY_JUSTIFICATION_DESC)
+    correction: str = Field(description=VERIFY_CORRECTION_DESC)
 
 
 class BatchAnswerItem(BaseModel):
-    id: str = Field(description="Question identifier.")
-    decision: _DECISION_LITERAL = Field(
-        description="YES if correct or present, NO if error or inconsistent, INSUFFICIENT only if absolutely no related information exists."
-    )
-    justification: str = Field(
-        description="Short justification referencing specific evidence and page numbers used."
-    )
-    correction: str = Field(description="Correction if decision is NO, else empty.")
+    id: str = Field(description=VERIFY_QUESTION_ID_DESC)
+    decision: _DECISION_LITERAL = Field(description=VERIFY_DECISION_DESC)
+    justification: str = Field(description=VERIFY_JUSTIFICATION_DESC)
+    correction: str = Field(description=VERIFY_CORRECTION_DESC)
 
 
 class BatchVerificationResult(BaseModel):
@@ -81,13 +72,13 @@ class BatchVerificationResult(BaseModel):
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
-_CONFIDENCE_FROM_DECISION = {"YES": "high", "NO": "high", "INSUFFICIENT": "medium"}
+_CONFIDENCE_FROM_DECISION = {"YES": "high", "NO": "high", "NA": "high", "INSUFFICIENT": "medium"}
 
 
 def _normalize_result(raw: dict) -> dict:
     """Map Gemini's simplified schema back to the legacy dict shape expected by callers."""
     decision = str(raw.get("decision", "INSUFFICIENT")).upper()
-    if decision not in ("YES", "NO", "INSUFFICIENT"):
+    if decision not in ("YES", "NO", "NA", "INSUFFICIENT"):
         decision = "INSUFFICIENT"
     justification = str(raw.get("justification", "") or "").strip()
     confidence = _CONFIDENCE_FROM_DECISION.get(decision, "low")
@@ -130,6 +121,7 @@ def _generate_structured_response(
         "response_mime_type": "application/json",
         "response_json_schema": schema.model_json_schema(),
     }
+    apply_thinking_config(config_kwargs, settings.gemini_verification_thinking_level)
     if cached_content:
         config_kwargs["cached_content"] = cached_content
 
@@ -167,7 +159,7 @@ def _generate_structured_response(
 # Mode 1: Image-based (existing)
 # ---------------------------------------------------------------------------
 def verify_question(
-    image_path: str,
+    image_input: str | bytes,
     question_text: str,
     where_to_verify: str,
     text_context: str = "",
@@ -176,14 +168,18 @@ def verify_question(
     tracker: GeminiTokenTracker | None = None,
     step_label: str = "verify-image",
 ) -> dict:
-    """Send a page image + QC question to Gemini Vision."""
-    img = PIL.Image.open(image_path)
-    prompt = VERIFY_PROMPT.format(
+    """Send a page image + QC question to Gemini Vision.
+    image_input can be raw bytes (from S3) or a local file path (legacy)."""
+    import io as _io
+    if isinstance(image_input, bytes):
+        img = PIL.Image.open(_io.BytesIO(image_input))
+    else:
+        img = PIL.Image.open(image_input)
+    prompt = build_verify_prompt(
         question=question_text,
         where_to_verify=where_to_verify or "Not specified",
         text_context=text_context or "No OCR context retrieved.",
-        form_context=get_form_context(form_type),
-        ocr_markers=OCR_MARKERS_INSTRUCTIONS,
+        form_type=form_type,
     )
     raw = _generate_structured_response(
         [prompt, img],
@@ -198,7 +194,7 @@ def verify_question(
 
 
 def verify_question_multi_page(
-    image_paths: list[str],
+    image_inputs: list[str | bytes],
     question_text: str,
     where_to_verify: str,
     text_context: str = "",
@@ -207,18 +203,22 @@ def verify_question_multi_page(
     tracker: GeminiTokenTracker | None = None,
     step_label: str = "verify-image-multi",
 ) -> dict:
-    """Verify a question against multiple page images at once."""
+    """Verify a question against multiple page images at once.
+    Each item in image_inputs can be raw bytes (from S3) or a local path (legacy)."""
+    import io as _io
     contents: list = [
-        VERIFY_PROMPT.format(
+        build_verify_prompt(
             question=question_text,
             where_to_verify=where_to_verify or "Not specified",
             text_context=text_context or "No OCR context retrieved.",
-            form_context=get_form_context(form_type),
-            ocr_markers=OCR_MARKERS_INSTRUCTIONS,
+            form_type=form_type,
         )
     ]
-    for path in image_paths[:5]:
-        contents.append(PIL.Image.open(path))
+    for item in image_inputs[:5]:
+        if isinstance(item, bytes):
+            contents.append(PIL.Image.open(_io.BytesIO(item)))
+        else:
+            contents.append(PIL.Image.open(item))
     raw = _generate_structured_response(
         contents,
         tracker=tracker,
@@ -303,7 +303,7 @@ def verify_question_batch_rag(
         cached_content = get_or_create_ocr_prompt_cache(
             client,
             model=batch_model,
-            prompt_profile=f"verify-batch-rag-{normalized_form}-fast{1 if fast_batch_prompt else 0}-v3",
+            prompt_profile=f"verify-batch-rag-{normalized_form}-fast{1 if fast_batch_prompt else 0}-v4",
             system_prompt=system_prompt,
             placeholder_text=VERIFY_CACHE_PLACEHOLDER,
         )

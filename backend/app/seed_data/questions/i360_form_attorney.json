@@ -1,0 +1,586 @@
+{
+  "form": "I-360",
+  "scope": "SIJS (Special Immigrant Juvenile Status) self-petition",
+  "pages": [
+    {
+      "page": 1,
+      "items": [
+        {
+          "id": "p1_g28_attached",
+          "code": "PAGE_1_HEADER",
+          "section": "Page 1 Header (Attorney/Accredited Representative)",
+          "responsible_party": "attorney",
+          "type": "single_choice",
+          "form_text": "Form G-28 is attached",
+          "instruction": "Check this box on every SIJS filing because the firm always files a G-28 with the I-360.",
+          "options": [
+            {
+              "value": "checked",
+              "label": "Form G-28 is attached"
+            }
+          ],
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        },
+        {
+          "id": "p1_attorney_state_bar",
+          "code": "PAGE_1_HEADER",
+          "section": "Page 1 Header (Attorney/Accredited Representative)",
+          "responsible_party": "attorney",
+          "type": "text",
+          "form_text": "Attorney State Bar Number",
+          "instruction": "Bar No. 18826790 for Manuel E. Solis. Use the appearing attorney's bar number if a different attorney signs the G-28.",
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        },
+        {
+          "id": "p1_attorney_uscis_account",
+          "code": "PAGE_1_HEADER",
+          "section": "Page 1 Header (Attorney/Accredited Representative)",
+          "responsible_party": "attorney",
+          "type": "text",
+          "form_text": "Attorney USCIS Online Account Number",
+          "instruction": "Firm USCIS Online Account No. 087361245002. Use the appearing attorney's individual USCIS account if one is assigned.",
+          "where_to_verify": "USCIS Online Account; BIO CALL"
+        }
+      ]
+    },
+    {
+      "page": 2,
+      "items": [
+        {
+          "id": "p2_classification_sij",
+          "code": "1.c",
+          "section": "Part 2. Classification Requested",
+          "responsible_party": "attorney",
+          "type": "single_choice",
+          "form_text": "Classification Requested",
+          "instruction": "Always mark 'Special Immigrant Juvenile' (Item 1.c) on SIJS filings. Leave all other classification boxes (Amerasian, Widow(er), Religious Worker, Iraqi/Afghan Translator, VAWA self-petitioners, etc.) unmarked.",
+          "options": [
+            {
+              "value": "1.c",
+              "label": "Special Immigrant Juvenile"
+            }
+          ],
+          "where_to_verify": "Juvenile Court Order; Predicate Order; Declaration"
+        }
+      ]
+    },
+    {
+      "page": 4,
+      "items": [
+        {
+          "id": "p4_consulate_city",
+          "code": "1.a",
+          "section": "Part 4. Processing Information",
+          "responsible_party": "attorney",
+          "type": "text",
+          "form_text": "U.S. Consulate/Embassy City for consular processing (if applicable)",
+          "instruction": "Leave blank when the juvenile is in the United States and will adjust status (typical SIJS case). Complete only if the beneficiary will consular-process abroad.",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_consulate_country",
+          "code": "1.b",
+          "section": "Part 4. Processing Information",
+          "responsible_party": "attorney",
+          "type": "text",
+          "form_text": "U.S. Consulate/Embassy Country for consular processing (if applicable)",
+          "instruction": "Same as Item 1.a: blank for stateside cases, country name for consular processing.",
+          "optional": true,
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p4_prior_proceedings",
+          "code": "5",
+          "section": "Part 4. Processing Information",
+          "responsible_party": "attorney",
+          "type": "single_choice",
+          "form_text": "Has the person ever been in immigration proceedings (exclusion, deportation, removal, or rescission)?",
+          "instruction": "Determine from the FBI rap sheet, EOIR portal, FOIA, and the case strategy memo. Mark Yes if there is any active or terminated removal/deportation history; otherwise mark No.",
+          "options": [
+            {
+              "value": "yes",
+              "label": "Yes"
+            },
+            {
+              "value": "no",
+              "label": "No"
+            }
+          ],
+          "where_to_verify": "EOIR Portal; ICE Records; Declaration"
+        },
+        {
+          "id": "p4_in_us_and_adjusting",
+          "code": "6",
+          "section": "Part 4. Processing Information",
+          "responsible_party": "attorney",
+          "type": "single_choice",
+          "form_text": "Is the person currently in the United States and will apply for adjustment of status if a visa becomes available?",
+          "instruction": "For SIJS this is generally Yes (the juvenile is in the U.S. and intends to file I-485 once a visa is available). Mark No only if consular processing is planned.",
+          "options": [
+            {
+              "value": "yes",
+              "label": "Yes"
+            },
+            {
+              "value": "no",
+              "label": "No"
+            }
+          ],
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "Part 4, Items 2.a-2.b, 3, 4.a, 4.b, 7",
+          "reason": "Items for non-SIJS classifications or duplicative person data; leave blank in SIJS filings."
+        }
+      ]
+    },
+    {
+      "page": 5,
+      "items": [
+        {
+          "id": "p5_leave_empty",
+          "code": "Page 5",
+          "section": "I-360 page handling",
+          "responsible_party": "attorney",
+          "type": "text",
+          "form_text": "Page 5 status",
+          "instruction": "Leave every field on this page empty for I-360 SIJS filings.",
+          "default_value": "LEAVE EMPTY",
+          "optional": true,
+          "exclude_from_form_mapping": true,
+          "where_to_verify": "LEA Report; Declaration; Intake"
+        }
+      ]
+    },
+    {
+      "page": 6,
+      "items": [
+        {
+          "id": "p6_leave_empty",
+          "code": "Page 6",
+          "section": "I-360 page handling",
+          "responsible_party": "attorney",
+          "type": "text",
+          "form_text": "Page 6 status",
+          "instruction": "Leave every field on this page empty for I-360 SIJS filings.",
+          "default_value": "LEAVE EMPTY",
+          "optional": true,
+          "exclude_from_form_mapping": true,
+          "where_to_verify": "LEA Report; Declaration; Intake"
+        }
+      ]
+    },
+    {
+      "page": 7,
+      "items": [
+        {
+          "id": "p7_leave_empty",
+          "code": "Page 7",
+          "section": "I-360 page handling",
+          "responsible_party": "attorney",
+          "type": "text",
+          "form_text": "Page 7 status",
+          "instruction": "Leave every field on this page empty for I-360 SIJS filings.",
+          "default_value": "LEAVE EMPTY",
+          "optional": true,
+          "exclude_from_form_mapping": true,
+          "where_to_verify": "LEA Report; Declaration; Intake"
+        }
+      ]
+    },
+    {
+      "page": 8,
+      "items": [
+        {
+          "id": "p8_sij_court_marital_status",
+          "code": "2.a",
+          "section": "Part 8. Complete Only If Filing for a Special Immigrant Juvenile",
+          "responsible_party": "attorney",
+          "type": "single_choice",
+          "form_text": "SIJ Eligibility - Marital status at time of filing",
+          "instruction": "SIJS requires the juvenile to be unmarried at the time of filing AND through adjudication. Mark Yes only after confirming with the client and reviewing any prior marriage/divorce/annulment records.",
+          "options": [
+            {
+              "value": "yes",
+              "label": "Yes - unmarried at time of filing"
+            },
+            {
+              "value": "no",
+              "label": "No"
+            }
+          ],
+          "where_to_verify": "Marriage Certificate; Declaration; BIO CALL"
+        },
+        {
+          "id": "p8_sij_age_at_filing",
+          "code": "2.c",
+          "section": "Part 8. Complete Only If Filing for a Special Immigrant Juvenile",
+          "responsible_party": "attorney",
+          "type": "single_choice",
+          "form_text": "SIJ Eligibility - Under 21 years of age at time of filing",
+          "instruction": "SIJS requires the juvenile to be under 21 on the filing date. Confirm by comparing the date of birth to the planned filing date.",
+          "options": [
+            {
+              "value": "yes",
+              "label": "Yes - under 21 at time of filing"
+            },
+            {
+              "value": "no",
+              "label": "No"
+            }
+          ],
+          "where_to_verify": "Juvenile Court Order; Predicate Order; Declaration"
+        },
+        {
+          "id": "p8_sij_court_order_describe",
+          "code": "2.b",
+          "section": "Part 8. Complete Only If Filing for a Special Immigrant Juvenile",
+          "responsible_party": "attorney",
+          "type": "text",
+          "form_text": "Name of state court and case number issuing the SIJ predicate order",
+          "instruction": "Use the format 'State Court Name - Case No. XXX' (e.g., 'Harris County District Court, 309th Family Division - Case No. 2024-12345').",
+          "where_to_verify": "Juvenile Court Order; Predicate Order; Declaration"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "Part 8 detailed findings (court order checkboxes Pt8Line3a, 3b, 3A_Checkbox, 3b_Checkbox, 4.a, 4.b, 5, 6.a, 6.b)",
+          "reason": "These checkboxes capture the precise legal findings of the state court order (parental reunification not viable, best-interest finding, abuse/neglect/abandonment basis, custody arrangement). The attorney transcribes them directly from the certified court order. They are case-specific and not authored as standardized prompts here; the attorney completes them from the order itself during drafting."
+        },
+        {
+          "name": "Part 9 (Religious Worker), Part 10 (VAWA self-petition)",
+          "reason": "Classification-specific; not applicable to SIJS."
+        }
+      ]
+    },
+    {
+      "page": 10,
+      "items": [
+        {
+          "id": "p10_leave_empty",
+          "code": "Page 10",
+          "section": "I-360 page handling",
+          "responsible_party": "attorney",
+          "type": "text",
+          "form_text": "Page 10 status",
+          "instruction": "Leave every field on this page empty for I-360 SIJS filings.",
+          "default_value": "LEAVE EMPTY",
+          "optional": true,
+          "exclude_from_form_mapping": true,
+          "where_to_verify": "LEA Report; Declaration; Intake"
+        }
+      ]
+    },
+    {
+      "page": 11,
+      "items": [
+        {
+          "id": "p11_leave_empty",
+          "code": "Page 11",
+          "section": "I-360 page handling",
+          "responsible_party": "attorney",
+          "type": "text",
+          "form_text": "Page 11 status",
+          "instruction": "Leave every field on this page empty for I-360 SIJS filings.",
+          "default_value": "LEAVE EMPTY",
+          "optional": true,
+          "exclude_from_form_mapping": true,
+          "where_to_verify": "LEA Report; Declaration; Intake"
+        }
+      ]
+    },
+    {
+      "page": 12,
+      "items": [
+        {
+          "id": "p12_leave_empty",
+          "code": "Page 12",
+          "section": "I-360 page handling",
+          "responsible_party": "attorney",
+          "type": "text",
+          "form_text": "Page 12 status",
+          "instruction": "Leave every field on this page empty for I-360 SIJS filings.",
+          "default_value": "LEAVE EMPTY",
+          "optional": true,
+          "exclude_from_form_mapping": true,
+          "where_to_verify": "LEA Report; Declaration; Intake"
+        }
+      ]
+    },
+    {
+      "page": 13,
+      "items": [
+        {
+          "id": "p13_leave_empty",
+          "code": "Page 13",
+          "section": "I-360 page handling",
+          "responsible_party": "attorney",
+          "type": "text",
+          "form_text": "Page 13 status",
+          "instruction": "Leave every field on this page empty for I-360 SIJS filings.",
+          "default_value": "LEAVE EMPTY",
+          "optional": true,
+          "exclude_from_form_mapping": true,
+          "where_to_verify": "LEA Report; Declaration; Intake"
+        }
+      ]
+    },
+    {
+      "page": 14,
+      "items": [
+        {
+          "id": "p14_leave_empty",
+          "code": "Page 14",
+          "section": "I-360 page handling",
+          "responsible_party": "attorney",
+          "type": "text",
+          "form_text": "Page 14 status",
+          "instruction": "Leave every field on this page empty for I-360 SIJS filings.",
+          "default_value": "LEAVE EMPTY",
+          "optional": true,
+          "exclude_from_form_mapping": true,
+          "where_to_verify": "LEA Report; Declaration; Intake"
+        }
+      ]
+    },
+    {
+      "page": 16,
+      "items": [
+        {
+          "id": "p16_leave_empty",
+          "code": "Page 16",
+          "section": "I-360 page handling",
+          "responsible_party": "attorney",
+          "type": "text",
+          "form_text": "Page 16 status",
+          "instruction": "Leave every field on this page empty for I-360 SIJS filings.",
+          "default_value": "LEAVE EMPTY",
+          "optional": true,
+          "exclude_from_form_mapping": true,
+          "where_to_verify": "LEA Report; Declaration; Intake"
+        }
+      ]
+    },
+    {
+      "page": 17,
+      "items": [
+        {
+          "id": "p12_interpreter_family_name",
+          "code": "1",
+          "section": "Part 12. Interpreter's Contact Information, Certification, and Signature",
+          "responsible_party": "attorney",
+          "type": "text",
+          "form_text": "Interpreter's Family Name (Last Name)",
+          "instruction": "Provide the interpreter's family name. Required only when Part 11, Item 1 was marked 'with interpreter'.",
+          "optional": true,
+          "where_to_verify": "Declaration; Signed Form"
+        },
+        {
+          "id": "p12_interpreter_given_name",
+          "code": "1",
+          "section": "Part 12. Interpreter's Contact Information, Certification, and Signature",
+          "responsible_party": "attorney",
+          "type": "text",
+          "form_text": "Interpreter's Given Name (First Name)",
+          "instruction": "Provide the interpreter's given name. Required only when an interpreter was used.",
+          "optional": true,
+          "where_to_verify": "Declaration; Signed Form"
+        },
+        {
+          "id": "p12_interpreter_business",
+          "code": "2",
+          "section": "Part 12. Interpreter's Contact Information, Certification, and Signature",
+          "responsible_party": "attorney",
+          "type": "text",
+          "form_text": "Interpreter's Business or Organization Name (if any)",
+          "instruction": "Provide the interpreter's firm or organization, when applicable; leave blank for individual interpreters.",
+          "optional": true,
+          "where_to_verify": "Declaration; Signed Form"
+        },
+        {
+          "id": "p12_interpreter_language",
+          "code": "Part 12",
+          "section": "Part 12. Interpreter's Contact Information, Certification, and Signature",
+          "responsible_party": "attorney",
+          "type": "text",
+          "form_text": "Language of Interpretation",
+          "instruction": "Same language as Part 11, Item 1.b.",
+          "optional": true,
+          "where_to_verify": "Declaration; Signed Form"
+        }
+      ]
+    },
+    {
+      "page": 18,
+      "items": [
+        {
+          "id": "p13_preparer_family_name",
+          "code": "1",
+          "section": "Part 13. Contact Information, Declaration, and Signature of Person Preparing this Petition",
+          "responsible_party": "attorney",
+          "type": "text",
+          "form_text": "Preparer's Family Name (Last Name)",
+          "instruction": "Family name of the appearing attorney (e.g., 'Solis').",
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        },
+        {
+          "id": "p13_preparer_given_name",
+          "code": "1",
+          "section": "Part 13. Contact Information, Declaration, and Signature of Person Preparing this Petition",
+          "responsible_party": "attorney",
+          "type": "text",
+          "form_text": "Preparer's Given Name (First Name)",
+          "instruction": "Given name of the appearing attorney (e.g., 'Manuel').",
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        },
+        {
+          "id": "p13_preparer_business",
+          "code": "2",
+          "section": "Part 13. Contact Information, Declaration, and Signature of Person Preparing this Petition",
+          "responsible_party": "attorney",
+          "type": "text",
+          "form_text": "Preparer's Business or Organization Name",
+          "instruction": "Use 'Law Offices of Manuel E. Solis, PLLC' (the firm name).",
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        },
+        {
+          "id": "p13_preparer_address",
+          "code": "3",
+          "section": "Part 13. Contact Information, Declaration, and Signature of Person Preparing this Petition",
+          "responsible_party": "attorney",
+          "type": "group",
+          "form_text": "Preparer's Mailing Address",
+          "instruction": "Use the firm address: P.O. Box 231704, Houston, TX 77223.",
+          "fields": [
+            {
+              "id": "street_number_name",
+              "label": "Street Number and Name",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "city",
+              "label": "City or Town",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "state",
+              "label": "State",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "zip_code",
+              "label": "ZIP Code",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p13_preparer_phone",
+          "code": "4",
+          "section": "Part 13. Contact Information, Declaration, and Signature of Person Preparing this Petition",
+          "responsible_party": "attorney",
+          "type": "text",
+          "form_text": "Preparer's Daytime Telephone Number",
+          "instruction": "Use the firm phone: 713-844-2700, or the office line assigned to the appearing attorney.",
+          "where_to_verify": "BIO CALL; Intake"
+        },
+        {
+          "id": "p13_preparer_email",
+          "code": "6",
+          "section": "Part 13. Contact Information, Declaration, and Signature of Person Preparing this Petition",
+          "responsible_party": "attorney",
+          "type": "text",
+          "form_text": "Preparer's Email Address",
+          "instruction": "Use the firm email: uscism@manuelsolis.com, or the appearing attorney's firm email.",
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        },
+        {
+          "id": "p13_preparer_attorney_or_other",
+          "code": "7",
+          "section": "Part 13. Contact Information, Declaration, and Signature of Person Preparing this Petition",
+          "responsible_party": "attorney",
+          "type": "single_choice",
+          "form_text": "Preparer's relationship to the petitioner",
+          "instruction": "Mark 'Attorney or Accredited Representative' since the firm always appears as counsel of record via G-28.",
+          "options": [
+            {
+              "value": "attorney",
+              "label": "I am an attorney or accredited representative and my representation of the petitioner extends beyond the preparation of this petition"
+            },
+            {
+              "value": "preparer_only",
+              "label": "I am not an attorney or accredited representative but have prepared this petition on behalf of the petitioner"
+            }
+          ],
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        },
+        {
+          "id": "p13_preparer_signature_date",
+          "code": "8",
+          "section": "Part 13. Contact Information, Declaration, and Signature of Person Preparing this Petition",
+          "responsible_party": "attorney",
+          "type": "text",
+          "form_text": "Preparer's Date of Signature (Mmm DD YYYY)",
+          "instruction": "Date the attorney signs Part 13. Must use 'Mmm DD YYYY' format and match the G-28 attorney signature date when possible.",
+          "where_to_verify": "Firm Records; G-28; State Bar Records"
+        }
+      ]
+    },
+    {
+      "page": 19,
+      "items": [
+        {
+          "id": "p14_additional_info",
+          "code": "Part 14, Items 3.a-3.d / 4.a-4.d / 5.a-5.d / 6.a-6.d",
+          "section": "Part 14. Additional Information",
+          "responsible_party": "attorney",
+          "type": "repeatable_group",
+          "form_text": "Additional Information overflow entries",
+          "instruction": "Use these slots only when an answer above did not fit. Each entry requires: Page Number, Part Number, Item Number, and Additional Information. Provide the juvenile's family name, given name, middle name, and A-Number at the top of the page (overflow anchors).",
+          "optional": true,
+          "visible_slots": [
+            "Entry 1",
+            "Entry 2",
+            "Entry 3",
+            "Entry 4"
+          ],
+          "fields": [
+            {
+              "id": "page_number",
+              "label": "Page Number",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "part_number",
+              "label": "Part Number",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "item_number",
+              "label": "Item Number",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            },
+            {
+              "id": "additional_info",
+              "label": "Additional Information",
+              "type": "text",
+              "where_to_verify": "BIO CALL; Intake; Declaration"
+            }
+          ],
+          "where_to_verify": "BIO CALL; Intake; Declaration"
+        }
+      ]
+    }
+  ]
+}

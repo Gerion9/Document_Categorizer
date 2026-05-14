@@ -1,19 +1,55 @@
-# Python
+#Python 
 __pycache__/
 *.py[cod]
 *.egg-info/
 .venv/
 venv/
+
+#Test / coverage / type-checker caches
+**/.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+#Runtime / local state (do not commit)
 backend/data/
 backend/storage/
 
-# Node
+# Node / frontend 
 node_modules/
 dist/
 .env
 .env.local
 
-# IDE
+#IDE / tooling 
 .vscode/
 .idea/
 *.swp
+.cursor/
+
+# Logs 
+debug-*.log
+*.log
+
+# Secrets / credentials 
+# Never commit tokens, keys, service-account files, etc.
+*.secret
+*.token
+*credentials*.json
+creartoken*.py
+
+#Local data / scratch 
+DocsPrueba/
+creartoken 1.py
+docs/
+
+# Ad-hoc diagnostic PDFs generated while debugging form filling
+diag_*.pdf
+
+#  Orphan top-level docs (kept on disk, not versioned) 
+/i-194.md
+/i-194a.md
+frontend/FRONTEND_CHANGES_LOG.md

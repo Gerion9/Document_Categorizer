@@ -1,12 +1,14 @@
 """Router -- Upload, classify, reorder pages + multi-section linking."""
 
 import uuid
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile
 from sqlalchemy.orm import Session
 
 from ..database import get_db
+from ..dependencies import get_s3_service
 from ..models import (
     AuditLog,
     Case,
@@ -27,6 +29,7 @@ from ..schemas import (
 from ..services.indexing_service import index_existing_page_ocr, is_indexing_available
 from ..services.ocr_index_service import delete_page_ocr_chunks
 from ..services.pdf_service import process_image, save_uploaded_file, split_pdf
+from ..services.storage_service import S3StorageService
 
 router = APIRouter(tags=["pages"])
 
@@ -52,7 +55,7 @@ def _link_out(lk: PageSectionLink) -> PageSectionLinkOut:
     )
 
 
-def _page_out(p: Page) -> PageOut:
+def _page_out(p: Page, s3: S3StorageService | None = None) -> PageOut:
     links = sorted(p.section_links, key=lambda l: (not l.is_primary, l.order_in_section or 0))
     link_outs = [_link_out(lk) for lk in links]
     d = {
@@ -81,6 +84,8 @@ def _page_out(p: Page) -> PageOut:
         "updated_at": p.updated_at,
         "section_links": link_outs,
         "link_count": len(link_outs),
+        "file_url": s3.generate_presigned_url(p.file_path) if s3 and p.file_path else "",
+        "thumbnail_url": s3.generate_presigned_url(p.thumbnail_path) if s3 and p.thumbnail_path else "",
     }
     return PageOut(**d)
 
@@ -141,6 +146,7 @@ async def upload_files(
     case_id: str,
     files: list[UploadFile] = File(...),
     db: Session = Depends(get_db),
+    s3: S3StorageService = Depends(get_s3_service),
 ):
     """Upload one or more PDF / image files. PDFs are split into individual pages."""
     case = db.query(Case).filter(Case.id == case_id).first()
@@ -154,12 +160,12 @@ async def upload_files(
         filename = f.filename or "unknown"
         ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
 
-        upload_path = save_uploaded_file(content, filename)
+        upload_path = save_uploaded_file(content, filename, s3)
 
         if ext == ".pdf":
-            page_infos = split_pdf(upload_path)
+            page_infos = split_pdf(upload_path, s3)
         elif ext in IMAGE_EXTENSIONS:
-            page_infos = [process_image(upload_path)]
+            page_infos = [process_image(upload_path, s3)]
         else:
             raise HTTPException(400, f"Unsupported file type: {ext}")
 
@@ -190,7 +196,7 @@ async def upload_files(
     db.commit()
     for p in created_pages:
         db.refresh(p)
-    return [_page_out(p) for p in created_pages]
+    return [_page_out(p, s3) for p in created_pages]
 
 
 # ── List pages ────────────────────────────────────────────────────────────
@@ -202,8 +208,9 @@ def list_pages(
     section_id: Optional[str] = Query(None),
     document_type_id: Optional[str] = Query(None),
     db: Session = Depends(get_db),
+    s3: S3StorageService = Depends(get_s3_service),
 ):
-    q = db.query(Page).filter(Page.case_id == case_id)
+    q = db.query(Page).filter(Page.case_id == case_id, Page.deleted_at.is_(None))
     if status:
         q = q.filter(Page.status == status)
     if section_id:
@@ -217,7 +224,7 @@ def list_pages(
     if document_type_id:
         q = q.filter(Page.document_type_id == document_type_id)
     pages = q.order_by(Page.order_in_section.asc().nullslast(), Page.created_at).all()
-    return [_page_out(p) for p in pages]
+    return [_page_out(p, s3) for p in pages]
 
 
 # ── Classify a page (moves primary to target section) ────────────────────
@@ -228,8 +235,9 @@ def classify_page(
     body: PageClassify,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    s3: S3StorageService = Depends(get_s3_service),
 ):
-    page = db.query(Page).filter(Page.id == page_id).first()
+    page = db.query(Page).filter(Page.id == page_id, Page.deleted_at.is_(None)).first()
     if not page:
         raise HTTPException(404, "Page not found")
 
@@ -275,7 +283,7 @@ def classify_page(
     db.commit()
     db.refresh(page)
     _queue_reindex_if_needed(background_tasks, page)
-    return _page_out(page)
+    return _page_out(page, s3)
 
 
 # ── Unclassify a page (remove ALL links) ──────────────────────────────────
@@ -285,8 +293,9 @@ def unclassify_page(
     page_id: str,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    s3: S3StorageService = Depends(get_s3_service),
 ):
-    page = db.query(Page).filter(Page.id == page_id).first()
+    page = db.query(Page).filter(Page.id == page_id, Page.deleted_at.is_(None)).first()
     if not page:
         raise HTTPException(404, "Page not found")
 
@@ -302,7 +311,7 @@ def unclassify_page(
     db.commit()
     db.refresh(page)
     _queue_reindex_if_needed(background_tasks, page)
-    return _page_out(page)
+    return _page_out(page, s3)
 
 
 # ── Mark page as extra ────────────────────────────────────────────────────
@@ -312,8 +321,9 @@ def mark_extra(
     page_id: str,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    s3: S3StorageService = Depends(get_s3_service),
 ):
-    page = db.query(Page).filter(Page.id == page_id).first()
+    page = db.query(Page).filter(Page.id == page_id, Page.deleted_at.is_(None)).first()
     if not page:
         raise HTTPException(404, "Page not found")
     # Remove all section links
@@ -326,7 +336,7 @@ def mark_extra(
     db.commit()
     db.refresh(page)
     _queue_reindex_if_needed(background_tasks, page)
-    return _page_out(page)
+    return _page_out(page, s3)
 
 
 # ── Multi-section link endpoints ──────────────────────────────────────────
@@ -349,9 +359,10 @@ def add_section_link(
     body: PageSectionLinkCreate,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    s3: S3StorageService = Depends(get_s3_service),
 ):
     """Link a page to a section. If is_primary=True, demotes any existing primary."""
-    page = db.query(Page).filter(Page.id == page_id).first()
+    page = db.query(Page).filter(Page.id == page_id, Page.deleted_at.is_(None)).first()
     if not page:
         raise HTTPException(404, "Page not found")
     sec = db.query(Section).filter(Section.id == body.section_id).first()
@@ -376,7 +387,7 @@ def add_section_link(
         db.commit()
         db.refresh(page)
         _queue_reindex_if_needed(background_tasks, page)
-        return _page_out(page)
+        return _page_out(page, s3)
 
     # If this is primary, demote any existing primary
     if body.is_primary:
@@ -413,7 +424,7 @@ def add_section_link(
     db.commit()
     db.refresh(page)
     _queue_reindex_if_needed(background_tasks, page)
-    return _page_out(page)
+    return _page_out(page, s3)
 
 
 @router.delete("/pages/{page_id}/section-links/{section_id}", response_model=PageOut)
@@ -422,9 +433,10 @@ def remove_section_link(
     section_id: str,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    s3: S3StorageService = Depends(get_s3_service),
 ):
     """Remove a page's link to a section. If removing primary, promote another link."""
-    page = db.query(Page).filter(Page.id == page_id).first()
+    page = db.query(Page).filter(Page.id == page_id, Page.deleted_at.is_(None)).first()
     if not page:
         raise HTTPException(404, "Page not found")
 
@@ -457,7 +469,7 @@ def remove_section_link(
     db.commit()
     db.refresh(page)
     _queue_reindex_if_needed(background_tasks, page)
-    return _page_out(page)
+    return _page_out(page, s3)
 
 
 @router.put("/pages/{page_id}/section-links/primary", response_model=PageOut)
@@ -466,9 +478,10 @@ def set_primary_link(
     body: PageSetPrimary,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
+    s3: S3StorageService = Depends(get_s3_service),
 ):
     """Change which section is the primary for this page."""
-    page = db.query(Page).filter(Page.id == page_id).first()
+    page = db.query(Page).filter(Page.id == page_id, Page.deleted_at.is_(None)).first()
     if not page:
         raise HTTPException(404, "Page not found")
 
@@ -490,7 +503,7 @@ def set_primary_link(
     db.commit()
     db.refresh(page)
     _queue_reindex_if_needed(background_tasks, page)
-    return _page_out(page)
+    return _page_out(page, s3)
 
 
 # ── Reorder pages within a section (batch) ────────────────────────────────
@@ -499,7 +512,7 @@ def set_primary_link(
 def reorder_pages(body: PagesReorderBatch, db: Session = Depends(get_db)):
     for item in body.pages:
         # Update both legacy field and link table
-        page = db.query(Page).filter(Page.id == item.page_id).first()
+        page = db.query(Page).filter(Page.id == item.page_id, Page.deleted_at.is_(None)).first()
         if page:
             page.order_in_section = item.order_in_section
         link = (
@@ -520,7 +533,7 @@ def reorder_pages(body: PagesReorderBatch, db: Session = Depends(get_db)):
 
 @router.delete("/pages/{page_id}", status_code=204)
 def delete_page(page_id: str, db: Session = Depends(get_db)):
-    page = db.query(Page).filter(Page.id == page_id).first()
+    page = db.query(Page).filter(Page.id == page_id, Page.deleted_at.is_(None)).first()
     if not page:
         raise HTTPException(404, "Page not found")
     if is_indexing_available():
@@ -529,5 +542,23 @@ def delete_page(page_id: str, db: Session = Depends(get_db)):
         except Exception:
             pass
     db.add(AuditLog(case_id=page.case_id, action="deleted", entity_type="page", entity_id=page.id))
-    db.delete(page)
+    page.deleted_at = datetime.now(timezone.utc)
     db.commit()
+
+
+# ── On-demand presigned URL ───────────────────────────────────────────────
+
+@router.get("/pages/{page_id}/url")
+def get_page_url(
+    page_id: str,
+    db: Session = Depends(get_db),
+    s3: S3StorageService = Depends(get_s3_service),
+):
+    """Generate fresh presigned URLs for a page (useful when the 1 h TTL expires)."""
+    page = db.query(Page).filter(Page.id == page_id, Page.deleted_at.is_(None)).first()
+    if not page:
+        raise HTTPException(404, "Page not found")
+    return {
+        "file_url": s3.generate_presigned_url(page.file_path) if page.file_path else "",
+        "thumbnail_url": s3.generate_presigned_url(page.thumbnail_path) if page.thumbnail_path else "",
+    }

@@ -1,0 +1,102 @@
+{
+  "form": "G-28",
+  "pages": [
+    {
+      "page": 4,
+      "items": [
+        {
+          "id": "p4_release_scope",
+          "code": "1.a-1.b",
+          "section": "Part 4. Client's Consent to Representation and Signature",
+          "responsible_party": "client",
+          "type": "single_choice",
+          "form_text": "Consent to Representation",
+          "options": [
+            {
+              "value": "all_matters",
+              "label": "I have requested the representation of and consented to being represented by the attorney or accredited representative named in Part 1 of this form. According to the Privacy Act of 1974 and DHS policy, I also consent to the disclosure to the named attorney or accredited representative of any record pertaining to me that appears in any system of records of USCIS, ICE, or CBP."
+            },
+            {
+              "value": "limited_matters",
+              "label": "I have limited the scope of representation to the matter(s) described in Part 9."
+            }
+          ],
+          "where_to_verify": "Declaration; Signed Form"
+        },
+        {
+          "id": "p4_notification_preference",
+          "code": "2.a-2.b",
+          "section": "Part 4. Client's Consent to Representation and Signature",
+          "responsible_party": "client",
+          "type": "single_choice",
+          "form_text": "Receipt of Original Notices and/or Secure Identity Documents",
+          "instruction": "Selecting an option in Item Number 2 is optional. USCIS will send notices to both you and the attorney/accredited representative regardless.",
+          "options": [
+            {
+              "value": "notices_to_attorney",
+              "label": "I request that USCIS send original notices regarding my application(s) or petition(s) to me at the U.S. business address of the attorney or accredited representative named in Part 1."
+            },
+            {
+              "value": "notices_to_self",
+              "label": "I request that USCIS send original notices regarding my application(s) or petition(s) to me at my U.S. mailing address."
+            }
+          ],
+          "optional": true,
+          "default_value": "notices_to_attorney",
+          "where_to_verify": "Declaration; Signed Form"
+        },
+        {
+          "id": "p4_secure_documents",
+          "code": "3.a-3.b",
+          "section": "Part 4. Client's Consent to Representation and Signature",
+          "responsible_party": "client",
+          "type": "single_choice",
+          "form_text": "Receipt of Secure Identity Documents",
+          "options": [
+            {
+              "value": "secure_to_attorney",
+              "label": "I request that USCIS send any secure identity document(s) issued to me at the U.S. business address of the attorney or accredited representative named in Part 1."
+            },
+            {
+              "value": "secure_to_self",
+              "label": "I request that USCIS send any secure identity document(s) issued to me at my U.S. mailing address."
+            }
+          ],
+          "optional": true,
+          "default_value": "secure_to_attorney",
+          "where_to_verify": "Declaration; Signed Form"
+        },
+        {
+          "id": "p4_client_signature",
+          "code": "4-5",
+          "section": "Part 4. Client's Consent to Representation and Signature",
+          "responsible_party": "client",
+          "type": "group",
+          "form_text": "Client's Signature",
+          "fields": [
+            {
+              "id": "client_signature",
+              "label": "Signature of Client (or Authorized Signer)",
+              "type": "signature",
+              "where_to_verify": "Declaration; Signed Form"
+            },
+            {
+              "id": "client_signature_date",
+              "label": "Date of Signature",
+              "type": "date",
+              "format": "Mmm DD YYYY",
+              "where_to_verify": "Declaration; Signed Form"
+            }
+          ],
+          "where_to_verify": "Declaration; Signed Form"
+        }
+      ],
+      "excluded_sections": [
+        {
+          "name": "Client's Declaration and Authorization",
+          "reason": "Declaration paragraphs are declarative text tied to the client's signature, not separate fillable fields."
+        }
+      ]
+    }
+  ]
+}

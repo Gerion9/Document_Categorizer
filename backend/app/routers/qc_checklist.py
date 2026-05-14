@@ -15,6 +15,7 @@ from ..models import (
     AuditLog,
     Case,
     ExtractionStatus,
+    IndexStatus,
     Page,
     PageSectionLink,
     QCAnswerStatus,
@@ -45,9 +46,35 @@ from ..schemas import (
 )
 from ..db_utils import get_or_404, reorder_entities
 from ..services import qc_autopilot_jobs
+from ..services.case_document_scope_service import (
+    filter_page_ids_to_scope,
+    get_case_scope_source_document_ids,
+    load_case_pages_for_scope,
+)
 from ..services.gemini_runtime_service import GeminiTokenTracker, create_token_tracker, log_token_summary
+from ..services.qc_checklist_helpers import (
+    auto_link_checklist_questions as _helper_auto_link_checklist_questions,
+    build_case_section_alias_index as _helper_build_case_section_alias_index,
+    build_case_source_document_alias_index as _helper_build_case_source_document_alias_index,
+    expand_lookup_aliases as _helper_expand_lookup_aliases,
+    infer_form_type_for_question as _helper_infer_form_type_for_question,
+    infer_form_type_from_text as _helper_infer_form_type_from_text,
+    normalize_lookup_text as _helper_normalize_lookup_text,
+    ordered_questions_for_checklist as _helper_ordered_questions_for_checklist,
+    ordered_questions_for_part as _helper_ordered_questions_for_part,
+    pages_for_target_section as _helper_pages_for_target_section,
+    question_sections as _helper_question_sections,
+    resolve_auto_link_targets as _helper_resolve_auto_link_targets,
+    resolve_source_document_targets as _helper_resolve_source_document_targets,
+    spans_overlap as _helper_spans_overlap,
+    split_lookup_parts as _helper_split_lookup_parts,
+)
 
 router = APIRouter(tags=["qc-checklist"])
+
+
+def _get_qc_scope_source_document_ids(case: Case | None) -> list[str] | None:
+    return get_case_scope_source_document_ids(case, "qc_checklist")
 
 
 _LOOKUP_TOKEN_VARIANTS: dict[str, set[str]] = {
@@ -65,6 +92,8 @@ _LOOKUP_TOKEN_VARIANTS: dict[str, set[str]] = {
 }
 _FORM_I914A_RE = re.compile(r"\bi\s*914a\b|\bsupplement\s*a\b", re.IGNORECASE)
 _FORM_I914_RE = re.compile(r"\bi\s*914\b", re.IGNORECASE)
+_FORM_I765_RE = re.compile(r"\bi\s*765\b", re.IGNORECASE)
+_FORM_I192_RE = re.compile(r"\bi\s*192\b", re.IGNORECASE)
 
 
 def _question_internal_key(q: QCQuestion) -> str:
@@ -72,220 +101,80 @@ def _question_internal_key(q: QCQuestion) -> str:
 
 
 def _normalize_lookup_text(value: str) -> str:
-    normalized = str(value or "").lower().replace("&", " and ")
-    normalized = re.sub(r"[^a-z0-9]+", " ", normalized)
-    return re.sub(r"\s+", " ", normalized).strip()
+    return _helper_normalize_lookup_text(value)
 
 
 def _expand_lookup_aliases(value: str) -> set[str]:
-    normalized = _normalize_lookup_text(value)
-    if not normalized:
-        return set()
-
-    variants = {normalized}
-    if normalized.startswith("form "):
-        variants.add(normalized.removeprefix("form ").strip())
-
-    without_prefix = re.sub(r"^(original)\s+", "", normalized).strip()
-    without_suffix = re.sub(r"\s+(draft|drafts)$", "", normalized).strip()
-    for candidate in (without_prefix, without_suffix):
-        if candidate and candidate != normalized:
-            variants.add(candidate)
-
-    tokens = normalized.split()
-    for idx, token in enumerate(tokens):
-        for replacement in _LOOKUP_TOKEN_VARIANTS.get(token, set()):
-            alias_tokens = tokens.copy()
-            alias_tokens[idx] = replacement
-            variants.add(" ".join(alias_tokens).strip())
-
-    return {variant for variant in variants if len(variant) >= 2}
+    return _helper_expand_lookup_aliases(value)
 
 
 def _split_lookup_parts(value: str) -> list[str]:
-    return [part.strip() for part in re.split(r"[;/(),]+", str(value or "")) if part.strip()]
+    return _helper_split_lookup_parts(value)
 
 
 def _build_case_section_alias_index(case_id: str, db: Session) -> dict[str, set[str]]:
-    sections = (
-        db.query(Section)
-        .filter(Section.document_type.has(case_id=case_id))
-        .order_by(Section.path_code.asc(), Section.name.asc())
-        .all()
+    return _helper_build_case_section_alias_index(case_id, db)
+
+
+def _build_case_source_document_alias_index(
+    case_id: str,
+    db: Session,
+    *,
+    source_document_ids: list[str] | None = None,
+) -> dict[str, set[str]]:
+    return _helper_build_case_source_document_alias_index(
+        case_id,
+        db,
+        source_document_ids=source_document_ids,
     )
-    sections_per_doc_type: dict[str, int] = {}
-    for section in sections:
-        sections_per_doc_type[section.document_type_id] = sections_per_doc_type.get(section.document_type_id, 0) + 1
-
-    alias_index: dict[str, set[str]] = {}
-    for section in sections:
-        doc_type = section.document_type
-        raw_candidates = {
-            section.name or "",
-            section.path_code or "",
-        }
-        for part in _split_lookup_parts(section.name or ""):
-            raw_candidates.add(part)
-        if doc_type:
-            raw_candidates.add(f"{doc_type.name} {section.name}".strip())
-            if sections_per_doc_type.get(section.document_type_id, 0) == 1:
-                raw_candidates.add(doc_type.name or "")
-
-        aliases: set[str] = set()
-        for candidate in raw_candidates:
-            aliases.update(_expand_lookup_aliases(candidate))
-
-        for alias in aliases:
-            alias_index.setdefault(alias, set()).add(section.id)
-
-    return alias_index
 
 
 def _spans_overlap(span_a: tuple[int, int], span_b: tuple[int, int]) -> bool:
-    return not (span_a[1] <= span_b[0] or span_a[0] >= span_b[1])
+    return _helper_spans_overlap(span_a, span_b)
 
 
 def _resolve_auto_link_targets(
     where_to_verify: str,
     alias_index: dict[str, set[str]],
 ) -> list[str]:
-    normalized_text = _normalize_lookup_text(where_to_verify)
-    if not normalized_text:
-        return []
+    return _helper_resolve_auto_link_targets(where_to_verify, alias_index)
 
-    matches: list[tuple[int, int, int, str]] = []
-    for alias, section_ids in alias_index.items():
-        if len(section_ids) != 1 or not alias:
-            continue
-        pattern = rf"(?<![a-z0-9]){re.escape(alias)}(?![a-z0-9])"
-        for match in re.finditer(pattern, normalized_text):
-            matches.append((len(alias), match.start(), match.end(), next(iter(section_ids))))
 
-    matches.sort(key=lambda item: (item[0], item[2] - item[1]), reverse=True)
-    occupied_spans: list[tuple[int, int]] = []
-    resolved_section_ids: list[str] = []
-
-    for _, start, end, section_id in matches:
-        span = (start, end)
-        if any(_spans_overlap(span, occupied) for occupied in occupied_spans):
-            continue
-        occupied_spans.append(span)
-        if section_id not in resolved_section_ids:
-            resolved_section_ids.append(section_id)
-
-    return resolved_section_ids
+def _resolve_source_document_targets(
+    where_to_verify: str,
+    alias_index: dict[str, set[str]],
+) -> list[str]:
+    return _helper_resolve_source_document_targets(where_to_verify, alias_index)
 
 
 def _auto_link_checklist_questions(cl: QCChecklist, db: Session) -> tuple[int, int]:
-    if not cl.case_id:
-        return 0, 0
-
-    alias_index = _build_case_section_alias_index(cl.case_id, db)
-    if not alias_index:
-        return 0, 0
-
-    linked_questions = 0
-    resolved_sections = 0
-    for question in _ordered_questions_for_checklist(cl):
-        if question.target_section_ids or not (question.where_to_verify or "").strip():
-            continue
-        resolved = _resolve_auto_link_targets(question.where_to_verify, alias_index)
-        if not resolved:
-            continue
-        question.target_section_ids = resolved
-        linked_questions += 1
-        resolved_sections += len(resolved)
-
-    return linked_questions, resolved_sections
+    return _helper_auto_link_checklist_questions(cl, db)
 
 
 def _infer_form_type_from_text(text: str) -> str:
-    normalized_text = _normalize_lookup_text(text)
-    if not normalized_text:
-        return ""
-    if _FORM_I914A_RE.search(normalized_text):
-        return "i-914a"
-    if _FORM_I914_RE.search(normalized_text):
-        return "i-914"
-    return ""
+    return _helper_infer_form_type_from_text(text)
 
 
 def _question_sections(q: QCQuestion, db: Session) -> list[Section]:
-    sections_by_id: dict[str, Section] = {}
-    for section_id in q.target_section_ids or []:
-        section = db.query(Section).filter(Section.id == section_id).first()
-        if section:
-            sections_by_id[section.id] = section
-
-    for evidence in q.evidence:
-        page = db.query(Page).filter(Page.id == evidence.page_id).first()
-        if not page:
-            continue
-        if page.section_id:
-            section = db.query(Section).filter(Section.id == page.section_id).first()
-            if section:
-                sections_by_id[section.id] = section
-        for link in page.section_links or []:
-            section = getattr(link, "section", None)
-            if section:
-                sections_by_id[section.id] = section
-
-    return list(sections_by_id.values())
+    return _helper_question_sections(q, db)
 
 
 def _infer_form_type_for_question(q: QCQuestion, db: Session) -> str:
-    candidate_texts: list[str] = []
-    for section in _question_sections(q, db):
-        candidate_texts.extend(
-            [
-                section.name or "",
-                section.path_code or "",
-                section.document_type.name if section.document_type else "",
-            ]
-        )
-
-    candidate_texts.extend(
-        [
-            q.where_to_verify or "",
-            q.description or "",
-        ]
-    )
-
-    checklist = q.part.checklist if q.part else None
-    if checklist:
-        candidate_texts.extend([checklist.name or "", checklist.description or ""])
-
-    for candidate in candidate_texts:
-        if _infer_form_type_from_text(candidate) == "i-914a":
-            return "i-914a"
-    for candidate in candidate_texts:
-        if _infer_form_type_from_text(candidate) == "i-914":
-            return "i-914"
-    return ""
+    return _helper_infer_form_type_for_question(q, db)
 
 
-def _pages_for_target_section(section_id: str, db: Session, *, limit: int) -> list[Page]:
-    links = (
-        db.query(PageSectionLink)
-        .filter(PageSectionLink.section_id == section_id)
-        .order_by(PageSectionLink.is_primary.desc(), PageSectionLink.order_in_section.asc())
-        .limit(limit)
-        .all()
-    )
-    pages_by_id: dict[str, Page] = {}
-    for link in links:
-        if link.page and link.page.id not in pages_by_id:
-            pages_by_id[link.page.id] = link.page
-
-    if pages_by_id:
-        return list(pages_by_id.values())
-
-    return (
-        db.query(Page)
-        .filter(Page.section_id == section_id)
-        .order_by(Page.order_in_section)
-        .limit(limit)
-        .all()
+def _pages_for_target_section(
+    section_id: str,
+    db: Session,
+    *,
+    limit: int,
+    source_document_ids: list[str] | None = None,
+) -> list[Page]:
+    return _helper_pages_for_target_section(
+        section_id,
+        db,
+        limit=limit,
+        source_document_ids=source_document_ids,
     )
 
 
@@ -433,28 +322,65 @@ def create_qc_checklist(body: QCChecklistCreate, case_id: Optional[str] = Query(
     return _checklist_out(cl)
 
 
-# ── Seed I-914 Template (MUST be before {cl_id} routes) ───────────────────
+# ── Seed QC Templates (MUST be before {cl_id} routes) ─────────────────────
 
 @router.post("/qc-checklists/seed/i914", response_model=QCChecklistOut, status_code=201)
 def seed_i914_template(db: Session = Depends(get_db)):
-    """Idempotent: create the I-914 QC template if it doesn't already exist."""
+    """Create or sync the bundled I-914 QC template."""
+    from ..seed_data.i914_template import I914_TEMPLATE
+
     existing = (
         db.query(QCChecklist)
-        .filter(QCChecklist.is_template == True, QCChecklist.name.contains("I-914"))
+        .filter(QCChecklist.is_template == True, QCChecklist.name == I914_TEMPLATE["name"])
         .first()
     )
     if existing:
-        return _checklist_out(existing)
+        tpl = existing
+        tpl.name = I914_TEMPLATE["name"]
+        tpl.description = I914_TEMPLATE.get("description", "")
+        tpl.is_template = True
 
-    from ..seed_data.i914_template import I914_TEMPLATE
+        # Keep the template row/id stable so existing checklist instances can
+        # continue referencing the same template, but rebuild its structure
+        # from the latest bundled seed data.
+        part_ids = [
+            part_id
+            for (part_id,) in db.query(QCPart.id)
+            .filter(QCPart.checklist_id == tpl.id)
+            .all()
+        ]
+        if part_ids:
+            question_ids = [
+                question_id
+                for (question_id,) in db.query(QCQuestion.id)
+                .filter(QCQuestion.part_id.in_(part_ids))
+                .all()
+            ]
+            if question_ids:
+                db.query(QCQuestionEvidence).filter(
+                    QCQuestionEvidence.question_id.in_(question_ids)
+                ).delete(synchronize_session=False)
+                db.query(QCQuestion).filter(
+                    QCQuestion.id.in_(question_ids)
+                ).delete(synchronize_session=False)
 
-    tpl = QCChecklist(
-        name=I914_TEMPLATE["name"],
-        description=I914_TEMPLATE["description"],
-        is_template=True,
-    )
-    db.add(tpl)
-    db.flush()
+            db.query(QCPart).filter(QCPart.id.in_(part_ids)).update(
+                {QCPart.parent_part_id: None},
+                synchronize_session=False,
+            )
+            db.query(QCPart).filter(QCPart.id.in_(part_ids)).delete(
+                synchronize_session=False
+            )
+            db.flush()
+            db.expire(tpl, ["parts"])
+    else:
+        tpl = QCChecklist(
+            name=I914_TEMPLATE["name"],
+            description=I914_TEMPLATE["description"],
+            is_template=True,
+        )
+        db.add(tpl)
+        db.flush()
 
     def _create_parts(parts_data: list[dict], parent_id: str | None, depth: int):
         for idx, pdata in enumerate(parts_data):
@@ -482,11 +408,362 @@ def seed_i914_template(db: Session = Depends(get_db)):
             if "subparts" in pdata:
                 _create_parts(pdata["subparts"], part.id, depth + 1)
 
-    _create_parts(I914_TEMPLATE["parts"], None, 0)
+    _create_parts(I914_TEMPLATE.get("parts", []), None, 0)
 
     db.commit()
     db.refresh(tpl)
     return _checklist_out(tpl)
+
+
+@router.post("/qc-checklists/seed/i914a", response_model=QCChecklistOut, status_code=201)
+def seed_i914a_template(db: Session = Depends(get_db)):
+    """Idempotent: create the I-914A QC template if it doesn't already exist."""
+    from ..seed_data.i914a_template import I914A_TEMPLATE
+
+    existing = (
+        db.query(QCChecklist)
+        .filter(QCChecklist.is_template == True, QCChecklist.name == I914A_TEMPLATE["name"])
+        .first()
+    )
+    if existing:
+        return _checklist_out(existing)
+
+    tpl = QCChecklist(
+        name=I914A_TEMPLATE["name"],
+        description=I914A_TEMPLATE.get("description", ""),
+        is_template=True,
+    )
+    db.add(tpl)
+    db.flush()
+
+    def _create_parts(parts_data: list[dict], parent_id: str | None, depth: int):
+        for idx, pdata in enumerate(parts_data):
+            part = QCPart(
+                checklist_id=tpl.id,
+                parent_part_id=parent_id,
+                name=pdata.get("name", ""),
+                code=pdata.get("code", ""),
+                order=idx,
+                depth=depth,
+            )
+            db.add(part)
+            db.flush()
+
+            for qidx, qdata in enumerate(pdata.get("questions", [])):
+                q = QCQuestion(
+                    part_id=part.id,
+                    code=qdata.get("code", ""),
+                    description=qdata.get("description", ""),
+                    where_to_verify=qdata.get("where_to_verify", ""),
+                    order=qidx,
+                )
+                db.add(q)
+
+            if "subparts" in pdata:
+                _create_parts(pdata["subparts"], part.id, depth + 1)
+
+    _create_parts(I914A_TEMPLATE["parts"], None, 0)
+
+    db.commit()
+    db.refresh(tpl)
+    return _checklist_out(tpl)
+
+
+@router.post("/qc-checklists/seed/i765", response_model=QCChecklistOut, status_code=201)
+def seed_i765_template(db: Session = Depends(get_db)):
+    """Idempotent: create the I-765 QC template if it doesn't already exist."""
+    existing = (
+        db.query(QCChecklist)
+        .filter(QCChecklist.is_template == True, QCChecklist.name.contains("I-765"))
+        .first()
+    )
+    if existing:
+        return _checklist_out(existing)
+
+    from ..seed_data.i765_template import I765_TEMPLATE
+
+    tpl = QCChecklist(
+        name=I765_TEMPLATE["name"],
+        description=I765_TEMPLATE.get("description", ""),
+        is_template=True,
+    )
+    db.add(tpl)
+    db.flush()
+
+    def _create_parts(parts_data: list[dict], parent_id: str | None, depth: int):
+        for idx, pdata in enumerate(parts_data):
+            part = QCPart(
+                checklist_id=tpl.id,
+                parent_part_id=parent_id,
+                name=pdata.get("name", ""),
+                code=pdata.get("code", ""),
+                order=idx,
+                depth=depth,
+            )
+            db.add(part)
+            db.flush()
+
+            for qidx, qdata in enumerate(pdata.get("questions", [])):
+                q = QCQuestion(
+                    part_id=part.id,
+                    code=qdata.get("code", ""),
+                    description=qdata.get("description", ""),
+                    where_to_verify=qdata.get("where_to_verify", ""),
+                    order=qidx,
+                )
+                db.add(q)
+
+            if "subparts" in pdata:
+                _create_parts(pdata["subparts"], part.id, depth + 1)
+
+    _create_parts(I765_TEMPLATE["parts"], None, 0)
+
+    db.commit()
+    db.refresh(tpl)
+    return _checklist_out(tpl)
+
+
+@router.post("/qc-checklists/seed/i192", response_model=QCChecklistOut, status_code=201)
+def seed_i192_template(db: Session = Depends(get_db)):
+    """Idempotent: create the I-192 QC template if it doesn't already exist."""
+    existing = (
+        db.query(QCChecklist)
+        .filter(QCChecklist.is_template == True, QCChecklist.name.contains("I-192"))
+        .first()
+    )
+    if existing:
+        return _checklist_out(existing)
+
+    from ..seed_data.i192_template import I192_TEMPLATE
+
+    tpl = QCChecklist(
+        name=I192_TEMPLATE["name"],
+        description=I192_TEMPLATE.get("description", ""),
+        is_template=True,
+    )
+    db.add(tpl)
+    db.flush()
+
+    def _create_parts(parts_data: list[dict], parent_id: str | None, depth: int):
+        for idx, pdata in enumerate(parts_data):
+            part = QCPart(
+                checklist_id=tpl.id,
+                parent_part_id=parent_id,
+                name=pdata.get("name", ""),
+                code=pdata.get("code", ""),
+                order=idx,
+                depth=depth,
+            )
+            db.add(part)
+            db.flush()
+
+            for qidx, qdata in enumerate(pdata.get("questions", [])):
+                q = QCQuestion(
+                    part_id=part.id,
+                    code=qdata.get("code", ""),
+                    description=qdata.get("description", ""),
+                    where_to_verify=qdata.get("where_to_verify", ""),
+                    order=qidx,
+                )
+                db.add(q)
+
+            if "subparts" in pdata:
+                _create_parts(pdata["subparts"], part.id, depth + 1)
+
+    _create_parts(I192_TEMPLATE["parts"], None, 0)
+
+    db.commit()
+    db.refresh(tpl)
+    return _checklist_out(tpl)
+
+
+@router.post("/qc-checklists/seed/i360", response_model=QCChecklistOut, status_code=201)
+def seed_i360_template(db: Session = Depends(get_db)):
+    """Idempotent: create the I-360 (SIJS) QC template if it doesn't already exist."""
+    existing = (
+        db.query(QCChecklist)
+        .filter(QCChecklist.is_template == True, QCChecklist.name.contains("I-360"))
+        .first()
+    )
+    if existing:
+        return _checklist_out(existing)
+
+    from ..seed_data.i360_template import I360_TEMPLATE
+
+    tpl = QCChecklist(
+        name=I360_TEMPLATE["name"],
+        description=I360_TEMPLATE.get("description", ""),
+        is_template=True,
+    )
+    db.add(tpl)
+    db.flush()
+
+    def _create_parts(parts_data: list[dict], parent_id: str | None, depth: int):
+        for idx, pdata in enumerate(parts_data):
+            part = QCPart(
+                checklist_id=tpl.id,
+                parent_part_id=parent_id,
+                name=pdata.get("name", ""),
+                code=pdata.get("code", ""),
+                order=idx,
+                depth=depth,
+            )
+            db.add(part)
+            db.flush()
+
+            for qidx, qdata in enumerate(pdata.get("questions", [])):
+                q = QCQuestion(
+                    part_id=part.id,
+                    code=qdata.get("code", ""),
+                    description=qdata.get("description", ""),
+                    where_to_verify=qdata.get("where_to_verify", ""),
+                    order=qidx,
+                )
+                db.add(q)
+
+            if "subparts" in pdata:
+                _create_parts(pdata["subparts"], part.id, depth + 1)
+
+    _create_parts(I360_TEMPLATE["parts"], None, 0)
+
+    db.commit()
+    db.refresh(tpl)
+    return _checklist_out(tpl)
+
+
+@router.post("/qc-checklists/seed/g28", response_model=QCChecklistOut, status_code=201)
+def seed_g28_template(db: Session = Depends(get_db)):
+    """Idempotent: create the G-28 QC template if it doesn't already exist."""
+    existing = (
+        db.query(QCChecklist)
+        .filter(QCChecklist.is_template == True, QCChecklist.name.contains("G-28"))
+        .first()
+    )
+    if existing:
+        return _checklist_out(existing)
+
+    from ..seed_data.g28_template import G28_TEMPLATE
+
+    tpl = QCChecklist(
+        name=G28_TEMPLATE["name"],
+        description=G28_TEMPLATE.get("description", ""),
+        is_template=True,
+    )
+    db.add(tpl)
+    db.flush()
+
+    def _create_parts(parts_data: list[dict], parent_id: str | None, depth: int):
+        for idx, pdata in enumerate(parts_data):
+            part = QCPart(
+                checklist_id=tpl.id,
+                parent_part_id=parent_id,
+                name=pdata.get("name", ""),
+                code=pdata.get("code", ""),
+                order=idx,
+                depth=depth,
+            )
+            db.add(part)
+            db.flush()
+
+            for qidx, qdata in enumerate(pdata.get("questions", [])):
+                q = QCQuestion(
+                    part_id=part.id,
+                    code=qdata.get("code", ""),
+                    description=qdata.get("description", ""),
+                    where_to_verify=qdata.get("where_to_verify", ""),
+                    order=qidx,
+                )
+                db.add(q)
+
+            if "subparts" in pdata:
+                _create_parts(pdata["subparts"], part.id, depth + 1)
+
+    _create_parts(G28_TEMPLATE["parts"], None, 0)
+
+    db.commit()
+    db.refresh(tpl)
+    return _checklist_out(tpl)
+
+
+@router.post("/qc-checklists/seed/g1145", response_model=QCChecklistOut, status_code=201)
+def seed_g1145_template(db: Session = Depends(get_db)):
+    """Idempotent: create the G-1145 QC template if it doesn't already exist."""
+    existing = (
+        db.query(QCChecklist)
+        .filter(QCChecklist.is_template == True, QCChecklist.name.contains("G-1145"))
+        .first()
+    )
+    if existing:
+        return _checklist_out(existing)
+
+    from ..seed_data.g1145_template import G1145_TEMPLATE
+
+    tpl = QCChecklist(
+        name=G1145_TEMPLATE["name"],
+        description=G1145_TEMPLATE.get("description", ""),
+        is_template=True,
+    )
+    db.add(tpl)
+    db.flush()
+
+    def _create_parts(parts_data: list[dict], parent_id: str | None, depth: int):
+        for idx, pdata in enumerate(parts_data):
+            part = QCPart(
+                checklist_id=tpl.id,
+                parent_part_id=parent_id,
+                name=pdata.get("name", ""),
+                code=pdata.get("code", ""),
+                order=idx,
+                depth=depth,
+            )
+            db.add(part)
+            db.flush()
+
+            for qidx, qdata in enumerate(pdata.get("questions", [])):
+                q = QCQuestion(
+                    part_id=part.id,
+                    code=qdata.get("code", ""),
+                    description=qdata.get("description", ""),
+                    where_to_verify=qdata.get("where_to_verify", ""),
+                    order=qidx,
+                )
+                db.add(q)
+
+            if "subparts" in pdata:
+                _create_parts(pdata["subparts"], part.id, depth + 1)
+
+    _create_parts(G1145_TEMPLATE["parts"], None, 0)
+
+    db.commit()
+    db.refresh(tpl)
+    return _checklist_out(tpl)
+
+
+@router.post("/qc-checklists/seed/all", status_code=201)
+def seed_all_qc_templates(db: Session = Depends(get_db)):
+    """Seed all bundled QC checklist templates (idempotent)."""
+    results = []
+    # Call individual seed endpoints (they are idempotent)
+    for fn in (
+        seed_i914_template,
+        seed_i914a_template,
+        seed_i765_template,
+        seed_i192_template,
+        seed_i360_template,
+        seed_g28_template,
+        seed_g1145_template,
+    ):
+        try:
+            tpl_out = fn(db)
+            if isinstance(tpl_out, dict):
+                results.append({"name": tpl_out.get("name", ""), "id": tpl_out.get("id")})
+            else:
+                # _checklist_out returns QCChecklistOut Pydantic model
+                results.append({"name": getattr(tpl_out, "name", ""), "id": getattr(tpl_out, "id", None)})
+        except Exception as exc:
+            results.append({"error": str(exc)})
+
+    return {"ok": True, "seeded": results}
 
 
 @router.get("/qc-checklists/{cl_id}", response_model=QCChecklistOut)
@@ -517,6 +794,17 @@ def apply_qc_template(case_id: str, template_id: str, db: Session = Depends(get_
     tpl = db.query(QCChecklist).filter(QCChecklist.id == template_id, QCChecklist.is_template == True).first()
     if not tpl:
         raise HTTPException(404, "Template not found")
+    existing = (
+        db.query(QCChecklist)
+        .filter(
+            QCChecklist.case_id == case_id,
+            QCChecklist.is_template == False,
+            QCChecklist.source_template_id == tpl.id,
+        )
+        .first()
+    )
+    if existing:
+        raise HTTPException(409, f'La checklist "{tpl.name}" ya fue aplicada a este caso.')
 
     # Create instance
     inst = QCChecklist(
@@ -711,7 +999,7 @@ def add_qc_evidence(q_id: str, body: QCEvidenceCreate, db: Session = Depends(get
     q = db.query(QCQuestion).filter(QCQuestion.id == q_id).first()
     if not q:
         raise HTTPException(404)
-    page = db.query(Page).filter(Page.id == body.page_id).first()
+    page = db.query(Page).filter(Page.id == body.page_id, Page.deleted_at.is_(None)).first()
     if not page:
         raise HTTPException(400, "Page not found")
     ev = QCQuestionEvidence(question_id=q_id, page_id=body.page_id, notes=body.notes)
@@ -775,7 +1063,7 @@ def save_qc_as_template(cl_id: str, db: Session = Depends(get_db)):
 
 # ── AI Verification ───────────────────────────────────────────────────────
 
-STORAGE_DIR = __import__("pathlib").Path(__file__).resolve().parent.parent.parent / "storage"
+from ..dependencies import get_s3_service as _get_s3_service
 
 
 def _compact_tracker_summary(summary: dict) -> dict[str, int]:
@@ -789,14 +1077,23 @@ def _compact_tracker_summary(summary: dict) -> dict[str, int]:
     }
 
 
-def _sample_case_pages(case_id: str, db: Session, *, limit: int) -> list[Page]:
+def _sample_case_pages(
+    case_id: str,
+    db: Session,
+    *,
+    limit: int,
+    source_document_ids: list[str] | None = None,
+) -> list[Page]:
     """Return a spread of pages across the whole document instead of just the first N."""
-    all_pages = (
-        db.query(Page)
-        .filter(Page.case_id == case_id, Page.file_path.isnot(None))
-        .order_by(Page.original_page_number.asc())
-        .all()
-    )
+    all_pages = [
+        page
+        for page in load_case_pages_for_scope(
+            db,
+            case_id,
+            source_document_ids=source_document_ids,
+        )
+        if page.file_path
+    ]
     if len(all_pages) <= limit:
         return all_pages
     step = max(1, len(all_pages) // limit)
@@ -812,69 +1109,21 @@ def _question_sort_key(question: QCQuestion) -> tuple[int, str]:
 
 
 def _ordered_questions_for_checklist(cl: QCChecklist) -> list[QCQuestion]:
-    all_parts = list(cl.parts)
-    by_id = {p.id: p for p in all_parts}
-    by_parent: dict[str | None, list[QCPart]] = {}
-    for part in all_parts:
-        by_parent.setdefault(part.parent_part_id, []).append(part)
-
-    for children in by_parent.values():
-        children.sort(key=_part_sort_key)
-
-    ordered_questions: list[QCQuestion] = []
-    visited_parts: set[str] = set()
-
-    def _walk(part_id: str):
-        part = by_id.get(part_id)
-        if not part or part.id in visited_parts:
-            return
-        visited_parts.add(part.id)
-        ordered_questions.extend(sorted(part.questions, key=_question_sort_key))
-        for child in by_parent.get(part.id, []):
-            _walk(child.id)
-
-    for root in by_parent.get(None, []):
-        _walk(root.id)
-
-    # Fallback for orphaned nodes (defensive against malformed trees).
-    for orphan in sorted(all_parts, key=_part_sort_key):
-        if orphan.id not in visited_parts:
-            _walk(orphan.id)
-
-    return ordered_questions
+    return _helper_ordered_questions_for_checklist(cl)
 
 
 def _ordered_questions_for_part(part: QCPart, all_parts: list[QCPart]) -> list[QCQuestion]:
-    by_id = {p.id: p for p in all_parts}
-    by_parent: dict[str | None, list[QCPart]] = {}
-    for node in all_parts:
-        by_parent.setdefault(node.parent_part_id, []).append(node)
-
-    for children in by_parent.values():
-        children.sort(key=_part_sort_key)
-
-    ordered_questions: list[QCQuestion] = []
-    visited_parts: set[str] = set()
-
-    def _walk(part_id: str):
-        node = by_id.get(part_id)
-        if not node or node.id in visited_parts:
-            return
-        visited_parts.add(node.id)
-        ordered_questions.extend(sorted(node.questions, key=_question_sort_key))
-        for child in by_parent.get(node.id, []):
-            _walk(child.id)
-
-    _walk(part.id)
-    return ordered_questions
+    return _helper_ordered_questions_for_part(part, all_parts)
 
 
-def _collect_question_image_paths(
+def _collect_question_image_bytes(
     q: QCQuestion, db: Session, *, case_id: str | None = None
-) -> list[str]:
+) -> list[bytes]:
+    """Download page images from S3 and return as list of raw bytes."""
     import logging
     log = logging.getLogger("qc_autopilot")
-    image_paths: list[str] = []
+    s3 = _get_s3_service()
+    s3_keys: list[str] = []
 
     ev_list = list(q.evidence) if q.evidence else []
     log.debug("    collect_images [%s]: evidence=%d, target_sections=%s",
@@ -882,35 +1131,43 @@ def _collect_question_image_paths(
 
     # 1) Explicit evidence links
     for ev in ev_list:
-        page = db.query(Page).filter(Page.id == ev.page_id).first()
+        page = db.query(Page).filter(Page.id == ev.page_id, Page.deleted_at.is_(None)).first()
         if page and page.file_path:
-            image_paths.append(str(STORAGE_DIR / page.file_path))
+            s3_keys.append(page.file_path)
 
     # 2) Mapped target sections
-    if not image_paths and q.target_section_ids:
+    if not s3_keys and q.target_section_ids:
         for sid in q.target_section_ids:
             sec_pages = _pages_for_target_section(sid, db, limit=3)
             log.debug("    section %s -> %d pages", sid[:8], len(sec_pages))
             for pg in sec_pages:
                 if pg.file_path:
-                    image_paths.append(str(STORAGE_DIR / pg.file_path))
+                    s3_keys.append(pg.file_path)
 
     # 3) Case-level fallback: sample pages spread across the document
-    if not image_paths and case_id:
+    if not s3_keys and case_id:
         case_pages = _sample_case_pages(case_id, db, limit=5)
         log.debug("    case fallback -> %d pages from case", len(case_pages))
         for pg in case_pages:
-            image_paths.append(str(STORAGE_DIR / pg.file_path))
+            if pg.file_path:
+                s3_keys.append(pg.file_path)
 
     seen: set[str] = set()
-    unique_paths: list[str] = []
-    for path in image_paths:
-        if path in seen:
+    unique_keys: list[str] = []
+    for key in s3_keys:
+        if key in seen:
             continue
-        seen.add(path)
-        unique_paths.append(path)
-    log.debug("    -> %d unique image paths", len(unique_paths))
-    return unique_paths
+        seen.add(key)
+        unique_keys.append(key)
+    log.debug("    -> %d unique S3 keys", len(unique_keys))
+
+    result: list[bytes] = []
+    for key in unique_keys:
+        try:
+            result.append(s3.download_bytes(key))
+        except Exception:
+            log.warning("Could not download %s from S3, skipping", key)
+    return result
 
 
 def _collect_question_page_ids(
@@ -919,6 +1176,7 @@ def _collect_question_page_ids(
     *,
     case_id: str | None = None,
     include_case_fallback: bool = True,
+    source_document_ids: list[str] | None = None,
 ) -> list[str]:
     page_ids: list[str] = []
 
@@ -926,14 +1184,31 @@ def _collect_question_page_ids(
         if ev.page_id:
             page_ids.append(ev.page_id)
 
+    page_ids = filter_page_ids_to_scope(
+        db,
+        page_ids,
+        source_document_ids=source_document_ids,
+        case_id=case_id,
+    )
+
     if not page_ids and q.target_section_ids:
         for sid in q.target_section_ids:
-            sec_pages = _pages_for_target_section(sid, db, limit=5)
+            sec_pages = _pages_for_target_section(
+                sid,
+                db,
+                limit=10,
+                source_document_ids=source_document_ids,
+            )
             for pg in sec_pages:
                 page_ids.append(pg.id)
 
     if include_case_fallback and not page_ids and case_id:
-        for pg in _sample_case_pages(case_id, db, limit=10):
+        for pg in _sample_case_pages(
+            case_id,
+            db,
+            limit=20,
+            source_document_ids=source_document_ids,
+        ):
             page_ids.append(pg.id)
 
     seen: set[str] = set()
@@ -958,7 +1233,7 @@ def _source_page_ids(source_pages: list[dict] | None) -> list[str]:
     return ids
 
 
-def _format_source_pages_for_notes(source_pages: list[dict] | None, *, max_items: int = 8) -> str:
+def _format_source_pages_for_notes(source_pages: list[dict] | None, *, max_items: int = 5) -> str:
     rows: list[dict] = []
     seen: set[str] = set()
     for item in source_pages or []:
@@ -980,6 +1255,7 @@ def _format_source_pages_for_notes(source_pages: list[dict] | None, *, max_items
             {
                 "page_id": page_id,
                 "page_number": page_number,
+                "original_filename": str(item.get("original_filename", "") or ""),
             }
         )
 
@@ -987,19 +1263,33 @@ def _format_source_pages_for_notes(source_pages: list[dict] | None, *, max_items
         return ""
 
     rows.sort(key=lambda r: (r["page_number"] is None, r["page_number"] or 0, r["page_id"]))
-    labels: list[str] = []
-    for row in rows[:max_items]:
+
+    groups: dict[str, list[str]] = {}
+    count = 0
+    for row in rows:
+        if count >= max_items:
+            break
+        fname = row["original_filename"] or ""
         if row["page_number"] is not None:
-            label = f"p.{row['page_number']}"
+            page_label = f"p.{row['page_number']}"
         else:
-            label = f"id:{str(row['page_id'])[:8]}"
-        labels.append(label)
+            page_label = f"id:{str(row['page_id'])[:8]}"
+        groups.setdefault(fname, []).append(page_label)
+        count += 1
+
+    parts: list[str] = []
+    for fname, page_labels in groups.items():
+        joined = ", ".join(page_labels)
+        if fname:
+            parts.append(f"{joined} ({fname})")
+        else:
+            parts.append(joined)
 
     extra = len(rows) - max_items
     if extra > 0:
-        labels.append(f"+{extra} mas")
+        parts.append(f"+{extra} mas")
 
-    return ", ".join(labels)
+    return "; ".join(parts)
 
 
 def _save_ai_result(q: QCQuestion, result: dict, *, source_pages: list[dict] | None = None) -> None:
@@ -1045,23 +1335,40 @@ def _verify_question_with_ai(
 
     checklist = q.part.checklist if q.part else None
     case_id = checklist.case_id if checklist else None
+    qc_scope_source_document_ids = _get_qc_scope_source_document_ids(checklist.case if checklist else None)
     form_type = _infer_form_type_for_question(q, db)
+    preferred_source_document_ids: list[str] | None = None
 
     text_context = ""
     source_pages: list[dict] = []
     if case_id:
+        source_document_alias_index = _build_case_source_document_alias_index(
+            case_id,
+            db,
+            source_document_ids=qc_scope_source_document_ids,
+        )
+        preferred_source_document_ids = _resolve_source_document_targets(
+            q.where_to_verify or "",
+            source_document_alias_index,
+        )
         page_ids = _collect_question_page_ids(
             q,
             db,
             case_id=case_id,
             include_case_fallback=False,
+            source_document_ids=qc_scope_source_document_ids,
         )
         evidence_bundle = collect_evidence_bundle_for_question(
             q.description,
             case_id=case_id,
+            where_to_verify=q.where_to_verify or "",
             evidence_page_ids=page_ids,
             target_section_ids=q.target_section_ids or [],
+            source_document_ids=qc_scope_source_document_ids,
+            preferred_source_document_ids=preferred_source_document_ids,
             tracker=tracker,
+            document_fallback_enabled=False if qc_scope_source_document_ids is not None else None,
+            retrieval_profile="qc_checklist",
         )
         text_context = str(evidence_bundle.get("text_context", "") or "")
         raw_sources = evidence_bundle.get("source_pages")
@@ -1086,7 +1393,12 @@ def _verify_question_with_ai(
         try:
             source_page_ids = _source_page_ids(source_pages)
             if not source_page_ids:
-                source_page_ids = _collect_question_page_ids(q, db, case_id=case_id)
+                source_page_ids = _collect_question_page_ids(
+                    q,
+                    db,
+                    case_id=case_id,
+                    source_document_ids=qc_scope_source_document_ids,
+                )
             upsert_qc_question_answer(
                 checklist, q,
                 source_page_ids=source_page_ids,
@@ -1117,22 +1429,14 @@ def _bool_env(name: str, default: bool) -> bool:
     return str(raw).strip().lower() in {"1", "true", "yes", "on"}
 
 
-BATCH_SIZE = max(1, _int_env("QC_AUTOPILOT_BATCH_SIZE", 25))
-AUTOPILOT_EVIDENCE_TOP_K = max(1, _int_env("QC_AUTOPILOT_EVIDENCE_TOP_K", 6))
+# Autopilot configuration constants
+BATCH_SIZE = max(1, _int_env("QC_AUTOPILOT_BATCH_SIZE", 15))
+AUTOPILOT_EVIDENCE_TOP_K = max(1, _int_env("QC_AUTOPILOT_EVIDENCE_TOP_K", 10))
 AUTOPILOT_EVIDENCE_MAX_CHARS = max(1200, _int_env("QC_AUTOPILOT_EVIDENCE_MAX_CHARS", 12000))
 AUTOPILOT_EVIDENCE_WORKERS = max(1, _int_env("QC_AUTOPILOT_EVIDENCE_WORKERS", 8))
 AUTOPILOT_SKIP_PREVERIFIED = _bool_env("QC_AUTOPILOT_SKIP_PREVERIFIED", True)
 AUTOPILOT_FORCE_BATCH_ON_NO_EVIDENCE = _bool_env("QC_AUTOPILOT_FORCE_BATCH_ON_NO_EVIDENCE", True)
 AUTOPILOT_INDEX_ANSWERS = _bool_env("QC_AUTOPILOT_INDEX_ANSWERS", False)
-
-# #region agent log
-import json as _dbg_json, time as _dbg_time
-def _dbg_log_config():
-    from ..services.rag_config import get_rag_settings
-    s = get_rag_settings()
-    open("debug-1c0d70.log","a").write(_dbg_json.dumps({"sessionId":"1c0d70","hypothesisId":"H-A,H-B","runId":"run1","location":"qc_checklist.py:module_level","message":"module-level vs rag_config values","data":{"module_BATCH_SIZE":BATCH_SIZE,"rag_autopilot_batch_size":s.autopilot_batch_size,"module_EVIDENCE_TOP_K":AUTOPILOT_EVIDENCE_TOP_K,"rag_evidence_top_k":s.autopilot_evidence_top_k,"module_EVIDENCE_MAX_CHARS":AUTOPILOT_EVIDENCE_MAX_CHARS,"rag_evidence_max_chars":s.autopilot_evidence_max_chars,"module_EVIDENCE_WORKERS":AUTOPILOT_EVIDENCE_WORKERS,"rag_evidence_workers":s.autopilot_evidence_workers,"module_SKIP_PREVERIFIED":AUTOPILOT_SKIP_PREVERIFIED,"module_FORCE_BATCH":AUTOPILOT_FORCE_BATCH_ON_NO_EVIDENCE,"module_INDEX_ANSWERS":AUTOPILOT_INDEX_ANSWERS,"rag_llm_concurrency":s.autopilot_llm_batch_concurrency,"rag_verify_temp":s.verify_temperature,"rag_max_extraction_workers":s.max_extraction_workers,"rag_extraction_batch_size":s.extraction_batch_size},"timestamp":int(_dbg_time.time()*1000)})+"\n")
-_dbg_log_config()
-# #endregion
 
 
 def _is_question_preverified(q: QCQuestion) -> bool:
@@ -1241,6 +1545,7 @@ def _run_batch_persist_phase(
     from ..services.checklist_index_service import upsert_qc_question_answers
     from ..services.indexing_service import is_indexing_available
     should_index_answers = AUTOPILOT_INDEX_ANSWERS and bool(checklist.case_id) and is_indexing_available()
+    qc_scope_source_document_ids = _get_qc_scope_source_document_ids(checklist.case)
 
     verified = 0
     errors_count = 0
@@ -1256,7 +1561,12 @@ def _run_batch_persist_phase(
             if should_index_answers and checklist.case_id:
                 source_page_ids = _source_page_ids(source_pages)
                 if not source_page_ids:
-                    source_page_ids = _collect_question_page_ids(q, db, case_id=checklist.case_id)
+                    source_page_ids = _collect_question_page_ids(
+                        q,
+                        db,
+                        case_id=checklist.case_id,
+                        source_document_ids=qc_scope_source_document_ids,
+                    )
                 answers_to_index.append((q, source_page_ids))
         except Exception as exc:
             errors_count += 1
@@ -1308,18 +1618,22 @@ def _run_autopilot_batch_rag(
 
 # ── Autopilot job runner ──────────────────────────────────────────────
 
-def _ensure_case_ocr_for_autopilot(case_id: str, db: Session) -> dict[str, int]:
+def _ensure_case_ocr_for_autopilot(
+    case_id: str,
+    db: Session,
+    *,
+    source_document_ids: list[str] | None = None,
+) -> dict[str, int]:
     """
     Ensure OCR exists for all pages in the case before AI verification starts.
     Pages that are already extracted are skipped.
     """
     from ..services.indexing_service import process_page_extraction
 
-    pages = (
-        db.query(Page)
-        .filter(Page.case_id == case_id)
-        .order_by(Page.created_at.asc())
-        .all()
+    pages = load_case_pages_for_scope(
+        db,
+        case_id,
+        source_document_ids=source_document_ids,
     )
 
     total_pages = len(pages)
@@ -1355,6 +1669,47 @@ def _ensure_case_ocr_for_autopilot(case_id: str, db: Session) -> dict[str, int]:
     }
 
 
+def _case_indexing_state(
+    case_id: str,
+    db: Session,
+    *,
+    source_document_ids: list[str] | None = None,
+) -> dict[str, int]:
+    """Summarize whether OCR-ready pages still need Pinecone indexing."""
+    pages = load_case_pages_for_scope(
+        db,
+        case_id,
+        source_document_ids=source_document_ids,
+    )
+
+    ocr_ready_pages = 0
+    indexed_pages = 0
+    pending_index_pages = 0
+    total_vectors = 0
+
+    for page in pages:
+        text = (page.ocr_text or "").strip()
+        has_usable_ocr = bool(text) and not text.startswith("[Error]")
+        if not has_usable_ocr:
+            continue
+
+        ocr_ready_pages += 1
+        vectors = int(page.indexed_vector_count or 0)
+        total_vectors += vectors
+        is_indexed = (page.index_status or "") == IndexStatus.DONE.value and vectors > 0
+        if is_indexed:
+            indexed_pages += 1
+        else:
+            pending_index_pages += 1
+
+    return {
+        "ocr_ready_pages": ocr_ready_pages,
+        "indexed_pages": indexed_pages,
+        "pending_index_pages": pending_index_pages,
+        "total_vectors": total_vectors,
+    }
+
+
 def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
     import logging
     log = logging.getLogger("qc_autopilot")
@@ -1368,12 +1723,28 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
             return
 
         case_id = checklist.case_id
+        qc_scope_source_document_ids = _get_qc_scope_source_document_ids(checklist.case)
         ocr_stats = {
             "total_pages": 0,
             "extracted_pages": 0,
             "skipped_pages": 0,
             "error_pages": 0,
         }
+
+        if case_id:
+            scoped_case_pages = load_case_pages_for_scope(
+                db,
+                case_id,
+                source_document_ids=qc_scope_source_document_ids,
+            )
+            if not scoped_case_pages:
+                qc_autopilot_jobs.mark_failed(
+                    job_id,
+                    "No QC source documents are selected. Choose at least one case document in the QC panel."
+                    if qc_scope_source_document_ids is not None
+                    else "No pages are loaded for this case",
+                )
+                return
 
         qc_autopilot_jobs.mark_running(job_id, phase="loading_questions")
         all_questions = _ordered_questions_for_checklist(checklist)
@@ -1395,6 +1766,7 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
 
         if case_id:
             from ..services.case_extraction_service import extract_case_pages
+            from ..services.case_pipeline_lock import case_pipeline_lock
             from ..services.ocr_index_service import index_case_ocr_json
             from ..services.indexing_service import is_indexing_available
 
@@ -1419,61 +1791,79 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                         phase=phase,
                     )
 
-            # #region agent log
-            open("debug-1c0d70.log","a").write(_dbg_json.dumps({"sessionId":"1c0d70","hypothesisId":"H-C,H-D","runId":"run1","location":"qc_checklist.py:autopilot_start","message":"autopilot config at runtime","data":{"case_id":case_id[:8] if case_id else "","total_questions":len(all_questions),"pending_questions":len(questions),"BATCH_SIZE":BATCH_SIZE,"EVIDENCE_TOP_K":AUTOPILOT_EVIDENCE_TOP_K,"EVIDENCE_MAX_CHARS":AUTOPILOT_EVIDENCE_MAX_CHARS,"EVIDENCE_WORKERS":AUTOPILOT_EVIDENCE_WORKERS},"timestamp":int(_dbg_time.time()*1000)})+"\n")
-            # #endregion
-
-            qc_autopilot_jobs.mark_running(job_id, phase="extracting_ocr")
-            extraction_summary = extract_case_pages(
-                case_id,
-                only_missing=True,
-                progress_callback=_autopilot_progress,
-            )
-            total_case_pages = extraction_summary.get("total_case_pages", extraction_summary.get("written_pages", 0))
-            extracted_success = max(
-                0,
-                int(extraction_summary.get("processed", 0) or 0)
-                - int(extraction_summary.get("errors", 0) or 0),
-            )
-            ocr_stats = {
-                "total_pages": int(total_case_pages or 0),
-                "extracted_pages": extracted_success,
-                "skipped_pages": int(extraction_summary.get("already_done", 0) or 0),
-                "error_pages": int(extraction_summary.get("errors", 0) or 0),
-            }
-            log.info(
-                "Autopilot %s OCR done: %d extracted, %d already done, %d total pages, %d errors",
-                job_id[:8],
-                extracted_success,
-                extraction_summary.get("already_done", 0),
-                total_case_pages,
-                extraction_summary.get("errors", 0),
-            )
-            phase_summaries["ocr"] = {
-                "token_summary": extraction_summary.get("ocr_token_summary", {}),
-                "pages_extracted": extracted_success,
-                "pages_already_done": extraction_summary.get("already_done", 0),
-                "pages_total": total_case_pages,
-            }
-
-            if extracted_success > 0 and is_indexing_available():
-                index_tracker = create_token_tracker(label=f"qc-index-{job_id[:8]}")
-                index_summary = index_case_ocr_json(
+            with case_pipeline_lock(case_id, timeout=300):
+                qc_autopilot_jobs.mark_running(job_id, phase="extracting_ocr")
+                extraction_summary = extract_case_pages(
                     case_id,
-                    tracker=index_tracker,
+                    page_ids=[page.id for page in scoped_case_pages] if qc_scope_source_document_ids is not None else None,
+                    only_missing=True,
                     progress_callback=_autopilot_progress,
                 )
-                log.info(
-                    "Autopilot %s indexing done: %d vectors, %d chunks",
-                    job_id[:8],
-                    index_summary.get("vectors_count", 0),
-                    index_summary.get("total_chunks", 0),
+                total_case_pages = extraction_summary.get("total_case_pages", extraction_summary.get("written_pages", 0))
+                extracted_success = max(
+                    0,
+                    int(extraction_summary.get("processed", 0) or 0)
+                    - int(extraction_summary.get("errors", 0) or 0),
                 )
-                phase_summaries["indexing"] = {
-                    "token_summary": _compact_tracker_summary(index_tracker.get_summary()),
-                    "vectors_count": index_summary.get("vectors_count", 0),
-                    "total_chunks": index_summary.get("total_chunks", 0),
+                ocr_stats = {
+                    "total_pages": int(total_case_pages or 0),
+                    "extracted_pages": extracted_success,
+                    "skipped_pages": int(extraction_summary.get("already_done", 0) or 0),
+                    "error_pages": int(extraction_summary.get("errors", 0) or 0),
                 }
+                log.info(
+                    "Autopilot %s OCR done: %d extracted, %d already done, %d total pages, %d errors",
+                    job_id[:8],
+                    extracted_success,
+                    extraction_summary.get("already_done", 0),
+                    total_case_pages,
+                    extraction_summary.get("errors", 0),
+                )
+                phase_summaries["ocr"] = {
+                    "token_summary": extraction_summary.get("ocr_token_summary", {}),
+                    "pages_extracted": extracted_success,
+                    "pages_already_done": extraction_summary.get("already_done", 0),
+                    "pages_total": total_case_pages,
+                }
+
+                db.expire_all()
+                index_state = _case_indexing_state(
+                    case_id,
+                    db,
+                    source_document_ids=qc_scope_source_document_ids,
+                )
+                should_run_indexing = (
+                    is_indexing_available()
+                    and index_state["ocr_ready_pages"] > 0
+                    and (extracted_success > 0 or index_state["pending_index_pages"] > 0)
+                )
+                if should_run_indexing:
+                    index_tracker = create_token_tracker(label=f"qc-index-{job_id[:8]}")
+                    index_summary = index_case_ocr_json(
+                        case_id,
+                        tracker=index_tracker,
+                        progress_callback=_autopilot_progress,
+                    )
+                    log.info(
+                        "Autopilot %s indexing done: %d vectors, %d chunks",
+                        job_id[:8],
+                        index_summary.get("vectors_count", 0),
+                        index_summary.get("total_chunks", 0),
+                    )
+                    phase_summaries["indexing"] = {
+                        "token_summary": _compact_tracker_summary(index_tracker.get_summary()),
+                        "vectors_count": index_summary.get("vectors_count", 0),
+                        "total_chunks": index_summary.get("total_chunks", 0),
+                    }
+                else:
+                    log.info(
+                        "Autopilot %s indexing skipped: ocr_ready=%d indexed=%d pending=%d vectors=%d",
+                        job_id[:8],
+                        index_state["ocr_ready_pages"],
+                        index_state["indexed_pages"],
+                        index_state["pending_index_pages"],
+                        index_state["total_vectors"],
+                    )
 
         # 1) Gather per-question evidence (like OCRDocPinecone collectEvidence)
         qc_autopilot_jobs.mark_running(job_id, phase="gathering_evidence")
@@ -1485,15 +1875,23 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
         evidence_source_map: dict[str, list[dict]] = {}
         question_query_vectors: dict[str, list[float]] = {}
         source_doc_ids_by_page: dict[str, str] = {}
+        source_document_alias_index: dict[str, set[str]] = {}
         has_any_evidence = False
         if case_id:
+            source_document_alias_index = _build_case_source_document_alias_index(
+                case_id,
+                db,
+                source_document_ids=qc_scope_source_document_ids,
+            )
             try:
                 question_ids: list[str] = []
                 question_texts: list[str] = []
                 for q in questions:
-                    text = str(q.description or "").strip()
-                    if not text:
+                    desc = str(q.description or "").strip()
+                    if not desc:
                         continue
+                    wtv = str(q.where_to_verify or "").strip()
+                    text = f"{desc} {wtv}".strip() if wtv else desc
                     question_ids.append(_question_internal_key(q))
                     question_texts.append(text)
                 if question_texts:
@@ -1518,6 +1916,7 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                     db,
                     case_id=case_id,
                     include_case_fallback=True,
+                    source_document_ids=qc_scope_source_document_ids,
                 )
                 question_targets.append((q, qid, page_ids))
                 all_page_ids_for_docs.update(page_ids)
@@ -1544,17 +1943,29 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                         for pid in page_ids
                         if pid in source_doc_ids_by_page
                     }) or None
+                    preferred_source_document_ids = _resolve_source_document_targets(
+                        question.where_to_verify or "",
+                        source_document_alias_index,
+                    )
 
                     evidence_bundle = collect_evidence_bundle_for_question(
                         question.description,
                         case_id=case_id,
+                        where_to_verify=question.where_to_verify or "",
                         evidence_page_ids=page_ids,
                         target_section_ids=question.target_section_ids or [],
-                        source_document_ids=q_source_doc_ids,
+                        source_document_ids=(
+                            qc_scope_source_document_ids
+                            if qc_scope_source_document_ids is not None
+                            else q_source_doc_ids
+                        ),
+                        preferred_source_document_ids=preferred_source_document_ids,
                         top_k=AUTOPILOT_EVIDENCE_TOP_K,
                         query_vector=question_query_vectors.get(qid),
                         max_context_chars=AUTOPILOT_EVIDENCE_MAX_CHARS,
                         tracker=None,
+                        document_fallback_enabled=False if qc_scope_source_document_ids is not None else None,
+                        retrieval_profile="qc_checklist",
                     )
                     structured = evidence_bundle.get("evidence", [])
                     text_fallback = str(evidence_bundle.get("text_context", "") or "")
@@ -1582,10 +1993,6 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                 for future in as_completed(ev_futures):
                     future.result()
 
-        # #region agent log
-        _ev_with_data = sum(1 for v in evidence_map.values() if (isinstance(v,str) and v.strip()) or (isinstance(v,list) and v))
-        open("debug-1c0d70.log","a").write(_dbg_json.dumps({"sessionId":"1c0d70","hypothesisId":"H-C","runId":"run1","location":"qc_checklist.py:evidence_done","message":"evidence collection summary","data":{"total_questions":len(questions),"evidence_map_size":len(evidence_map),"questions_with_evidence":_ev_with_data,"has_any_evidence":has_any_evidence},"timestamp":int(_dbg_time.time()*1000)})+"\n")
-        # #endregion
         log.info("  Evidence collection done: %d questions, has_evidence=%s",
                  len(evidence_map), has_any_evidence)
 
@@ -1713,9 +2120,6 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                     phase="verifying_questions",
                 )
 
-        # #region agent log
-        open("debug-1c0d70.log","a").write(_dbg_json.dumps({"sessionId":"1c0d70","hypothesisId":"H-A,H-B,H-C","runId":"run1","location":"qc_checklist.py:autopilot_done","message":"autopilot final results","data":{"verified":verified,"skipped":skipped,"errors":errors,"total_questions":len(all_questions)},"timestamp":int(_dbg_time.time()*1000)})+"\n")
-        # #endregion
         log.info("Autopilot %s done: verified=%d, skipped=%d, errors=%d",
                  job_id[:8], verified, skipped, errors)
         log_token_summary(tracker, label=f"AI Autopilot {job_id[:8]}", logger=log)
@@ -1737,9 +2141,6 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                     phases=phase_summaries,
                     total_pages=total_case_pages,
                 )
-                # region agent log
-                import json as _json; open("debug-efc156.log", "a").write(_json.dumps({"sessionId":"efc156","hypothesisId":"ALL","runId":"post-fix","location":"qc_checklist.py:token_json_write","message":"final token JSON written","data":{"phases":list(phase_summaries.keys()),"total_pages":total_case_pages,"verified":verified,"skipped":skipped},"timestamp":int(__import__("time").time()*1000)}) + "\n")
-                # endregion
                 db.add(
                     AuditLog(
                         case_id=case_id,
@@ -1763,10 +2164,12 @@ def _run_ai_autopilot_job(job_id: str, checklist_id: str) -> None:
                 db.commit()
             except Exception:
                 db.rollback()
+                log.exception("Autopilot %s could not persist completion audit", job_id[:8])
 
         qc_autopilot_jobs.mark_completed(job_id, phase="completed")
     except Exception as exc:
         db.rollback()
+        log.exception("Autopilot %s failed", job_id[:8])
         qc_autopilot_jobs.mark_failed(job_id, str(exc))
     finally:
         db.close()
@@ -1790,9 +2193,19 @@ def start_checklist_ai_autopilot(
     if cl.is_template or not cl.case_id:
         raise HTTPException(400, "AI Autopilot is only available for case-bound checklists")
 
-    case_pages = db.query(Page).filter(Page.case_id == cl.case_id).all()
+    qc_scope_source_document_ids = _get_qc_scope_source_document_ids(cl.case)
+    case_pages = load_case_pages_for_scope(
+        db,
+        cl.case_id,
+        source_document_ids=qc_scope_source_document_ids,
+    )
     if not case_pages:
-        raise HTTPException(400, "No hay paginas cargadas en este caso")
+        if qc_scope_source_document_ids is not None:
+            raise HTTPException(
+                400,
+                "No QC source documents are selected. Choose at least one case document in the QC panel.",
+            )
+        raise HTTPException(400, "No pages are loaded for this case")
 
     active_job = qc_autopilot_jobs.get_active_job_for_checklist(cl.id)
     if active_job:
@@ -2086,4 +2499,3 @@ def auto_link_checklist_sections(case_id: str, cl_id: str, db: Session = Depends
     db.commit()
     db.refresh(cl)
     return _checklist_out(cl)
-

@@ -1,0 +1,234 @@
+[
+  {
+    "page": 4,
+    "items": [
+      {
+        "id": "p4_processing_yes_no_block",
+        "code": "1.A-1.S",
+        "label": "Part 4 Processing Yes/No",
+        "form_text": "Yes/No answers about criminal history, prostitution, terrorism, presence near harm, and immigration proceedings.",
+        "section": "Part 4. Processing Information",
+        "responsible_party": "attorney",
+        "type": "group",
+        "fields": [
+          {
+            "id": "committed_crime_no_arrest",
+            "label": "Committed a crime/offense without being arrested",
+            "type": "yes_no"
+          },
+          {
+            "id": "arrested_or_detained",
+            "label": "Arrested, cited, or detained by law enforcement",
+            "type": "yes_no"
+          },
+          {
+            "id": "charged_with_crime",
+            "label": "Charged with a crime or offense",
+            "type": "yes_no"
+          },
+          {
+            "id": "convicted",
+            "label": "Convicted of a crime or offense",
+            "type": "yes_no"
+          },
+          {
+            "id": "diversion_program",
+            "label": "Placed in alternative sentencing or diversion",
+            "type": "yes_no"
+          },
+          {
+            "id": "probation_or_parole",
+            "label": "Probation, parole, or suspended sentence",
+            "type": "yes_no"
+          },
+          {
+            "id": "jail_or_prison",
+            "label": "Time in jail or prison",
+            "type": "yes_no"
+          },
+          {
+            "id": "prostitution",
+            "label": "Engaged in or procured prostitution",
+            "type": "yes_no"
+          },
+          {
+            "id": "smuggling",
+            "label": "Knowingly aided/abetted alien smuggling",
+            "type": "yes_no"
+          },
+          {
+            "id": "drugs",
+            "label": "Drug trafficking or controlled substance involvement",
+            "type": "yes_no"
+          },
+          {
+            "id": "terrorist_activities",
+            "label": "Engaged in terrorist activities",
+            "type": "yes_no"
+          },
+          {
+            "id": "espionage_security",
+            "label": "Espionage or threats to U.S. security",
+            "type": "yes_no"
+          },
+          {
+            "id": "torture_genocide",
+            "label": "Participation in torture or genocide",
+            "type": "yes_no"
+          },
+          {
+            "id": "extrajudicial_killings",
+            "label": "Extrajudicial killings or political killings",
+            "type": "yes_no"
+          },
+          {
+            "id": "child_soldiers",
+            "label": "Recruitment or use of child soldiers",
+            "type": "yes_no"
+          },
+          {
+            "id": "civil_penalties",
+            "label": "Civil penalties (e.g., for immigration fraud)",
+            "type": "yes_no"
+          },
+          {
+            "id": "fraud_misrepresentation",
+            "label": "Fraud or material misrepresentation",
+            "type": "yes_no"
+          },
+          {
+            "id": "removal_proceedings",
+            "label": "Ever in removal/exclusion/deportation proceedings",
+            "type": "yes_no"
+          }
+        ],
+        "instruction": "Each Yes triggers a Part 8 addendum with factual detail (date, place, agency, outcome). Do NOT mark Yes without explicit evidence.",
+        "where_to_verify": "FBI Records; Court Disposition; LEA Report; Declaration; EOIR Portal"
+      }
+    ]
+  },
+  {
+    "page": 6,
+    "items": [
+      {
+        "id": "p6_interpreter_used",
+        "code": "1",
+        "label": "Interpreter Used?",
+        "section": "Part 6. Interpreter's Contact Information, Certification, and Signature",
+        "responsible_party": "attorney",
+        "type": "yes_no",
+        "options": [
+          {
+            "label": "Yes",
+            "value": "yes"
+          },
+          {
+            "label": "No",
+            "value": "no"
+          }
+        ],
+        "instruction": "Answer Yes only when an interpreter actually assisted the derivative.",
+        "where_to_verify": "Interpreter Certification; Intake"
+      },
+      {
+        "id": "p6_interpreter_full_name",
+        "code": "2",
+        "label": "Interpreter Full Name",
+        "section": "Part 6. Interpreter's Contact Information, Certification, and Signature",
+        "responsible_party": "attorney",
+        "type": "group",
+        "optional": true,
+        "condition": "If an interpreter was used",
+        "fields": [
+          {
+            "id": "family_name",
+            "label": "Family Name (Last Name)",
+            "type": "text"
+          },
+          {
+            "id": "given_name",
+            "label": "Given Name (First Name)",
+            "type": "text"
+          }
+        ],
+        "instruction": "Use the firm interpreter's name when applicable.",
+        "where_to_verify": "Interpreter Certification; Firm Records"
+      },
+      {
+        "id": "p6_interpreter_business",
+        "code": "3",
+        "label": "Interpreter Business or Organization",
+        "section": "Part 6. Interpreter's Contact Information, Certification, and Signature",
+        "responsible_party": "attorney",
+        "type": "text",
+        "optional": true,
+        "condition": "If an interpreter was used",
+        "default_value": "Law Offices of Manuel E. Solis, PLLC",
+        "instruction": "Use firm name when the interpreter is firm staff.",
+        "where_to_verify": "Firm Records"
+      }
+    ]
+  },
+  {
+    "page": 7,
+    "items": [
+      {
+        "id": "p7_preparer_full_name",
+        "code": "1",
+        "label": "Preparer Full Name",
+        "section": "Part 7. Contact Information, Declaration, and Signature of the Person Preparing this Supplement A, if Other Than the Applicant",
+        "responsible_party": "attorney",
+        "type": "group",
+        "optional": true,
+        "fields": [
+          {
+            "id": "family_name",
+            "label": "Family Name (Last Name)",
+            "type": "text"
+          },
+          {
+            "id": "given_name",
+            "label": "Given Name (First Name)",
+            "type": "text"
+          }
+        ],
+        "instruction": "Name of the firm attorney or staff who prepared the form.",
+        "where_to_verify": "G-28; Firm Records"
+      },
+      {
+        "id": "p7_preparer_business",
+        "code": "2",
+        "label": "Preparer Business or Organization",
+        "section": "Part 7. Contact Information, Declaration, and Signature of the Person Preparing this Supplement A, if Other Than the Applicant",
+        "responsible_party": "attorney",
+        "type": "text",
+        "optional": true,
+        "default_value": "Law Offices of Manuel E. Solis, PLLC",
+        "instruction": "Use the firm name.",
+        "where_to_verify": "Firm Records; Letterhead"
+      },
+      {
+        "id": "p7_preparer_daytime_phone",
+        "code": "3",
+        "label": "Preparer Daytime Phone",
+        "section": "Part 7. Contact Information, Declaration, and Signature of the Person Preparing this Supplement A, if Other Than the Applicant",
+        "responsible_party": "attorney",
+        "type": "text",
+        "default_value": "7138442700",
+        "instruction": "Firm phone unless an alternate office line applies.",
+        "where_to_verify": "Firm Phone Directory"
+      },
+      {
+        "id": "p7_preparer_email",
+        "code": "4",
+        "label": "Preparer Email",
+        "section": "Part 7. Contact Information, Declaration, and Signature of the Person Preparing this Supplement A, if Other Than the Applicant",
+        "responsible_party": "attorney",
+        "type": "text",
+        "default_value": "uscism@manuelsolis.com",
+        "instruction": "Firm email; do not use a personal address.",
+        "where_to_verify": "Firm Records"
+      }
+    ]
+  }
+]

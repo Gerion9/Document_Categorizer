@@ -1,0 +1,12 @@
+{
+  "expected_item_count": 3,
+  "field_count": 6,
+  "form_type": "g-1145",
+  "low_coverage_warning": false,
+  "matched_count": 4,
+  "matched_item_count": 2,
+  "matched_item_ids": [
+    "p1_applicant_name",
+    "p1_mobile"
+  ]
+}

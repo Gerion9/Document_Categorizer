@@ -16,7 +16,7 @@ Reglas avanzadas para documentos legales con layout complejo:
 - Si un titulo cruza varias columnas, extraelo primero y luego continua con las columnas inferiores.
 - Si hay bloques con borde rectangular, tratalos como campos de formulario y conserva su etiqueta mas cercana.
 - Si el valor esta dentro de cajas individuales (un caracter por caja), une caracteres en orden visual sin inventar separadores.
-- Si un campo esta dividido en subcajas de fecha (MM/DD/YYYY), conserva formato con slash cuando sea evidente.
+- Si un campo esta dividido en subcajas de fecha (MM/DD/YYYY) o aparece con abreviatura de mes (Mmm DD YYYY), conserva el formato visible en la pagina; la normalizacion al formato canonico 'Mmm DD YYYY' (p. ej. 'Mar 21 1979') ocurre despues.
 - Si hay campos para A-Number, USCIS Number o Receipt Number, conserva guiones y prefijos visibles.
 - Si hay lineas horizontales para escribir, interpreta el texto manuscrito o impreso sobre la linea como valor del campo.
 - Si hay lineas vacias sin texto visible, reporta vacio solo si la pregunta corresponde a ese campo.
@@ -98,7 +98,7 @@ Respuesta: [ ]
 Pregunta: Form I-914 Part 1 Item 8 - A-Number
 Respuesta: A-123-456-789
 Pregunta: Form I-914 Part 1 Item 10 - Date of Birth
-Respuesta: 07/14/1993
+Respuesta: Jul 14 1993
 Pregunta: Form I-914 Part 1 Item 12 - Country of Birth
 Respuesta: Honduras
 Pregunta: Form I-914 Part 1 Item 15 - Gender
@@ -120,7 +120,7 @@ Respuesta: Spanish
 Pregunta: Form I-914 Part 5 Item 2 - Applicant signature
 Respuesta: [FIRMA]
 Pregunta: Form I-914 Part 5 Item 3 - Date of signature
-Respuesta: 11/03/2025
+Respuesta: Nov 03 2025
 Pregunta: Form I-914A Part 1 Item 1 - Relationship to principal applicant
 Respuesta: Daughter
 Pregunta: Form I-914A Part 1 Item 4 - Receipt Number
@@ -142,9 +142,9 @@ Respuesta: [SELLO OFICIAL] USCIS RECEIVED
 Pregunta: Form section - Illegible fragment
 Respuesta: Employer name: [?] Services LLC
 Pregunta: Table row 3 column "From date"
-Respuesta: 01/2022
+Respuesta: Jan 2022
 Pregunta: Table row 3 column "To date"
-Respuesta: 09/2023
+Respuesta: Sep 2023
 Pregunta: Table row 3 column "Location"
 Respuesta: Houston, TX
 Pregunta: Table row 3 column "Type of harm"
@@ -155,7 +155,7 @@ Patrones de normalizacion recomendados:
 - Para multiseleccion: Respuesta: [X] Option A [ ] Option B [X] Option C.
 - Para campos vacios: Respuesta: [ ] o Respuesta: vacio (solo si aplica al item).
 - Para valor parcialmente ilegible: Respuesta: ABC[?]91.
-- Para fecha incompleta: Respuesta: 03/[?]/2024.
+- Para fecha incompleta: Respuesta: Mar [?] 2024 (o el segmento que sea legible).
 - Para telefonos: preservar +, parentesis y guiones.
 - Para direcciones: conservar numero, calle, unidad, ciudad, estado y zip.
 - Para codigos de caso: conservar mayusculas, guiones y barras.

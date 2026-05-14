@@ -5,7 +5,7 @@ Edition 08/21/25
 Structure: list of parts, each with optional subparts and questions.
 Each question has: code, description, where_to_verify.
 
-Key reminders: use mm/dd/yyyy for all dates; complete only the category-specific
+Key reminders: use 'Mmm DD YYYY' (e.g. Mar 21 1979) for all dates; complete only the category-specific
 fields that apply; if Item 1.c is selected, attach a copy of the prior EAD;
 if Item 30 or 31.b is answered Yes, verify court dispositions; if replacement
 is due to USCIS error, review the form note before refiling.
@@ -50,13 +50,13 @@ I765_TEMPLATE = {
                 {"code": "2.10", "description": "Did you verify the Social Security Number (government-issued SSN only), if known? (Item 13)", "where_to_verify": "Bio Call; Social Security card"},
                 {"code": "2.11", "description": "Did you verify all Countries of Citizenship or Nationality (Items 14.a - 14.b)?", "where_to_verify": "Birth Certificate; Passport; national ID, if applicable"},
                 {"code": "2.12", "description": "Did you verify Place of Birth (Items 15.a - 15.c)?", "where_to_verify": "Birth Certificate; Passport"},
-                {"code": "2.13", "description": "Did you verify Date of Birth (Item 16) using the proper format (mm/dd/yyyy)?", "where_to_verify": "Birth Certificate; Passport"},
+                {"code": "2.13", "description": "Did you verify Date of Birth (Item 16) using the proper format (Mmm DD YYYY)?", "where_to_verify": "Birth Certificate; Passport"},
                 {"code": "2.14", "description": "Did you verify the Form I-94 Arrival-Departure Record Number, if any? (Item 17)", "where_to_verify": "I-94; CBP records; FOIA, if needed"},
                 {"code": "2.15", "description": "Did you verify the Passport Number of the most recently issued passport? (Item 18)", "where_to_verify": "Passport; prior filings"},
                 {"code": "2.16", "description": "Did you verify the Travel Document Number, if any? (Item 19)", "where_to_verify": "Travel document; visa; I-94; other immigration documents"},
                 {"code": "2.17", "description": "Did you verify the Country that issued the passport or travel document? (Item 20)", "where_to_verify": "Passport; travel document"},
-                {"code": "2.18", "description": "Did you verify the Expiration Date for passport or travel document (Item 21) using the proper format (mm/dd/yyyy)?", "where_to_verify": "Passport; travel document"},
-                {"code": "2.19", "description": "Did you verify the Date of the applicant's last arrival into the United States (Item 22) using the proper format (mm/dd/yyyy)?", "where_to_verify": "I-94; passport stamp; declaration; Intake; FOIA, if needed"},
+                {"code": "2.18", "description": "Did you verify the Expiration Date for passport or travel document (Item 21) using the proper format (Mmm DD YYYY)?", "where_to_verify": "Passport; travel document"},
+                {"code": "2.19", "description": "Did you verify the Date of the applicant's last arrival into the United States (Item 22) using the proper format (Mmm DD YYYY)?", "where_to_verify": "I-94; passport stamp; declaration; Intake; FOIA, if needed"},
                 {"code": "2.20", "description": "Did you verify the Place of the applicant's last arrival into the United States (Item 23)?", "where_to_verify": "I-94; passport stamp; declaration; Intake; FOIA, if needed"},
                 {"code": "2.21", "description": "Did you verify Immigration Status at Last Arrival (Item 24)?", "where_to_verify": "I-94; visa; admission documents; declaration; Intake"},
                 {"code": "2.22", "description": "Did you verify Current Immigration Status or Category (Item 25)?", "where_to_verify": "Current immigration documents; prior filings; Intake; Bio Call"},
@@ -80,7 +80,7 @@ I765_TEMPLATE = {
                 {"code": "3.4", "description": "Did you verify all applicant contact information (Items 3 - 5) is complete and consistent across the form?", "where_to_verify": "Intake; Bio Call; BOS; client contact records"},
                 {"code": "3.5", "description": "Did you verify whether the ABC settlement agreement box (Item 6) applies and is checked only when appropriate?", "where_to_verify": "Intake; declaration; nationality documents; legal strategy memo"},
                 {"code": "3.6", "description": "Did you verify the applicant signed Item 7.a in ink?", "where_to_verify": "Original I-765 signature page"},
-                {"code": "3.7", "description": "Did you verify the date of signature in Item 7.b is complete and in mm/dd/yyyy?", "where_to_verify": "Original I-765 signature page"},
+                {"code": "3.7", "description": "Did you verify the date of signature in Item 7.b is complete and in 'Mmm DD YYYY' format?", "where_to_verify": "Original I-765 signature page"},
             ],
         },
         {
@@ -93,7 +93,7 @@ I765_TEMPLATE = {
                 {"code": "4.4", "description": "Did you verify the interpreter's contact information (Items 4 - 6) is complete?", "where_to_verify": "If Law Offices of Manuel E. Solis: 713-844-2700; uscism@manuelsolis.com. Otherwise, use the interpreter's own contact information"},
                 {"code": "4.5", "description": "Did you verify the language in the interpreter certification matches Part 3, Item 1.b?", "where_to_verify": "Part 3; Bio Call; interpreter certification"},
                 {"code": "4.6", "description": "Did you verify the interpreter signed Item 7.a in ink?", "where_to_verify": "Original I-765; interpreter signature page"},
-                {"code": "4.7", "description": "Did you verify the date of signature in Item 7.b is complete and in mm/dd/yyyy?", "where_to_verify": "Original I-765; interpreter signature page"},
+                {"code": "4.7", "description": "Did you verify the date of signature in Item 7.b is complete and in 'Mmm DD YYYY' format?", "where_to_verify": "Original I-765; interpreter signature page"},
             ],
         },
         {
@@ -107,7 +107,7 @@ I765_TEMPLATE = {
                 {"code": "5.5", "description": "Did you verify whether Item 7.a or 7.b is checked correctly?", "where_to_verify": "BOS; case file. If the preparer is not an attorney/accredited representative, check 7.a. If attorney/accredited representative, check 7.b"},
                 {"code": "5.6", "description": "If Item 7.b is checked, did you verify whether 'extends' or 'does not extend beyond the preparation of this application' is marked correctly?", "where_to_verify": "G-28; attorney/accredited representative instructions; case file"},
                 {"code": "5.7", "description": "Did you verify the preparer signed Item 8.a in ink?", "where_to_verify": "Original I-765 preparer signature page"},
-                {"code": "5.8", "description": "Did you verify the date of signature in Item 8.b is complete and in mm/dd/yyyy?", "where_to_verify": "Original I-765 preparer signature page"},
+                {"code": "5.8", "description": "Did you verify the date of signature in Item 8.b is complete and in 'Mmm DD YYYY' format?", "where_to_verify": "Original I-765 preparer signature page"},
             ],
         },
         {

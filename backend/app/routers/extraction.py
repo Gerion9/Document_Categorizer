@@ -1,5 +1,6 @@
 """Router -- AI text extraction, indexing, and RAG query helpers."""
 
+import logging
 from typing import Optional
 
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query
@@ -9,6 +10,7 @@ from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import DocumentType, ExtractionStatus, Page
 from ..services.case_extraction_service import extract_case_pages
+from ..services.case_pipeline_lock import CasePipelineBusy, case_pipeline_lock
 from ..services.extraction_service import is_configured
 from ..services.indexing_service import (
     index_existing_page_ocr,
@@ -20,8 +22,15 @@ from ..services.pinecone_client import is_pinecone_configured
 from ..services.retrieval_service import query_case_rag
 
 router = APIRouter(tags=["extraction"])
+log = logging.getLogger("extraction")
 
-STORAGE_DIR = __import__("pathlib").Path(__file__).resolve().parent.parent.parent / "storage"
+
+def _extract_case_pages_with_lock(case_id: str, *, page_ids: list[str]) -> None:
+    try:
+        with case_pipeline_lock(case_id, timeout=300):
+            extract_case_pages(case_id, page_ids=page_ids)
+    except CasePipelineBusy:
+        log.warning("Skipping extraction batch: case %s pipeline busy", case_id[:8])
 
 
 # ── Schemas ───────────────────────────────────────────────────────────────
@@ -116,9 +125,9 @@ def extract_page(
     Extraction runs in a background task; poll the result with GET /pages/{page_id}/extraction.
     """
     if not is_configured():
-        raise HTTPException(503, "GEMINI_API_KEY not configured. Add it to backend/.env")
+        raise HTTPException(503, "GEMINI_API_KEY not configured. Add it to the repo-level .env")
 
-    page = db.query(Page).filter(Page.id == page_id).first()
+    page = db.query(Page).filter(Page.id == page_id, Page.deleted_at.is_(None)).first()
     if not page:
         raise HTTPException(404, "Page not found")
 
@@ -144,7 +153,7 @@ def extract_page(
 @router.get("/pages/{page_id}/extraction", response_model=ExtractionResult)
 def get_extraction(page_id: str, db: Session = Depends(get_db)):
     """Get the current extraction result for a page."""
-    page = db.query(Page).filter(Page.id == page_id).first()
+    page = db.query(Page).filter(Page.id == page_id, Page.deleted_at.is_(None)).first()
     if not page:
         raise HTTPException(404, "Page not found")
 
@@ -174,12 +183,12 @@ def extract_batch(
     downstream AI flows run.
     """
     if not is_configured():
-        raise HTTPException(503, "GEMINI_API_KEY not configured. Add it to backend/.env")
+        raise HTTPException(503, "GEMINI_API_KEY not configured. Add it to the repo-level .env")
 
     results = []
     page_ids: list[str] = []
     for pid in body.page_ids:
-        page = db.query(Page).filter(Page.id == pid, Page.case_id == case_id).first()
+        page = db.query(Page).filter(Page.id == pid, Page.case_id == case_id, Page.deleted_at.is_(None)).first()
         if not page:
             continue
 
@@ -195,7 +204,7 @@ def extract_batch(
         })
 
     if page_ids:
-        background_tasks.add_task(extract_case_pages, case_id, page_ids=page_ids)
+        background_tasks.add_task(_extract_case_pages_with_lock, case_id, page_ids=page_ids)
 
     return {"queued": len(results), "pages": results}
 
@@ -207,7 +216,7 @@ def reindex_page(
     db: Session = Depends(get_db),
 ):
     """Reindex an already extracted page into Pinecone."""
-    page = db.query(Page).filter(Page.id == page_id).first()
+    page = db.query(Page).filter(Page.id == page_id, Page.deleted_at.is_(None)).first()
     if not page:
         raise HTTPException(404, "Page not found")
     if not page.ocr_text or not page.ocr_text.strip():
@@ -232,7 +241,7 @@ def reindex_case(
     page_ids = [
         page.id
         for page in db.query(Page)
-        .filter(Page.case_id == case_id)
+        .filter(Page.case_id == case_id, Page.deleted_at.is_(None))
         .order_by(Page.created_at.asc())
         .all()
         if page.ocr_text and page.ocr_text.strip()
@@ -247,7 +256,7 @@ def reindex_case(
 @router.get("/cases/{case_id}/extraction-status", response_model=BatchExtractionStatusResponse)
 def get_case_extraction_status(case_id: str, db: Session = Depends(get_db)):
     """Check how many pages in a case have completed OCR extraction."""
-    pages = db.query(Page).filter(Page.case_id == case_id).all()
+    pages = db.query(Page).filter(Page.case_id == case_id, Page.deleted_at.is_(None)).all()
     total = len(pages)
     done = sum(1 for p in pages if (p.extraction_status or "") == ExtractionStatus.DONE.value)
     processing = sum(1 for p in pages if (p.extraction_status or "") == ExtractionStatus.PROCESSING.value)

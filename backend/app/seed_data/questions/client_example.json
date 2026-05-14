@@ -1,0 +1,646 @@
+{
+  "meta": {
+    "description": "Fictional client example designed to answer the client questionnaires in this folder.",
+    "scope": [
+      "i192_form_client.json",
+      "i765_form_client.json",
+      "i914_form_client.json"
+    ],
+    "notes": [
+      "All names, identifiers, addresses, phone numbers, and narrative facts are fictional.",
+      "Conditional fields that do not apply to this scenario are set to null or empty arrays.",
+      "Attorney, interpreter, and preparer questionnaires are not included because this file is limited to client data.",
+      "When a yes/no question has conditional follow-up fields, this file stores them in a sibling key ending in _details.",
+      "The I-765 eligibility category is illustrative and should be confirmed against the actual legal strategy."
+    ]
+  },
+  "shared_client_data": {
+    "case_scenario": "Fictional T-1 principal applicant currently in Houston, Texas, filing Forms I-914, I-765, and I-192 together.",
+    "name": {
+      "family_name": "Ramirez",
+      "given_name": "Marisol",
+      "middle_name": "Marisol"
+    },
+    "other_names_used": [
+      {
+        "family_name": "Vega",
+        "given_name": "Marisol",
+        "middle_name": "Elena",
+        "note": "Alias used in informal work records."
+      }
+    ],
+    "identifiers": {
+      "a_number": "246813579",
+      "uscis_online_account_number": null,
+      "ssn": null,
+      "i94_record_number": "85736491284",
+      "passport_number": "HNP4582197",
+      "travel_document_number": null,
+      "sevis_number": null
+    },
+    "biographics": {
+      "date_of_birth": "09/17/1991",
+      "sex": "Female",
+      "marital_status": "Married",
+      "times_married": 1,
+      "birth_city": "San Pedro Sula",
+      "birth_state_or_province": "Cortes",
+      "birth_country": "Honduras",
+      "country_of_citizenship": [
+        "Honduras"
+      ]
+    },
+    "contact": {
+      "daytime_telephone_number": "713-555-0148",
+      "mobile_telephone_number": "832-555-0189",
+      "safe_daytime_telephone_number": "346-555-0193",
+      "email_address": "marisol.ramirez@example.com"
+    },
+    "addresses": {
+      "current_physical_address": {
+        "street_number_name": "4207 Magnolia Park Dr",
+        "unit_type": "Apt.",
+        "unit_number": "3B",
+        "city": "Houston",
+        "state": "TX",
+        "zip_code": "77012",
+        "country": "United States"
+      },
+      "safe_mailing_address": {
+        "in_care_of_name": "Casa Esperanza Advocacy Center",
+        "street_number_name": "1450 Fulton St",
+        "unit_type": null,
+        "unit_number": null,
+        "city": "Houston",
+        "state": "TX",
+        "zip_code": "77009",
+        "country": "United States"
+      },
+      "address_history_last_five_years": [
+        {
+          "street_number_name": "4207 Magnolia Park Dr",
+          "unit_type": "Apt.",
+          "unit_number": "3B",
+          "city": "Houston",
+          "state": "TX",
+          "zip_code": "",
+          "province": null,
+          "postal_code": null,
+          "country": "United States",
+          "from_date": "06/01/2024",
+          "to_date": "PRESENT"
+        },
+        {
+          "street_number_name": "2418 Canal St",
+          "unit_type": "Apt.",
+          "unit_number": "7",
+          "city": "Houston",
+          "state": "TX",
+          "zip_code": "77003",
+          "province": null,
+          "postal_code": null,
+          "country": "United States",
+          "from_date": "08/15/2022",
+          "to_date": "05/31/2024"
+        },
+        {
+          "street_number_name": "Colonia Rivera Hernandez, Bloque 14, Casa 22",
+          "unit_type": null,
+          "unit_number": null,
+          "city": "San Pedro Sula",
+          "state": null,
+          "zip_code": null,
+          "province": "Cortes",
+          "postal_code": null,
+          "country": "Honduras",
+          "from_date": "03/24/2021",
+          "to_date": "08/14/2022"
+        }
+      ]
+    },
+    "family": {
+      "current_spouse": {
+        "family_name": "Castillo",
+        "given_name": "Luis",
+        "middle_name": "Alberto",
+        "date_of_birth": "07/05/1989",
+        "country_of_birth": "Honduras",
+        "birth_city": "Choloma",
+        "birth_state_or_province": "Cortes",
+        "current_city_of_residence": "San Pedro Sula",
+        "current_country_of_residence": "Honduras",
+        "date_of_marriage": "05/20/2015",
+        "marriage_city": "San Pedro Sula",
+        "marriage_state_or_province": "Cortes",
+        "marriage_country": "Honduras",
+        "a_number": null
+      },
+      "prior_marriages": [],
+      "children": [
+        {
+          "family_name": "Ramirez Castillo",
+          "given_name": "Sofia",
+          "middle_name": "Luciana",
+          "date_of_birth": "02/14/2016",
+          "country_of_birth": "Honduras",
+          "current_city": "San Pedro Sula",
+          "current_state": null,
+          "current_country": "Honduras"
+        }
+      ]
+    },
+    "passport_and_travel": {
+      "passport_issuing_country": "Honduras",
+      "passport_issue_date": "04/15/2021",
+      "passport_expiration_date": "04/14/2031",
+      "date_of_last_arrival": "08/12/2022",
+      "place_of_last_arrival_city": "Brownsville",
+      "place_of_last_arrival_state": "TX",
+      "place_of_last_arrival_full": "Brownsville, Texas",
+      "status_at_last_arrival": "B-2 visitor",
+      "current_immigration_status": "B-2 overstay"
+    },
+    "employment_history_last_five_years": [
+      {
+        "employer_name": "Hope Harbor Community Kitchen",
+        "street_number_name": "1810 Jensen Dr",
+        "unit_type": null,
+        "unit_number": null,
+        "city": "Houston",
+        "state": "TX",
+        "zip_code": "77020",
+        "province": null,
+        "postal_code": null,
+        "country": "United States",
+        "occupation": "Kitchen assistant",
+        "from_date": "06/01/2024",
+        "to_date": "03/24/2026"
+      },
+      {
+        "employer_name": "Riverside Hospitality Services",
+        "street_number_name": "2410 Navigation Blvd",
+        "unit_type": "Ste.",
+        "unit_number": "210",
+        "city": "Houston",
+        "state": "TX",
+        "zip_code": "77003",
+        "province": null,
+        "postal_code": null,
+        "country": "United States",
+        "occupation": "Housekeeping worker",
+        "from_date": "09/01/2022",
+        "to_date": "05/15/2024"
+      },
+      {
+        "employer_name": "Textiles del Norte S.A.",
+        "street_number_name": "Parque Industrial Zip Buena Vista, Nave 4",
+        "unit_type": null,
+        "unit_number": null,
+        "city": "San Pedro Sula",
+        "state": null,
+        "zip_code": null,
+        "province": "Cortes",
+        "postal_code": null,
+        "country": "Honduras",
+        "occupation": "Seamstress",
+        "from_date": "03/01/2021",
+        "to_date": "07/31/2022"
+      }
+    ],
+    "case_facts": {
+      "is_victim_of_severe_trafficking": true,
+      "is_physically_present_in_us_on_account_of_trafficking": true,
+      "reported_trafficking_to_law_enforcement": true,
+      "law_enforcement_agency": "Houston Police Department Human Trafficking Unit",
+      "law_enforcement_address": {
+        "street_number_name": "1200 Travis St",
+        "unit_type": null,
+        "unit_number": null,
+        "city": "Houston",
+        "state": "TX",
+        "zip_code": "77002"
+      },
+      "law_enforcement_daytime_telephone": "713-555-0119",
+      "law_enforcement_case_number": "HT-24-0817",
+      "cooperated_with_law_enforcement": true,
+      "under_18_when_trafficking_occurred": false,
+      "extreme_hardship_if_removed": true,
+      "first_time_entering_us": true,
+      "most_recent_entry_related_to_trafficking_claim": true,
+      "request_ead_with_t_status": true,
+      "requesting_family_derivatives_now": false,
+      "needs_interpreter": false,
+      "uses_preparer": false,
+      "has_prior_i765": false,
+      "has_prior_i192": false,
+      "has_previous_immigration_benefit_filings": false,
+      "has_prior_denials_or_revocations": false,
+      "has_criminal_history": false,
+      "inadmissibility_explanation": "Potential inadmissibility grounds may include prior unlawful presence and employment without authorization after the applicant's B-2 admission expired. The applicant explains that traffickers controlled her movement and work, and she seeks a waiver in connection with her T-1 application."
+    }
+  },
+  "answers_by_form": {
+    "I-192": {
+      "p1_1": "A",
+      "p2_1": {
+        "family_name": "Ramirez",
+        "given_name": "Marisol",
+        "middle_name": "Elena"
+      },
+      "p2_2": {
+        "other_family_name": "Vega",
+        "other_given_name": "Marisol",
+        "other_middle_name": "Elena"
+      },
+      "p2_3": "246813579",
+      "p2_4": null,
+      "p2_5": "09/17/1991",
+      "p2_6": {
+        "birth_city": "San Pedro Sula",
+        "birth_state_or_province": "Cortes",
+        "birth_country": "Honduras"
+      },
+      "p2_7": "Honduras",
+      "p2_8": "Female",
+      "p2_9": {
+        "in_care_of_name": "Casa Esperanza Advocacy Center",
+        "street_number_name": "1450 Fulton St",
+        "unit_type": null,
+        "unit_number": null,
+        "city": "Houston",
+        "state": "TX",
+        "zip_code": "77009",
+        "province": null,
+        "postal_code": null,
+        "country": "United States"
+      },
+      "p2_address_history": [
+        {
+          "street_number_name": "4207 Magnolia Park Dr",
+          "unit_type": "Apt.",
+          "unit_number": "3B",
+          "city": "Houston",
+          "state": "TX",
+          "zip_code": "77012",
+          "province": null,
+          "postal_code": null,
+          "country": "United States",
+          "from_date": "06/01/2024",
+          "to_date": "PRESENT"
+        },
+        {
+          "street_number_name": "2418 Canal St",
+          "unit_type": "Apt.",
+          "unit_number": "7",
+          "city": "Houston",
+          "state": "TX",
+          "zip_code": "77003",
+          "province": null,
+          "postal_code": null,
+          "country": "United States",
+          "from_date": "08/15/2022",
+          "to_date": "05/31/2024"
+        },
+        {
+          "street_number_name": "Colonia Rivera Hernandez, Bloque 14, Casa 22",
+          "unit_type": null,
+          "unit_number": null,
+          "city": "San Pedro Sula",
+          "state": null,
+          "zip_code": null,
+          "province": "Cortes",
+          "postal_code": null,
+          "country": "Honduras",
+          "from_date": "03/24/2021",
+          "to_date": "08/14/2022"
+        }
+      ],
+      "p2_12": "Married",
+      "p2_13": 1,
+      "p2_14": {
+        "spouse_family_name": "Castillo",
+        "spouse_given_name": "Luis",
+        "spouse_middle_name": "Alberto"
+      },
+      "p2_15": null,
+      "p2_current_spouse_details": {
+        "spouse_date_of_birth": "07/05/1989",
+        "date_of_marriage": "05/20/2015",
+        "spouse_birth_city": "Choloma",
+        "spouse_birth_state_or_province": "Cortes",
+        "spouse_birth_country": "Honduras",
+        "marriage_city": "San Pedro Sula",
+        "marriage_state_or_province": "Cortes",
+        "marriage_country": "Honduras"
+      },
+      "p2_prior_marriage": null,
+      "p2_26": "Potential inadmissibility grounds may include prior unlawful presence and employment without authorization after the applicant's B-2 admission expired. The applicant explains that traffickers controlled her movement and work, and she seeks a waiver in connection with her T-1 application.",
+      "p2_27": false,
+      "p2_27_details": null,
+      "p2_30": true,
+      "p2_31": false,
+      "p2_31_details": [],
+      "p2_35": false,
+      "p2_36": false,
+      "p2_travel_info": null,
+      "p2_44": {
+        "employer_name": "Hope Harbor Community Kitchen",
+        "employer_street_number_name": "1810 Jensen Dr",
+        "employer_unit_type": null,
+        "employer_unit_number": null,
+        "employer_city": "Houston",
+        "employer_state": "TX",
+        "employer_zip_code": "77020",
+        "employer_province": null,
+        "employer_postal_code": null,
+        "employer_country": "United States",
+        "occupation": "Kitchen assistant",
+        "employment_from_date": "06/01/2024",
+        "employment_to_date": "03/24/2026"
+      },
+      "p2_45": {
+        "employer_name": "Riverside Hospitality Services",
+        "employer_street_number_name": "2410 Navigation Blvd",
+        "employer_unit_type": "Ste.",
+        "employer_unit_number": "210",
+        "employer_city": "Houston",
+        "employer_state": "TX",
+        "employer_zip_code": "77003",
+        "employer_province": null,
+        "employer_postal_code": null,
+        "employer_country": "United States",
+        "occupation": "Housekeeping worker",
+        "employment_from_date": "09/01/2022",
+        "employment_to_date": "05/15/2024"
+      },
+      "p3_contact": {
+        "applicant_daytime_telephone_number": "713-555-0148",
+        "applicant_mobile_telephone_number": "832-555-0189",
+        "applicant_email_address": "marisol.ramirez@example.com"
+      },
+      "p3_signature": {
+        "applicant_signature": "Marisol Elena Ramirez",
+        "applicant_signature_date": "03/24/2026"
+      }
+    },
+    "I-765": {
+      "p1_1": "A",
+      "p2_1": {
+        "family_name": "Ramirez",
+        "given_name": "Marisol",
+        "middle_name": "Elena"
+      },
+      "p2_other_names_used": [
+        {
+          "family_name": "Vega",
+          "given_name": "Marisol",
+          "middle_name": "Elena"
+        }
+      ],
+      "p2_5": {
+        "in_care_of_name": "Casa Esperanza Advocacy Center",
+        "street_number_name": "1450 Fulton St",
+        "unit_type": null,
+        "unit_number": null,
+        "city": "Houston",
+        "state": "TX",
+        "zip_code": "77009"
+      },
+      "p2_6": false,
+      "p2_7": {
+        "street_number_name": "4207 Magnolia Park Dr",
+        "unit_type": "Apt.",
+        "unit_number": "3B",
+        "city": "Houston",
+        "state": "TX",
+        "zip_code": "77012"
+      },
+      "p2_8": "246813579",
+      "p2_9": null,
+      "p2_10": "Female",
+      "p2_11": "Married",
+      "p2_12": false,
+      "p2_13": null,
+      "p2_14": {
+        "country_1": "Honduras",
+        "country_2": null
+      },
+      "p2_15": {
+        "birth_city_town_village": "San Pedro Sula",
+        "birth_state_province": "Cortes",
+        "birth_country": "Honduras"
+      },
+      "p2_16": "09/17/1991",
+      "p2_17": "85736491284",
+      "p2_18": "HNP4582197",
+      "p2_19": null,
+      "p2_20": "Honduras",
+      "p2_21": "04/14/2031",
+      "p2_22": "08/12/2022",
+      "p2_23": "Brownsville, Texas",
+      "p2_24": "B-2 visitor",
+      "p2_25": "B-2 overstay",
+      "p2_26": null,
+      "p2_27": {
+        "category_letter": "a",
+        "category_number": "16",
+        "category_subcategory": null
+      },
+      "p2_28": null,
+      "p2_29": null,
+      "p2_30": null,
+      "p2_31a": null,
+      "p2_31b": null,
+      "p3_1": "A",
+      "p3_2": {
+        "preparer_statement_selected": false,
+        "preparer_name_in_statement": null
+      },
+      "p3_contact": {
+        "applicant_daytime_telephone_number": "713-555-0148",
+        "applicant_mobile_telephone_number": "832-555-0189",
+        "applicant_email_address": "marisol.ramirez@example.com"
+      },
+      "p3_6": {
+        "abc_settlement_agreement_selected": false
+      },
+      "p3_signature": {
+        "applicant_signature": "Marisol Elena Ramirez",
+        "applicant_signature_date": "03/24/2026"
+      }
+    },
+    "I-914": {
+      "p1_1": "A",
+      "p2_1": {
+        "family_name": "Ramirez",
+        "given_name": "Marisol",
+        "middle_name": "Elena"
+      },
+      "p2_2": {
+        "other_family_name": "Vega",
+        "other_given_name": "Marisol",
+        "other_middle_name": "Elena"
+      },
+      "p2_3": {
+        "street_number_name": "4207 Magnolia Park Dr",
+        "unit_type": "Apt.",
+        "unit_number": "3B",
+        "city": "Houston",
+        "state": "TX",
+        "zip_code": "77012"
+      },
+      "p2_4": {
+        "in_care_of_name": "Casa Esperanza Advocacy Center",
+        "safe_street_number_name": "1450 Fulton St",
+        "safe_unit_type": null,
+        "safe_unit_number": null,
+        "safe_city": "Houston",
+        "safe_state": "TX",
+        "safe_zip_code": "77009"
+      },
+      "p2_5": "246813579",
+      "p2_6": null,
+      "p2_7": null,
+      "p2_8": "Female",
+      "p2_9": "Married",
+      "p2_10": "09/17/1991",
+      "p2_11": {
+        "birth_city": "San Pedro Sula",
+        "birth_state_province": "Cortes",
+        "birth_country": "Honduras"
+      },
+      "p2_12": "Honduras",
+      "p2_passport": {
+        "passport_or_travel_document_number": "HNP4582197",
+        "issuing_country": "Honduras",
+        "passport_issue_date": "04/15/2021",
+        "passport_expiration_date": "04/14/2031"
+      },
+      "p2_last_entry": {
+        "last_entry_city": "Brownsville",
+        "last_entry_state": "TX",
+        "last_entry_date": "08/12/2022",
+        "i94_record_number": "85736491284"
+      },
+      "p2_20": "B-2 overstay",
+      "p3_1": true,
+      "p3_2a": true,
+      "p3_2b": false,
+      "p3_3": true,
+      "p3_4": true,
+      "p3_5": true,
+      "p3_5_details": {
+        "lea_agency_office": "Houston Police Department Human Trafficking Unit",
+        "lea_street_number_name": "1200 Travis St",
+        "lea_unit_type": null,
+        "lea_unit_number": null,
+        "lea_city": "Houston",
+        "lea_state": "TX",
+        "lea_zip_code": "77002",
+        "lea_daytime_telephone": "713-555-0119",
+        "lea_case_number": "HT-24-0817",
+        "lea_circumstances": null
+      },
+      "p3_6": false,
+      "p3_7": true,
+      "p3_8": true,
+      "p3_9": true,
+      "p3_10": true,
+      "p3_11": true,
+      "p4_1a": false,
+      "p4_1b": false,
+      "p4_1c": false,
+      "p4_1d": false,
+      "p4_1e": false,
+      "p4_1f": false,
+      "p4_1g": false,
+      "p4_1h": false,
+      "p4_1i": false,
+      "p4_1_details": [],
+      "p4_2a": false,
+      "p4_2b": false,
+      "p4_2c": false,
+      "p4_2d": false,
+      "p4_3a": false,
+      "p4_3b": false,
+      "p4_3c": false,
+      "p4_3d": false,
+      "p4_3e": false,
+      "p4_4a": false,
+      "p4_4b_1": false,
+      "p4_4b_2": false,
+      "p4_4b_3": false,
+      "p4_4b_4": false,
+      "p4_4b_5": false,
+      "p4_4b_6": false,
+      "p4_5a": false,
+      "p4_5b": false,
+      "p4_5c": false,
+      "p4_6": false,
+      "p4_7": false,
+      "p4_8a": false,
+      "p4_8b": false,
+      "p4_8c": false,
+      "p4_9a": false,
+      "p4_9b": false,
+      "p4_9c": false,
+      "p4_9d": false,
+      "p4_9e": false,
+      "p4_9f": false,
+      "p4_10a": false,
+      "p4_10b": false,
+      "p4_10c": false,
+      "p4_10d": false,
+      "p4_10e": false,
+      "p4_11a": false,
+      "p4_11b": false,
+      "p4_12": false,
+      "p4_13": false,
+      "p4_14": false,
+      "p4_15": false,
+      "p4_16": false,
+      "p4_17": false,
+      "p4_18": false,
+      "p4_19": false,
+      "p4_20": false,
+      "p4_21a": false,
+      "p4_21b": false,
+      "p4_21c": false,
+      "p5_1": {
+        "spouse_family_name": "Castillo",
+        "spouse_given_name": "Luis",
+        "spouse_middle_name": "Alberto",
+        "spouse_date_of_birth": "07/05/1989",
+        "spouse_country_of_birth": "Honduras",
+        "spouse_residence_city": "San Pedro Sula",
+        "spouse_residence_country": "Honduras"
+      },
+      "p5_children": [
+        {
+          "family_name": "Ramirez Castillo",
+          "given_name": "Sofia",
+          "middle_name": "Luciana",
+          "date_of_birth": "02/14/2016",
+          "country_of_birth": "Honduras",
+          "current_city": "San Pedro Sula",
+          "current_state": null,
+          "current_country": "Honduras"
+        }
+      ],
+      "p6_1": "A",
+      "p6_2": {
+        "preparer_statement_selected": false,
+        "preparer_name_in_statement": null
+      },
+      "p6_contact": {
+        "applicant_daytime_telephone_number": "713-555-0148",
+        "applicant_safe_daytime_telephone_number": "346-555-0193",
+        "applicant_email_address": "marisol.ramirez@example.com"
+      },
+      "p6_6": {
+        "applicant_signature": "Marisol Elena Ramirez",
+        "applicant_signature_date": "03/24/2026"
+      }
+    }
+  }
+}
