@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useRef, useState } from "react";
 import {
   ChevronDown,
   ChevronRight,
@@ -14,9 +14,9 @@ import {
 } from "lucide-react";
 import { useDroppable } from "@dnd-kit/core";
 import toast from "react-hot-toast";
-import { motion, AnimatePresence } from "framer-motion";
 import { Tooltip } from "./ui/Tooltip";
 import { EmptyState } from "./ui/EmptyState";
+import { formatLongDate } from "../utils/dateFormat";
 import type { DocumentType, Section, Template } from "../types";
 import {
   createDocumentType,
@@ -29,7 +29,6 @@ import {
   applyTemplate,
   saveDocTaxonomyAsTemplate,
 } from "../api/client";
-
 // ── Auto-code helpers ──────────────────────────────────────────────────
 
 /** Detect if a code is numeric ("1", "12") or alphabetic ("a", "B") */
@@ -71,16 +70,6 @@ function autoNextCode(siblings: Section[]): string {
   return nextCode(lastCode);
 }
 
-/** Flatten all sections from a tree */
-function flattenAll(sections: Section[]): Section[] {
-  const r: Section[] = [];
-  for (const s of sections) {
-    r.push(s);
-    if (s.children?.length) r.push(...flattenAll(s.children));
-  }
-  return r;
-}
-
 // ── Droppable wrapper for tree nodes ──────────────────────────────────
 function DroppableTreeNode({
   id,
@@ -119,7 +108,7 @@ interface Props {
   onRefresh: () => void;
 }
 
-export default function DocumentTree({
+function DocumentTree({
   caseId,
   docTypes,
   selectedSectionId,
@@ -141,7 +130,7 @@ export default function DocumentTree({
 
   const handleSaveDocAsTemplate = async () => {
     try {
-      await saveDocTaxonomyAsTemplate(caseId, `Documentos - ${new Date().toLocaleDateString()}`);
+      await saveDocTaxonomyAsTemplate(caseId, `Documentos - ${formatLongDate(new Date())}`);
       toast.success("Estructura guardada como plantilla");
     } catch { toast.error("Error al guardar plantilla"); }
   };
@@ -367,7 +356,7 @@ export default function DocumentTree({
                 title="Código auto-generado, editable"
               />
               <span className="text-[10px] text-gray-400 truncate flex-1">
-                {newSec.name || "Nombre..."}
+                {newSec.name || "Nombre…"}
               </span>
             </div>
             <div className="flex gap-1">
@@ -597,7 +586,7 @@ export default function DocumentTree({
                       title="Código auto-generado, editable"
                     />
                     <span className="text-[10px] text-gray-400 truncate flex-1">
-                      {newSec.name || "Nombre..."}
+                      {newSec.name || "Nombre…"}
                     </span>
                   </div>
                   <div className="flex gap-1">
@@ -648,3 +637,5 @@ export default function DocumentTree({
     </div>
   );
 }
+
+export default memo(DocumentTree);

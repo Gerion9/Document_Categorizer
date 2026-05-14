@@ -1,7 +1,7 @@
-import { useEffect, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
-import { GripVertical, X, Tag, Sparkles, Loader2, Link2, Database } from "lucide-react";
+import { GripVertical, X, Tag, Sparkles, Loader2, Link2, CheckCircle2 } from "lucide-react";
 import { Tooltip } from "./ui/Tooltip";
 import { motion } from "framer-motion";
 import type { Page } from "../types";
@@ -25,9 +25,13 @@ interface Props {
   sortableId?: string;
   /** Show Pinecone index status indicator */
   showIndexStatus?: boolean;
+  /** Multi-select state */
+  multiSelected?: boolean;
+  /** Multi-select toggle handler */
+  onToggleSelect?: (selected: boolean) => void;
 }
 
-export default function PageThumbnail({
+function PageThumbnail({
   page,
   sortable = false,
   onRemove,
@@ -38,6 +42,8 @@ export default function PageThumbnail({
   isSecondary = false,
   sortableId,
   showIndexStatus = false,
+  multiSelected = false,
+  onToggleSelect,
 }: Props) {
   const effectiveId = sortableId || page.id;
   const {
@@ -94,6 +100,21 @@ export default function PageThumbnail({
       : page.status === "extra"
         ? "bg-amber-500"
         : "bg-gray-400";
+  const extractionDone = page.extraction_status === "done";
+  const extractionProcessing = page.extraction_status === "processing";
+  const indexProcessing = showIndexStatus && extractionDone && page.index_status === "processing";
+  const showProcessingIndicator = extractionProcessing || indexProcessing;
+  const showCompletedIndicator =
+    extractionDone && (!showIndexStatus || page.index_status === "done");
+  const combinedIndicatorTitle = showProcessingIndicator
+    ? indexProcessing
+      ? "Preparando búsqueda en documentos"
+      : "Procesando contenido"
+    : showCompletedIndicator
+      ? showIndexStatus
+        ? "Contenido listo para búsqueda"
+        : "Texto extraído"
+      : undefined;
 
   return (
     <motion.div
@@ -108,16 +129,33 @@ export default function PageThumbnail({
       onClick={handleClick}
       className={`
         group relative rounded-xl border overflow-hidden
-        transition-all duration-200 touch-none glass-fallback
+        transition-[background-color,border-color,box-shadow,transform] duration-200 touch-none glass-fallback
         ${selected ? "ring-2 ring-brand-500 border-brand-400" : "border-white/40"}
         ${compact ? "w-24" : "w-36"}
         ${sortable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}
         ${isDragging ? "shadow-2xl z-50 bg-white/60 border-brand-400 scale-105" : "shadow-sm hover:shadow-glass hover:-translate-y-0.5 bg-white/40"}
       `}
     >
+      {/* Multi-select checkbox */}
+      {onToggleSelect && (
+        <div 
+          className={`absolute top-1 left-1 z-20 transition-opacity ${multiSelected ? "opacity-100" : "opacity-0 group-hover:opacity-100"}`}
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleSelect(!multiSelected);
+          }}
+          title={multiSelected ? "Deseleccionar" : "Seleccionar"}
+        >
+          <div className="bg-white/90 rounded-full cursor-pointer hover:bg-brand-50 transition-colors flex items-center justify-center p-0.5">
+            {multiSelected ? <CheckCircle2 className="w-4 h-4 text-brand-600 fill-brand-100" /> : <div className="w-4 h-4 rounded-full border-2 border-brand-300 m-[1px]" />}
+          </div>
+        </div>
+      )}
+
       {/* Visual drag indicator — shown on hover to hint "draggable" */}
       {sortable && (
-        <div className="absolute top-1 left-1 z-10 rounded bg-white/80 p-0.5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+        <div className={`absolute top-1 z-10 rounded bg-white/80 p-0.5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none ${onToggleSelect ? "left-6" : "left-1"}`}>
           <GripVertical className="w-3.5 h-3.5 text-gray-400" />
         </div>
       )}
@@ -159,7 +197,7 @@ export default function PageThumbnail({
       {/* Thumbnail image */}
       <div className="bg-gray-100 select-none">
         <img
-          src={`/storage/${page.thumbnail_path}`}
+          src={page.thumbnail_url}
           alt={`${page.original_filename} p${page.original_page_number}`}
           className={`w-full object-cover pointer-events-none ${compact ? "h-32" : "h-48"}`}
           loading="lazy"
@@ -167,29 +205,17 @@ export default function PageThumbnail({
         />
       </div>
 
-      {/* Extraction status indicator */}
-      {page.extraction_status === "done" && (
-        <div className="absolute top-1.5 left-1.5 z-10 pointer-events-none" title="Texto extraido">
-          <Sparkles className="w-3 h-3 text-purple-500" />
-        </div>
-      )}
-      {page.extraction_status === "processing" && (
-        <div className="absolute top-1.5 left-1.5 z-10 pointer-events-none" title="Extrayendo...">
-          <Loader2 className="w-3 h-3 text-amber-500 animate-spin" />
-        </div>
-      )}
-
-      {/* Pinecone index status */}
-      {showIndexStatus && page.index_status === "done" && (
-        <Tooltip content={`Indexada en Pinecone (${page.indexed_vector_count || 0} vectores)`}>
-          <div className="absolute top-1.5 left-5 z-10 pointer-events-none">
-            <Database className="w-3 h-3 text-indigo-500" />
-          </div>
-        </Tooltip>
-      )}
-      {showIndexStatus && page.index_status === "processing" && (
-        <div className="absolute top-1.5 left-5 z-10 pointer-events-none" title="Indexando...">
-          <Loader2 className="w-2.5 h-2.5 text-indigo-400 animate-spin" />
+      {/* Combined processing/completion indicator */}
+      {(showProcessingIndicator || showCompletedIndicator) && (
+        <div
+          className="absolute top-1.5 left-1.5 z-10 pointer-events-none"
+          title={combinedIndicatorTitle}
+        >
+          {showProcessingIndicator ? (
+            <Loader2 className="w-3 h-3 animate-spin text-amber-500" />
+          ) : (
+            <Sparkles className="w-3 h-3 text-purple-500" />
+          )}
         </div>
       )}
 
@@ -213,3 +239,5 @@ export default function PageThumbnail({
     </motion.div>
   );
 }
+
+export default memo(PageThumbnail);

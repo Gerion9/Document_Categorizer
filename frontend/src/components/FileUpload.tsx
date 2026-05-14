@@ -6,6 +6,7 @@ import { uploadFiles } from "../api/client";
 import { AnimatedUpload } from "./ui/AnimatedUpload";
 import { GlassSurface } from "./glass/GlassSurface";
 import type { Page } from "../types";
+import { getApiErrorMessage } from "../utils/apiErrors";
 
 interface Props {
   caseId: string;
@@ -25,8 +26,8 @@ export default function FileUpload({ caseId, onUploaded }: Props) {
         const pages = await uploadFiles(caseId, files);
         toast.success(`${pages.length} pagina(s) cargadas`);
         onUploaded(pages);
-      } catch (err: any) {
-        toast.error(err?.response?.data?.detail || "Error al subir archivos");
+      } catch (error: unknown) {
+        toast.error(getApiErrorMessage(error, "Error al subir archivos"));
       } finally {
         setUploading(false);
       }
@@ -102,7 +103,7 @@ export default function FileUpload({ caseId, onUploaded }: Props) {
       <div>
         <p className={`text-base font-semibold ${dragging ? "text-brand-700" : "text-gray-700"}`}>
           {uploading
-            ? "Procesando archivos..."
+            ? "Procesando archivos…"
             : dragging
             ? "Suelta los archivos aquí"
             : "Haz clic o arrastra archivos aquí"}

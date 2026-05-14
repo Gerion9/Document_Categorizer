@@ -4,11 +4,60 @@ export interface Case {
   id: string;
   name: string;
   description: string;
+  created_by?: number | null;
+  created_by_name?: string;
   created_at: string;
   updated_at: string;
   page_count: number;
   classified_count: number;
   checklist_count: number;
+  form_filling_source_document_ids?: string[] | null;
+  qc_checklist_source_document_ids?: string[] | null;
+}
+
+export interface CaseManagerInfo {
+  id: number;
+  name: string;
+}
+
+export interface TeamInfo {
+  uuid: string;
+  name: string;
+}
+
+export interface SupervisorCase {
+  case_id: string;
+  case_uuid: string;
+  name: string;
+  description: string;
+  case_manager: CaseManagerInfo;
+  team: TeamInfo;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface TeamSummary {
+  uuid: string;
+  name: string;
+  members_count: number;
+}
+
+export interface TeamMember {
+  uuid_team_user: string;
+  id: number;
+  name: string;
+  email: string;
+  is_primary: boolean;
+}
+
+export interface TeamDetail {
+  team_uuid: string;
+  team_name: string;
+  supervisor: {
+    id: number;
+    name: string;
+  };
+  members: TeamMember[];
 }
 
 export interface Section {
@@ -54,10 +103,13 @@ export type IndexStatus = "pending" | "processing" | "done" | "error" | "skipped
 export interface Page {
   id: string;
   case_id: string;
+  source_document_id: string | null;
   original_filename: string;
   original_page_number: number;
   thumbnail_path: string;
   file_path: string;
+  file_url: string;
+  thumbnail_url: string;
   document_type_id: string | null;
   section_id: string | null;
   subindex: string | null;
@@ -135,6 +187,179 @@ export interface AutopilotJob {
   updated_at: string;
   started_at: string | null;
   completed_at: string | null;
+}
+
+export interface FormFillingField {
+  id: string;
+  job_id: string;
+  field_name: string;
+  field_label: string;
+  field_type: string;
+  questionnaire_item_id: string | null;
+  questionnaire_field_id: string | null;
+  questionnaire_option_value: string | null;
+  page_number: number | null;
+  responsible_party: string;
+  extracted_value: string;
+  confidence: string | null;
+  evidence_source: string;
+  manually_corrected: boolean;
+  section: string;
+  form_text: string;
+  instruction: string | null;
+  condition: string | null;
+  optional: boolean;
+  requires_manual_confirmation: boolean;
+  questionnaire_options: FormFillingFieldOption[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface FormFillingFieldOption {
+  value: string;
+  label: string;
+}
+
+export interface FormFillingJob {
+  id: string;
+  case_id: string;
+  form_type: string | null;
+  status: "queued" | "running" | "completed" | "needs_review" | "failed";
+  phase: string;
+  progress_pct: number;
+  original_pdf_path: string;
+  filled_pdf_path: string;
+  field_count: number;
+  filled_count: number;
+  client_field_count: number;
+  client_filled_count: number;
+  attorney_field_count: number;
+  attorney_filled_count: number;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  fields?: FormFillingField[];
+}
+
+export interface FormTypeInfo {
+  form_type: string;
+  label: string;
+  description: string;
+}
+
+export interface QuestionnaireOption {
+  value: string;
+  label: string;
+}
+
+export type QuestionnaireOptionInput = QuestionnaireOption | string;
+
+export interface QuestionnaireField {
+  id: string;
+  label: string;
+  type: string;
+  default_value?: unknown;
+  force_default?: boolean;
+  allow_literal_values?: string[];
+  optional?: boolean;
+  instruction?: string;
+  condition?: string;
+  format?: string;
+  prefix?: string;
+  repeatable?: boolean;
+  options?: QuestionnaireOptionInput[];
+}
+
+export interface QuestionnaireItem {
+  id: string;
+  code: string;
+  section: string;
+  responsible_party: string;
+  type: string;
+  form_text: string;
+  default_value?: unknown;
+  instruction?: string;
+  condition?: string;
+  optional?: boolean;
+  format?: string;
+  prefix?: string;
+  repeatable?: boolean;
+  visible_on_pages?: number[];
+  visible_slots?: Array<string | number>;
+  also_validate_with?: string[];
+  options?: QuestionnaireOptionInput[];
+  fields?: QuestionnaireField[];
+  details_fields?: QuestionnaireField[];
+}
+
+export interface QuestionnaireExcludedSection {
+  name: string;
+  reason: string;
+}
+
+export interface QuestionnairePage {
+  page: number;
+  items: QuestionnaireItem[];
+  excluded_sections: QuestionnaireExcludedSection[];
+}
+
+export type QuestionnaireAnswerMap = Record<string, unknown>;
+
+export interface FieldVerification {
+  status: "approved" | "needs_review" | "rejected";
+  reason: string;
+  evidence?: string;
+  model?: string;
+  verified_at?: string | null;
+}
+
+export type VerificationMap = Record<string, FieldVerification>;
+
+export interface SaveQuestionnaireAnswerPayload {
+  question_id: string;
+  value: unknown;
+  source: string;
+  form_type?: string | null;
+}
+
+export interface QuestionnaireAutofillResponse {
+  answers: QuestionnaireAnswerMap;
+  total_targets: number;
+  suggested_count: number;
+  confidence_map: Record<string, unknown>;
+  skipped_low_confidence: number;
+  form_answers: Record<string, QuestionnaireAnswerMap>;
+  form_confidence_map: Record<string, Record<string, unknown>>;
+  forced_answers?: QuestionnaireAnswerMap;
+  forced_form_answers?: Record<string, QuestionnaireAnswerMap>;
+  verification_map?: VerificationMap;
+  form_verification_map?: Record<string, VerificationMap>;
+}
+
+export type AutofillJobStatusValue =
+  | "queued"
+  | "running"
+  | "ocr_preparing"
+  | "completed"
+  | "failed"
+  | "cancelled";
+
+export interface AutofillJobStatus {
+  id: string;
+  case_id: string;
+  kind: "shared" | "attorney";
+  status: AutofillJobStatusValue;
+  progress_pct: number;
+  progress_message: string;
+  ocr_total_pages: number;
+  ocr_processed_pages: number;
+  error?: string | null;
+  result?: QuestionnaireAutofillResponse | null;
+  created_at: number;
+  started_at?: number | null;
+  finished_at?: number | null;
 }
 
 export interface SectionTarget {

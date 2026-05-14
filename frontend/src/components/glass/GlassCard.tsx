@@ -1,4 +1,3 @@
-import React from "react";
 import { GlassSurface, GlassSurfaceProps } from "./GlassSurface";
 
 export function GlassCard({ className = "", children, ...props }: GlassSurfaceProps) {

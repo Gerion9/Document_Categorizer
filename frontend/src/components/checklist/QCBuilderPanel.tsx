@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useState } from "react";
 import {
   Plus,
   Trash2,
@@ -8,7 +8,6 @@ import {
   ClipboardList,
   Check,
   X as XIcon,
-  Minus,
   HelpCircle,
   FileSearch,
   Download,
@@ -17,22 +16,30 @@ import {
   Bot,
   MapPin,
   Link2,
-  Upload,
   Search,
   Send,
   Library,
   Save,
   FilePlus,
   Bookmark,
+  MoreVertical,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
 import { Tooltip } from "../ui/Tooltip";
 import { EmptyState } from "../ui/EmptyState";
 import { AnimatedAIBot } from "../ui/AnimatedAIBot";
-import { AnimatedReport } from "../ui/AnimatedReport";
+import CaseDocumentScopePicker from "../document-scopes/CaseDocumentScopePicker";
 import { GlassSurface } from "../glass/GlassSurface";
-import type { QCChecklist, QCPart, QCQuestion, QCLinkPreset, DocumentType, Section } from "../../types";
+import type {
+  Case,
+  QCChecklist,
+  QCPart,
+  QCQuestion,
+  QCLinkPreset,
+  DocumentType,
+  Page,
+} from "../../types";
 import {
   getCaseQCChecklists,
   getQCTemplates,
@@ -40,55 +47,41 @@ import {
   deleteQCChecklist,
   applyQCTemplate,
   createQCPart,
-  updateQCPart,
   deleteQCPart,
   createQCQuestion,
   updateQCQuestion,
   deleteQCQuestion,
-  seedI914Template,
-  seedI914DocTaxonomy,
-  aiVerifyQuestion,
-  aiVerifyPart,
+  seedAllQCTemplates,
   getExtractionStatus,
   saveQCAsTemplate,
-  saveDocTaxonomyAsTemplate,
   saveLinkPreset,
   getLinkPresets,
   applyLinkPreset,
   autoLinkQCSections,
   deleteLinkPreset,
-  startAutopilot,
-  getAutopilotJob,
   qcSemanticQuery,
-  exportQCReport,
+  downloadExportSingleQCReport,
+  updateCase,
 } from "../../api/client";
-import type { AutopilotJob, RagMatch } from "../../types";
-
-function flattenSections(sections: Section[]): Section[] {
-  const r: Section[] = [];
-  for (const s of sections) {
-    r.push(s);
-    if (s.children?.length) r.push(...flattenSections(s.children));
-  }
-  return r;
-}
+import type { RagMatch } from "../../types";
+import {
+  buildScopeUpdatePayload,
+  listSelectableCaseDocuments,
+  resolveSelectedSourceDocumentIds,
+} from "../../utils/caseDocumentScopes";
+import { getApiErrorMessage } from "../../utils/apiErrors";
+import { flattenSections } from "../../utils/sections";
+import { runSemanticSearch } from "../../utils/semanticSearch";
+import { autopilotPhaseSummary, nextCode } from "./qcBuilderUtils";
+import { useQcAutopilot } from "./useQcAutopilot";
 
 interface Props {
   caseId: string;
+  caseData: Case | null;
+  pages: Page[];
+  onCaseUpdated?: (updatedCase: Case) => void;
   onRefresh: () => void;
   docTypes?: DocumentType[];
-}
-
-// Auto-code helper
-function nextCode(siblings: { code: string }[]): string {
-  if (siblings.length === 0) return "1";
-  const sorted = [...siblings].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
-  const last = sorted[sorted.length - 1].code;
-  if (/^\d+$/.test(last)) return String(Number(last) + 1);
-  const isUpper = last === last.toUpperCase();
-  const c = last.toLowerCase().charCodeAt(last.length - 1);
-  const next = c >= 122 ? "aa" : String.fromCharCode(c + 1);
-  return isUpper ? next.toUpperCase() : next;
 }
 
 const ANSWER_STYLES: Record<string, { bg: string; text: string; label: string }> = {
@@ -99,64 +92,27 @@ const ANSWER_STYLES: Record<string, { bg: string; text: string; label: string }>
   insufficient: { bg: "bg-amber-100", text: "text-amber-700", label: "Ins." },
 };
 
-function autopilotPhaseSummary(job: AutopilotJob | null): { title: string; detail: string } {
-  if (!job) return { title: "AI AUTOPILOT", detail: "" };
-
-  if (job.phase === "extracting_document") {
-    const processed = (job.ocr_processed_pages || 0) + (job.ocr_error_pages || 0);
-    return {
-      title: `OCR ${processed}/${job.ocr_total_pages || 0}`,
-      detail: `Extrayendo OCR ${processed}/${job.ocr_total_pages || 0} páginas`,
-    };
-  }
-  if (job.phase === "writing_json") {
-    return {
-      title: "JSON",
-      detail: "Escribiendo archivos JSON del documento",
-    };
-  }
-  if (job.phase === "indexing_document") {
-    const processed = (job.index_processed_chunks || 0) + (job.index_error_chunks || 0);
-    return {
-      title: `INDEX ${processed}/${job.index_total_chunks || 0}`,
-      detail: `Indexando ${processed}/${job.index_total_chunks || 0} chunks`,
-    };
-  }
-  if (job.phase === "gathering_evidence") {
-    return {
-      title: `EVID ${job.evidence_processed_questions || 0}/${job.evidence_total_questions || 0}`,
-      detail: `Reuniendo evidencia ${job.evidence_processed_questions || 0}/${job.evidence_total_questions || 0} preguntas`,
-    };
-  }
-  if (job.phase === "verifying_questions") {
-    return {
-      title: `QC ${job.processed_questions || 0}/${job.total_questions || 0}`,
-      detail: `Verificando ${job.processed_questions || 0}/${job.total_questions || 0} preguntas`,
-    };
-  }
-  if (job.phase === "completed") {
-    return {
-      title: "COMPLETADO",
-      detail: "AI Autopilot completado",
-    };
-  }
-  return { title: "PREPARANDO", detail: "Preparando AI Autopilot" };
-}
-
-export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Props) {
+function QCBuilderPanel({
+  caseId,
+  caseData,
+  pages,
+  onCaseUpdated,
+  onRefresh,
+  docTypes = [],
+}: Props) {
   const [checklists, setChecklists] = useState<QCChecklist[]>([]);
   const [templates, setTemplates] = useState<QCChecklist[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedParts, setExpandedParts] = useState<Record<string, boolean>>({});
   const [expandedCl, setExpandedCl] = useState<Record<string, boolean>>({});
   const [showTemplates, setShowTemplates] = useState(false);
-  const [verifyingQ, setVerifyingQ] = useState<string | null>(null);
-  const [verifyingPart, setVerifyingPart] = useState<string | null>(null);
-  const [verifyingCl, setVerifyingCl] = useState<string | null>(null);
   const [geminiOk, setGeminiOk] = useState(false);
   const [mappingQ, setMappingQ] = useState<string | null>(null);
 
-  const allSections = docTypes.flatMap((dt) => flattenSections(dt.sections));
+  const allSections = useMemo(
+    () => docTypes.flatMap((dt) => flattenSections(dt.sections)),
+    [docTypes]
+  );
 
   useEffect(() => { getExtractionStatus().then((r) => setGeminiOk(r.configured)).catch(() => {}); }, []);
 
@@ -174,6 +130,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
   // Link presets state
   const [linkPresets, setLinkPresets] = useState<QCLinkPreset[]>([]);
   const [showPresetMenuFor, setShowPresetMenuFor] = useState<string | null>(null);
+  const [savingDocumentScope, setSavingDocumentScope] = useState(false);
 
   const reload = async () => {
     setLoading(true);
@@ -190,8 +147,46 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
 
   useEffect(() => { reload(); }, [caseId]);
 
+  const qcScopeDocuments = listSelectableCaseDocuments(pages);
+  const selectedQcSourceDocumentIds = resolveSelectedSourceDocumentIds(
+    caseData,
+    "qc_checklist_source_document_ids",
+    qcScopeDocuments
+  );
+  const canRunQcAutopilot =
+    pages.length > 0 &&
+    (qcScopeDocuments.length === 0 || selectedQcSourceDocumentIds.length > 0);
+
+  const handleQcScopeChange = async (nextSelectedIds: string[]) => {
+    setSavingDocumentScope(true);
+    try {
+      const updatedCase = await updateCase(
+        caseId,
+        buildScopeUpdatePayload(
+          "qc_checklist_source_document_ids",
+          nextSelectedIds,
+          qcScopeDocuments
+        )
+      );
+      onCaseUpdated?.(updatedCase);
+    } catch {
+      toast.error("No se pudo guardar el alcance de documentos para QC");
+    } finally {
+      setSavingDocumentScope(false);
+    }
+  };
+
   const togglePart = (id: string) => setExpandedParts((p) => ({ ...p, [id]: !p[id] }));
   const toggleCl = (id: string) => setExpandedCl((p) => ({ ...p, [id]: !p[id] }));
+  const appliedTemplateIds = useMemo(
+    () =>
+      new Set(
+        checklists
+          .map((cl) => cl.source_template_id)
+          .filter((id): id is string => Boolean(id))
+      ),
+    [checklists]
+  );
 
   const handleCreateChecklist = async () => {
     if (!clName.trim()) return;
@@ -201,20 +196,29 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
   };
 
   const handleApplyTemplate = async (tplId: string) => {
-    try {
-      await applyQCTemplate(caseId, tplId);
-      toast.success("Plantilla QC aplicada");
+    if (appliedTemplateIds.has(tplId)) {
+      toast("Esta plantilla QC ya fue aplicada a este caso.");
+      return;
+    }
+    const promise = applyQCTemplate(caseId, tplId).then(async () => {
       setShowTemplates(false);
-      await reload(); onRefresh();
-    } catch { toast.error("Error al aplicar plantilla"); }
+      await reload();
+      onRefresh();
+    });
+    toast.promise(promise, {
+      loading: "Aplicando plantilla…",
+      success: "Plantilla QC aplicada",
+      error: (error: unknown) => getApiErrorMessage(error, "Error al aplicar plantilla")
+    });
   };
 
-  const handleSeedI914 = async () => {
-    try {
-      await seedI914Template();
-      toast.success("Plantilla I-914 precargada");
-      await reload();
-    } catch { toast.error("Error al precargar I-914"); }
+  const handleSeedAll = async () => {
+    const promise = seedAllQCTemplates().then(reload);
+    toast.promise(promise, {
+      loading: "Precargando todas las plantillas…",
+      success: "Plantillas QC precargadas",
+      error: "Error al precargar plantillas"
+    });
   };
 
   const handleAddPart = async (clId: string, parentPartId?: string) => {
@@ -243,114 +247,10 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
     } catch { toast.error("Error al actualizar respuesta"); }
   };
 
-  const handleAIVerify = async (qId: string) => {
-    setVerifyingQ(qId);
-    try {
-      await aiVerifyQuestion(qId);
-      toast.success("Verificación AI completada");
-      await reload();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Error en verificación AI");
-    }
-    setVerifyingQ(null);
-  };
-
-  const handleAIVerifyPart = async (partId: string) => {
-    setVerifyingPart(partId);
-    try {
-      const result = await aiVerifyPart(partId);
-      toast.success(`AI: ${result.verified} verificadas, ${result.skipped} sin páginas objetivo`);
-      await reload();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Error en verificación AI batch");
-    }
-    setVerifyingPart(null);
-  };
-
-  // ── AI Autopilot (real backend endpoint) ──
-  const [autopilotJob, setAutopilotJob] = useState<AutopilotJob | null>(null);
-  const autopilotPollRef = useRef<number | null>(null);
-
-  const clearAutopilotPoll = () => {
-    if (autopilotPollRef.current !== null) {
-      window.clearTimeout(autopilotPollRef.current);
-      autopilotPollRef.current = null;
-    }
-  };
-
-  const nextAutopilotPollDelay = (phase?: string) => {
-    if (typeof document !== "undefined" && document.visibilityState === "hidden") {
-      return 10000;
-    }
-    if (phase === "extracting_document" || phase === "writing_json" || phase === "indexing_document") {
-      return 5000;
-    }
-    return 2500;
-  };
-
-  useEffect(() => () => clearAutopilotPoll(), []);
-
-  const handleAIVerifyChecklist = async (clId: string) => {
-    clearAutopilotPoll();
-    setVerifyingCl(clId);
-    try {
-      const job = await startAutopilot(clId);
-      setAutopilotJob(job);
-      toast.success("AI Autopilot iniciado");
-      pollAutopilotJob(job.id, clId);
-    } catch (err: any) {
-      const detail = err?.response?.data?.detail;
-      if (detail) toast.error(detail);
-      else toast.error("Error al iniciar AI Autopilot");
-      setVerifyingCl(null);
-    }
-  };
-
-  const pollAutopilotJob = (jobId: string, _clId: string) => {
-    const tick = async () => {
-      try {
-        const job = await getAutopilotJob(jobId);
-        setAutopilotJob(job);
-        if (job.status === "completed") {
-          clearAutopilotPoll();
-          setVerifyingCl(null);
-          setAutopilotJob(null);
-          if (job.verified === 0 && job.skipped > 0) {
-            toast.error(
-              `AI Autopilot: ${job.skipped} preguntas omitidas. Las preguntas necesitan paginas vinculadas (evidencia o secciones mapeadas con paginas clasificadas).`,
-              { duration: 8000 }
-            );
-          } else if (job.verified > 0) {
-            toast.success(
-              `AI Autopilot completado: ${job.verified} verificadas` +
-              (job.skipped > 0 ? `, ${job.skipped} omitidas (sin paginas)` : "") +
-              (job.errors > 0 ? `, ${job.errors} errores` : "")
-            );
-          } else {
-            toast.success("AI Autopilot completado");
-          }
-          await reload();
-        } else if (job.status === "failed") {
-          clearAutopilotPoll();
-          setVerifyingCl(null);
-          toast.error(`AI Autopilot fallo: ${job.error_message || "error desconocido"}`);
-          setAutopilotJob(null);
-        } else {
-          autopilotPollRef.current = window.setTimeout(() => {
-            void tick();
-          }, nextAutopilotPollDelay(job.phase));
-        }
-      } catch {
-        clearAutopilotPoll();
-        setVerifyingCl(null);
-        setAutopilotJob(null);
-      }
-    };
-
-    autopilotPollRef.current = window.setTimeout(() => {
-      void tick();
-    }, nextAutopilotPollDelay("loading_questions"));
-  };
+  const { autopilotJob, verifyingCl, handleAIVerifyChecklist } = useQcAutopilot({
+    caseId,
+    reload,
+  });
 
   // ── QC Semantic Query state ──
   const [semanticClId, setSemanticClId] = useState<string | null>(null);
@@ -361,21 +261,18 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
 
   useEffect(() => {
     getExtractionStatus()
-      .then((r: any) => setIndexingOk(r.indexing_configured ?? false))
+      .then((r) => setIndexingOk(r.indexing_configured ?? false))
       .catch(() => {});
   }, []);
 
   const handleSemanticSearch = async (clId: string) => {
-    if (!semanticQ.trim()) return;
-    setSemanticSearching(true);
-    try {
-      const result = await qcSemanticQuery(clId, semanticQ.trim());
-      setSemanticResults(result.matches);
-      if (result.matches.length === 0) toast("Sin resultados para esa consulta");
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Error en consulta semantica");
-    }
-    setSemanticSearching(false);
+    await runSemanticSearch({
+      query: semanticQ,
+      search: (question) => qcSemanticQuery(clId, question),
+      setSearching: setSemanticSearching,
+      setResults: setSemanticResults,
+      fallbackError: "Error en consulta semantica",
+    });
   };
 
   const handleToggleSectionTarget = async (qId: string, sectionId: string, current: string[]) => {
@@ -386,13 +283,6 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
       await updateQCQuestion(qId, { target_section_ids: next });
       await reload();
     } catch { toast.error("Error al actualizar secciones"); }
-  };
-
-  const handleSeedDocTaxonomy = async () => {
-    try {
-      await seedI914DocTaxonomy();
-      toast.success("Taxonomía I-914 precargada. Ve a Organizar → Plantillas para aplicarla.");
-    } catch { toast.error("Error al precargar taxonomía"); }
   };
 
   // ── Link preset handlers ──
@@ -430,8 +320,8 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
       await autoLinkQCSections(caseId, clId);
       toast.success("Auto-mapeo ejecutado");
       await reload();
-    } catch (err: any) {
-      toast.error(err?.response?.data?.detail || "Error al auto-mapear secciones");
+    } catch (error: unknown) {
+      toast.error(getApiErrorMessage(error, "Error al auto-mapear secciones"));
     }
   };
 
@@ -447,7 +337,6 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
 
   // Render a question row
   const renderQuestion = (q: QCQuestion) => {
-    const ans = ANSWER_STYLES[q.answer] || ANSWER_STYLES.unanswered;
     const hasAI = !!q.ai_answer;
     const aiExpanded = expandedAI[q.id];
     const mappedCount = q.target_section_ids?.length || 0;
@@ -541,7 +430,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
                   key={ansKey}
                   onClick={() => handleSetAnswer(q, ansKey)}
                   aria-label={isSelected ? "Quitar selección" : `Marcar como ${style.label}`}
-                  className={`w-9 sm:w-10 py-2 rounded-md text-xs font-semibold transition-all ${
+                  className={`w-9 sm:w-10 py-2 rounded-md text-xs font-semibold transition-[background-color,border-color,color,box-shadow] ${
                     isSelected
                       ? `${style.bg} ${style.text} shadow-sm border border-black/5`
                       : "text-gray-500 hover:bg-gray-200 border border-transparent"
@@ -630,7 +519,6 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
   const renderPart = (part: QCPart, clId: string, indent: number, allParts: QCPart[] = []) => {
     const isExpanded = expandedParts[part.id] !== false;
     const hasChildren = part.children && part.children.length > 0;
-    const hasQuestions = part.questions && part.questions.length > 0;
     const stats = countPartQuestions(part, allParts);
     const pct = stats.total > 0 ? Math.round((stats.answered / stats.total) * 100) : 0;
     const pctColor = pct === 100 ? "bg-green-500" : pct > 50 ? "bg-blue-500" : pct > 0 ? "bg-amber-500" : "bg-gray-300";
@@ -653,7 +541,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
           {stats.total > 0 && (
             <div className="flex items-center gap-1.5 shrink-0">
               <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                <div className={`h-full rounded-full transition-all ${pctColor}`} style={{ width: `${pct}%` }} />
+                <div className={`h-full rounded-full transition-[width,background-color] ${pctColor}`} style={{ width: `${pct}%` }} />
               </div>
               <span className="text-xs text-gray-500 font-mono w-12 text-right">{stats.answered}/{stats.total}</span>
             </div>
@@ -729,21 +617,6 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
           <ClipboardList className="w-4 h-4" /> QC Checklists
         </h3>
         <div className="flex gap-2 items-center">
-          {checklists.length > 0 && (
-            <Tooltip content="Descargar reporte de QC en PDF">
-              <motion.a
-                whileHover={{ scale: 1.02 }}
-                whileTap={{ scale: 0.98 }}
-                href={exportQCReport(caseId)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-700 hover:bg-emerald-100 transition shadow-sm mr-2"
-              >
-                <AnimatedReport className="w-4 h-4" />
-                <span className="text-xs font-semibold">Descargar Reporte</span>
-              </motion.a>
-            </Tooltip>
-          )}
           <div className="flex gap-1">
             <Tooltip content="Plantillas QC disponibles">
               <button aria-label="Plantillas QC disponibles" onClick={() => setShowTemplates(!showTemplates)} className={`p-1.5 rounded transition focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-300 ${showTemplates ? "bg-purple-100 text-purple-600" : "text-gray-500 hover:bg-gray-200"}`}>
@@ -759,33 +632,66 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
         </div>
       </div>
 
+      <CaseDocumentScopePicker
+        title="Documentos para QC automatico"
+        description="Selecciona que documentos del caso puede usar el AI Autopilot y la verificacion automatica del QC."
+        documents={qcScopeDocuments}
+        selectedIds={selectedQcSourceDocumentIds}
+        saving={savingDocumentScope}
+        onChange={handleQcScopeChange}
+      />
+
       {/* Template selector */}
       {showTemplates && (
         <div className="p-2 bg-purple-50 rounded-lg border border-purple-200">
-          <p className="text-xs font-semibold text-purple-700 uppercase mb-1">Plantillas QC</p>
-          {templates.length === 0 ? (
-            <div className="flex flex-col gap-1">
-              <p className="text-xs text-gray-400 italic">No hay plantillas. Precarga:</p>
-              <div className="flex gap-1">
-                <button onClick={handleSeedI914} className="text-xs bg-purple-600 text-white rounded py-1 px-2 hover:bg-purple-700 transition">
-                  I-914 QC Checklist
-                </button>
-                <button onClick={handleSeedDocTaxonomy} className="text-xs bg-indigo-600 text-white rounded py-1 px-2 hover:bg-indigo-700 transition">
-                  I-914 Documentos
-                </button>
-              </div>
+          <div className="flex justify-between items-center mb-1">
+            <p className="text-xs font-semibold text-purple-700 uppercase">Plantillas QC</p>
+            <button onClick={handleSeedAll} className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded hover:bg-purple-200 transition font-medium border border-purple-200">
+              Recargar plantillas
+            </button>
+          </div>
+          {loading ? (
+            <div className="flex justify-center p-3">
+              <Loader2 className="w-5 h-5 animate-spin text-purple-400" />
+            </div>
+          ) : templates.length === 0 ? (
+            <div className="flex flex-col gap-2">
+              <p className="text-xs text-gray-400 italic">No hay plantillas disponibles.</p>
             </div>
           ) : (
             <div className="flex flex-col gap-1">
-              {templates.map((tpl) => (
-                <button key={tpl.id} onClick={() => handleApplyTemplate(tpl.id)} className="flex items-center gap-1.5 text-xs text-left px-2 py-1.5 rounded hover:bg-purple-100 transition">
-                  <FilePlus className="w-3.5 h-3.5 text-purple-500 shrink-0" />
-                  <div className="flex-1">
-                    <span className="font-medium text-gray-800">{tpl.name}</span>
-                    <span className="text-xs text-gray-400 ml-1">{tpl.total_questions} preguntas</span>
-                  </div>
-                </button>
-              ))}
+              {templates.map((tpl) => {
+                const isApplied = appliedTemplateIds.has(tpl.id);
+                return (
+                  <button
+                    key={tpl.id}
+                    onClick={() => handleApplyTemplate(tpl.id)}
+                    disabled={isApplied}
+                    className={`flex items-center gap-1.5 text-xs text-left px-2 py-1.5 rounded transition ${
+                      isApplied
+                        ? "bg-white/70 text-gray-400 cursor-not-allowed"
+                        : "hover:bg-purple-100"
+                    }`}
+                  >
+                    {isApplied ? (
+                      <Check className="w-3.5 h-3.5 text-green-500 shrink-0" />
+                    ) : (
+                      <FilePlus className="w-3.5 h-3.5 text-purple-500 shrink-0" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <span className={`font-medium ${isApplied ? "text-gray-500" : "text-gray-800"}`}>
+                        {tpl.name}
+                      </span>
+                      <span className="text-xs text-gray-400 ml-1">{tpl.total_questions} preguntas</span>
+                    </div>
+                    {isApplied && (
+                      <span className="shrink-0 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700">
+                        Aplicada
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
@@ -821,7 +727,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
                       <span className="text-xs text-gray-400">{activeProgress}%</span>
                       <div className="w-24 h-1.5 bg-purple-100 rounded-full overflow-hidden">
                         <div
-                          className="h-full rounded-full bg-gradient-to-r from-purple-500 to-blue-500 transition-all"
+                          className="h-full rounded-full bg-gradient-to-r from-purple-500 to-blue-500 transition-[width]"
                           style={{ width: `${activeProgress}%` }}
                         />
                       </div>
@@ -831,7 +737,7 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
                   <div className="flex items-center gap-2">
                     <span className="text-xs text-gray-400">{cl.answered_questions}/{cl.total_questions} ({pct}%)</span>
                     <div className="w-20 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                      <div className="h-full bg-green-500 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                      <div className="h-full bg-green-500 rounded-full transition-[width]" style={{ width: `${pct}%` }} />
                     </div>
                   </div>
                 )}
@@ -840,9 +746,9 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
               {/* AI Verify Checklist — PREMIUM BUTTON */}
               {cl.total_questions > 0 && (
                 <button
-                  onClick={(e) => { e.stopPropagation(); geminiOk ? handleAIVerifyChecklist(cl.id) : toast.error("Configura GEMINI_API_KEY en backend/.env"); }}
-                  disabled={verifyingCl === cl.id}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition-all disabled:opacity-50 shrink-0 border relative overflow-hidden group/ai ${
+                  onClick={(e) => { e.stopPropagation(); geminiOk ? handleAIVerifyChecklist(cl.id) : toast.error("Configura GEMINI_API_KEY en el archivo .env del proyecto"); }}
+                  disabled={verifyingCl === cl.id || !canRunQcAutopilot}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition-[background-color,border-color,color,box-shadow,opacity] disabled:opacity-50 shrink-0 border relative overflow-hidden group/ai ${
                     geminiOk
                       ? "bg-[#0B0F19] text-white border-gray-700 shadow-lg hover:shadow-purple-500/25 hover:border-purple-500/50"
                       : "bg-gray-100 text-gray-400 hover:bg-gray-200"
@@ -867,56 +773,87 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
                 </button>
               )}
 
-              {/* Semantic Query button */}
-              {indexingOk && !cl.is_template && cl.case_id && (
-                <Tooltip content="Busqueda semantica en respuestas QC">
+              {/* Actions Dropdown */}
+              <div className="relative group/menu" onClick={(e) => e.stopPropagation()}>
+                <button className="p-1.5 text-gray-400 hover:text-gray-600 transition rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300">
+                  <MoreVertical className="w-4 h-4" />
+                </button>
+                {/* Invisible bridge to keep hover active */}
+                <div className="absolute right-0 top-full w-full h-2"></div>
+                <div className="absolute right-0 top-full mt-1 w-56 bg-white rounded-lg shadow-xl border border-gray-100 opacity-0 invisible -translate-y-2 scale-95 group-hover/menu:opacity-100 group-hover/menu:visible group-hover/menu:translate-y-0 group-hover/menu:scale-100 transition-[opacity,transform] duration-200 ease-out origin-top-right z-50 flex flex-col py-1">
                   <button
-                    aria-label="Búsqueda semántica en respuestas QC"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setSemanticClId(semanticClId === cl.id ? null : cl.id);
-                      setSemanticResults([]);
-                      setSemanticQ("");
-                    }}
-                    className={`p-1.5 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-300 rounded ${
-                      semanticClId === cl.id ? "text-purple-600" : "text-gray-400 hover:text-purple-600"
-                    }`}
+                    onClick={() => downloadExportSingleQCReport(caseId, cl.id)}
+                    className="flex items-center gap-2 px-3 py-2 text-xs text-gray-600 hover:bg-emerald-50 hover:text-emerald-700 transition-colors w-full text-left"
                   >
-                    <Search className="w-3.5 h-3.5" />
+                    <Download className="w-3.5 h-3.5" />
+                    Descargar reporte PDF
                   </button>
-                </Tooltip>
-              )}
 
-              <Tooltip content="Guardar como plantilla reutilizable">
-                <button aria-label="Guardar como plantilla" onClick={async (e) => { e.stopPropagation(); try { await saveQCAsTemplate(cl.id); toast.success("Guardado como plantilla"); await reload(); } catch { toast.error("Error"); } }} className="p-1.5 text-gray-400 hover:text-purple-600 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-300 rounded">
-                  <Save className="w-3.5 h-3.5" />
-                </button>
-              </Tooltip>
-              <Tooltip content="Guardar preset de vinculación QC ↔ Doc">
-                <button aria-label="Guardar preset de vinculación" onClick={(e) => { e.stopPropagation(); handleSaveLinkPreset(cl.id, cl.name); }} className="p-1.5 text-gray-400 hover:text-teal-600 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-300 rounded">
-                  <Bookmark className="w-3.5 h-3.5" />
-                </button>
-              </Tooltip>
-              <Tooltip content="Aplicar preset de vinculación">
-                <button aria-label="Aplicar preset de vinculación" onClick={(e) => { e.stopPropagation(); handleShowPresets(cl.id, cl.source_template_id); }} className={`p-1.5 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-300 rounded ${showPresetMenuFor === cl.id ? "text-teal-600" : "text-gray-400 hover:text-teal-600"}`}>
-                  <Link2 className="w-3.5 h-3.5" />
-                </button>
-              </Tooltip>
-              <Tooltip content="Auto-mapear secciones desde Where to verify">
-                <button aria-label="Auto-mapear secciones" onClick={(e) => { e.stopPropagation(); handleAutoLinkSections(cl.id); }} className="p-1.5 text-gray-400 hover:text-amber-600 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-300 rounded">
-                  <Sparkles className="w-3.5 h-3.5" />
-                </button>
-              </Tooltip>
-              <Tooltip content="Agregar parte raíz">
-                <button aria-label="Agregar parte raíz" onClick={(e) => { e.stopPropagation(); const sib = cl.parts || []; setNewCode(nextCode(sib)); setNewName(""); setAddingPartFor(cl.id); setAddingSubpartFor(null); }} className="p-1.5 text-gray-400 hover:text-brand-600 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 rounded">
-                  <Plus className="w-3.5 h-3.5" />
-                </button>
-              </Tooltip>
-              <Tooltip content="Eliminar QC checklist">
-                <button aria-label="Eliminar QC checklist" onClick={(e) => { e.stopPropagation(); if (confirm("Eliminar QC checklist?")) deleteQCChecklist(cl.id).then(reload); }} className="p-1.5 text-gray-400 hover:text-red-500 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 rounded">
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </Tooltip>
+                  {indexingOk && !cl.is_template && cl.case_id && (
+                    <button
+                      onClick={() => {
+                        setSemanticClId(semanticClId === cl.id ? null : cl.id);
+                        setSemanticResults([]);
+                        setSemanticQ("");
+                      }}
+                      className="flex items-center gap-2 px-3 py-2 text-xs text-gray-600 hover:bg-purple-50 hover:text-purple-700 transition-colors text-left"
+                    >
+                      <Search className="w-3.5 h-3.5" />
+                      Búsqueda semántica
+                    </button>
+                  )}
+
+                  <button
+                    onClick={async () => { try { await saveQCAsTemplate(cl.id); toast.success("Guardado como plantilla"); await reload(); } catch { toast.error("Error"); } }}
+                    className="flex items-center gap-2 px-3 py-2 text-xs text-gray-600 hover:bg-purple-50 hover:text-purple-700 transition-colors text-left"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    Guardar como plantilla
+                  </button>
+
+                  <button
+                    onClick={() => handleSaveLinkPreset(cl.id, cl.name)}
+                    className="flex items-center gap-2 px-3 py-2 text-xs text-gray-600 hover:bg-teal-50 hover:text-teal-700 transition-colors text-left"
+                  >
+                    <Bookmark className="w-3.5 h-3.5" />
+                    Guardar preset de vinculación
+                  </button>
+
+                  <button
+                    onClick={() => handleShowPresets(cl.id, cl.source_template_id)}
+                    className="flex items-center gap-2 px-3 py-2 text-xs text-gray-600 hover:bg-teal-50 hover:text-teal-700 transition-colors text-left"
+                  >
+                    <Link2 className="w-3.5 h-3.5" />
+                    Aplicar preset de vinculación
+                  </button>
+
+                  <button
+                    onClick={() => handleAutoLinkSections(cl.id)}
+                    className="flex items-center gap-2 px-3 py-2 text-xs text-gray-600 hover:bg-amber-50 hover:text-amber-700 transition-colors text-left"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    Auto-mapear secciones
+                  </button>
+
+                  <div className="h-px bg-gray-100 my-1"></div>
+
+                  <button
+                    onClick={() => { const sib = cl.parts || []; setNewCode(nextCode(sib)); setNewName(""); setAddingPartFor(cl.id); setAddingSubpartFor(null); }}
+                    className="flex items-center gap-2 px-3 py-2 text-xs text-gray-600 hover:bg-brand-50 hover:text-brand-700 transition-colors text-left"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    Agregar parte raíz
+                  </button>
+
+                  <button
+                    onClick={() => { if (confirm("Eliminar QC checklist?")) deleteQCChecklist(cl.id).then(reload); }}
+                    className="flex items-center gap-2 px-3 py-2 text-xs text-red-600 hover:bg-red-50 transition-colors text-left"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                    Eliminar checklist
+                  </button>
+                </div>
+              </div>
             </div>
 
             {/* Preset picker */}
@@ -1034,3 +971,4 @@ export default function QCBuilderPanel({ caseId, onRefresh, docTypes = [] }: Pro
   );
 }
 
+export default memo(QCBuilderPanel);

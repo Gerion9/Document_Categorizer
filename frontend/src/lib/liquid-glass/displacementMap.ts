@@ -40,12 +40,6 @@ export function generateDisplacementMap(
   const ratioX = width > height ? 1 : width / height;
   const ratioY = height > width ? 1 : height / width;
   
-  const radiusX = (size / 2) * ratioX;
-  const radiusY = (size / 2) * ratioY;
-  
-  const innerRadiusX = Math.max(0, radiusX - (bezel / Math.max(width, height)) * size);
-  const innerRadiusY = Math.max(0, radiusY - (bezel / Math.max(width, height)) * size);
-  
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
       const dx = (x - cx) / ratioX;

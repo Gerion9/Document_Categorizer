@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import { useEffect, useState } from "react";
 import { generateDisplacementMap } from "../../lib/liquid-glass/displacementMap";
 import { SurfaceProfile } from "../../lib/liquid-glass/surfaceFunctions";
 import { supportsLiquidGlass } from "../../lib/liquid-glass/featureDetection";

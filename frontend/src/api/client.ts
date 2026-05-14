@@ -4,10 +4,15 @@
  */
 
 import axios from "axios";
+import toast from "react-hot-toast";
 import type {
   AuditEntry,
+  AutofillJobStatus,
   AutopilotJob,
   Case,
+  FormTypeInfo,
+  TeamDetail,
+  TeamSummary,
   Checklist,
   ChecklistItem,
   DocumentType,
@@ -16,16 +21,82 @@ import type {
   ExtractionStatus,
   Page,
   PageSectionLink,
+  QuestionnaireAnswerMap,
+  QuestionnaireAutofillResponse,
+  QuestionnairePage,
   RagQueryResponse,
+  SaveQuestionnaireAnswerPayload,
   Section,
+  SupervisorCase,
   Template,
+  FormFillingJob,
+  VerificationMap,
 } from "../types";
 
-const api = axios.create({ baseURL: "/api" });
+const api = axios.create({ baseURL: import.meta.env.VITE_API_URL || "/api" });
+
+const AUTOFILL_HTTP_TIMEOUT_MS = 30_000;
+const AUTOFILL_POLL_INTERVAL_MS = 5_000;
+const AUTOFILL_MAX_TOTAL_MS = 60 * 60 * 1000;
+const AUTOFILL_POLL_MAX_TRANSIENT_FAILURES = 5;
+
+function _isTransientNetworkError(error: unknown): boolean {
+  if (!axios.isAxiosError(error)) return false;
+  if (error.code === "ECONNABORTED") return true;
+  if (error.code === "ERR_NETWORK") return true;
+  if (/timeout/i.test(error.message || "")) return true;
+  const status = error.response?.status ?? 0;
+  return status === 502 || status === 503 || status === 504;
+}
+
+api.interceptors.request.use((config) => {
+  const token = sessionStorage.getItem("auth_token");
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
+});
 
 /* ── Cases ──────────────────────────────────────────────────────────── */
 
 export const getCases = () => api.get<Case[]>("/cases").then((r) => r.data);
+
+export const getSupervisorCases = () =>
+  api.get<SupervisorCase[]>("/supervisor/cases").then((r) => r.data);
+
+export const getSupervisorTeamCases = (teamUuid: string) =>
+  api
+    .get<SupervisorCase[]>(`/supervisor/teams/${teamUuid}/cases`)
+    .then((r) => r.data);
+
+export const getTeams = () =>
+  api.get<TeamSummary[]>("/teams").then((r) => r.data);
+
+export interface CreateTeamPayload {
+  name: string;
+  users?: { id: number; is_primary?: boolean }[];
+}
+
+export const createTeam = (payload: CreateTeamPayload) =>
+  api
+    .post<TeamDetail>("/teams", {
+      name: payload.name,
+      users: payload.users ?? [],
+    })
+    .then((r) => r.data);
+
+export interface UpdateTeamPayload {
+  name?: string;
+  users: { id: number; uuid_team_user?: string; is_primary?: boolean }[];
+}
+
+export const updateTeam = (teamUuid: string, payload: UpdateTeamPayload) =>
+  api
+    .put<TeamDetail>(`/teams/${teamUuid}`, payload)
+    .then((r) => r.data);
+
+export const getTeamUsers = (teamUuid: string) =>
+  api.get<TeamDetail>(`/teams/${teamUuid}/users`).then((r) => r.data);
 
 export const getCase = (id: string) =>
   api.get<Case>(`/cases/${id}`).then((r) => r.data);
@@ -145,9 +216,6 @@ export const setPagePrimaryLink = (pageId: string, sectionId: string) =>
   api.put<Page>(`/pages/${pageId}/section-links/primary`, { section_id: sectionId }).then((r) => r.data);
 
 /* ── Checklists ─────────────────────────────────────────────────────── */
-
-export const getChecklists = (caseId: string) =>
-  api.get<Checklist[]>(`/cases/${caseId}/checklists`).then((r) => r.data);
 
 export const createChecklist = (caseId: string, name: string) =>
   api
@@ -294,6 +362,15 @@ export const deleteQCEvidence = (evId: string) =>
 export const seedI914Template = () =>
   api.post("/qc-checklists/seed/i914").then((r) => r.data);
 
+export const seedI765Template = () =>
+  api.post("/qc-checklists/seed/i765").then((r) => r.data);
+
+export const seedI192Template = () =>
+  api.post("/qc-checklists/seed/i192").then((r) => r.data);
+
+export const seedAllQCTemplates = () =>
+  api.post("/qc-checklists/seed/all").then((r) => r.data);
+
 export const seedI914DocTaxonomy = () =>
   api.post("/templates/seed/i914-docs").then((r) => r.data);
 
@@ -330,14 +407,261 @@ export const autoLinkQCSections = (caseId: string, clId: string) =>
 
 /* ── Export ──────────────────────────────────────────────────────────── */
 
-export const exportPdf = (caseId: string) =>
-  `/api/cases/${caseId}/export/pdf`;
+function downloadBlob(data: Blob, filename: string) {
+  const url = URL.createObjectURL(data);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  URL.revokeObjectURL(url);
+}
 
-export const exportReport = (caseId: string) =>
-  `/api/cases/${caseId}/export/report`;
+function withCacheKey(endpoint: string, cacheKey?: string | null) {
+  const normalizedCacheKey = cacheKey?.trim();
+  if (!normalizedCacheKey) {
+    return endpoint;
+  }
+  const separator = endpoint.includes("?") ? "&" : "?";
+  return `${endpoint}${separator}v=${encodeURIComponent(normalizedCacheKey)}`;
+}
 
-export const exportQCReport = (caseId: string) =>
-  `/api/cases/${caseId}/export/qc-report`;
+async function exportFile(endpoint: string, fallbackName: string, cacheKey?: string | null) {
+  const toastId = toast.loading("Preparando documento para descarga…");
+  try {
+    const res = await api.get(withCacheKey(endpoint, cacheKey), { responseType: "blob" });
+    const disposition = res.headers["content-disposition"] ?? "";
+    const match = disposition.match(/filename="?([^"]+)"?/);
+    const filename = match?.[1] ?? fallbackName;
+    downloadBlob(res.data, filename);
+    toast.success("Descarga iniciada", { id: toastId });
+  } catch (err) {
+    toast.error("Error al preparar la descarga", { id: toastId });
+  }
+}
+
+export const downloadExportPdf = (caseId: string) =>
+  exportFile(`/cases/${caseId}/export/pdf`, `expediente_${caseId}.pdf`);
+
+export const downloadExportReport = (caseId: string) =>
+  exportFile(`/cases/${caseId}/export/report`, `reporte_${caseId}.pdf`);
+
+export const downloadExportQCReport = (caseId: string) =>
+  exportFile(`/cases/${caseId}/export/qc-report`, `qc_reporte_${caseId}.pdf`);
+
+export const downloadExportSingleQCReport = (caseId: string, clId: string) =>
+  exportFile(`/cases/${caseId}/export/qc-report/${clId}`, `qc_reporte_${clId}.pdf`);
+
+/* ── Form Filling ──────────────────────────────────────────────────── */
+
+export const getAvailableFormTypes = () =>
+  api.get<FormTypeInfo[]>("/questionnaire/form-types").then((r) => r.data);
+
+export const getSharedQuestions = () =>
+  api.get<QuestionnairePage[]>("/questionnaire/shared-questions").then((r) => r.data);
+
+export const getFormClientQuestions = (formType: string) =>
+  api
+    .get<QuestionnairePage[]>(`/questionnaire/${formType}/client-questions`)
+    .then((r) => r.data);
+
+export const getFormAttorneyQuestions = (formType: string) =>
+  api
+    .get<QuestionnairePage[]>(`/questionnaire/${formType}/attorney-questions`)
+    .then((r) => r.data);
+
+export const getQuestionnaireAnswers = (caseId: string, formType?: string) =>
+  api
+    .get<QuestionnaireAnswerMap>(`/cases/${caseId}/questionnaire/answers`, {
+      params: formType ? { form_type: formType } : {},
+    })
+    .then((r) => r.data);
+
+export const getQuestionnaireVerifications = (caseId: string, formType?: string) =>
+  api
+    .get<VerificationMap>(`/cases/${caseId}/questionnaire/verifications`, {
+      params: formType ? { form_type: formType } : {},
+    })
+    .then((r) => r.data);
+
+export const saveQuestionnaireAnswers = (
+  caseId: string,
+  answers: SaveQuestionnaireAnswerPayload[]
+) =>
+  api
+    .post<{ saved_count: number }>(`/cases/${caseId}/questionnaire/answers`, { answers })
+    .then((r) => r.data);
+
+interface AutofillOcrCallbacks {
+  onOcrProgress?: (msg: string, pct: number) => void;
+  onOcrComplete?: () => void;
+  onJobStarted?: (jobId: string) => void;
+  signal?: AbortSignal;
+}
+
+async function runAutofillJob(
+  caseId: string,
+  kind: "shared" | "attorney",
+  callbacks?: AutofillOcrCallbacks,
+): Promise<QuestionnaireAutofillResponse> {
+  const startEndpoint = `/cases/${caseId}/questionnaire/${kind}/autofill`;
+  const startRes = await api.post<AutofillJobStatus>(startEndpoint, null, {
+    timeout: AUTOFILL_HTTP_TIMEOUT_MS,
+    validateStatus: (s) => (s >= 200 && s < 300) || s === 202,
+    signal: callbacks?.signal,
+  });
+
+  const job = startRes.data;
+  if (!job || !job.id) {
+    throw new Error("Autofill could not be started: no job id returned by server.");
+  }
+  callbacks?.onJobStarted?.(job.id);
+
+  const statusEndpoint = `/questionnaire/autofill-jobs/${job.id}`;
+  const startedAt = Date.now();
+  let lastStatus: AutofillJobStatus["status"] | null = null;
+  let transientFailures = 0;
+
+  while (true) {
+    if (Date.now() - startedAt > AUTOFILL_MAX_TOTAL_MS) {
+      throw new Error("Autofill exceeded the maximum allowed time. Please try again later.");
+    }
+    if (callbacks?.signal?.aborted) {
+      try {
+        await api.delete(statusEndpoint, { timeout: AUTOFILL_HTTP_TIMEOUT_MS });
+      } catch {
+        // best-effort cancellation
+      }
+      throw new DOMException("Autofill cancelled", "AbortError");
+    }
+
+    let current: AutofillJobStatus;
+    try {
+      const statusRes = await api.get<AutofillJobStatus>(statusEndpoint, {
+        timeout: AUTOFILL_HTTP_TIMEOUT_MS,
+        signal: callbacks?.signal,
+      });
+      current = statusRes.data;
+      transientFailures = 0;
+    } catch (err) {
+      if (axios.isCancel?.(err) || (err as { name?: string })?.name === "CanceledError") {
+        throw err;
+      }
+      if (_isTransientNetworkError(err)) {
+        transientFailures += 1;
+        if (transientFailures >= AUTOFILL_POLL_MAX_TRANSIENT_FAILURES) {
+          throw new Error(
+            "Lost connection to the autofill service. The job is still running on the server; please refresh in a few moments.",
+          );
+        }
+        await new Promise((r) => setTimeout(r, AUTOFILL_POLL_INTERVAL_MS));
+        continue;
+      }
+      throw err;
+    }
+
+    const wasOcrPreparing = lastStatus === "ocr_preparing";
+    if (current.status === "ocr_preparing") {
+      callbacks?.onOcrProgress?.(
+        current.progress_message ||
+          `Reading documents... (${current.ocr_processed_pages}/${current.ocr_total_pages} pages)`,
+        Math.round(Math.max(current.progress_pct, 2)),
+      );
+    } else if (current.status === "queued" || current.status === "running") {
+      if (wasOcrPreparing) {
+        callbacks?.onOcrComplete?.();
+      }
+      callbacks?.onOcrProgress?.(
+        current.progress_message || "Analyzing answers...",
+        Math.round(current.progress_pct),
+      );
+    }
+    lastStatus = current.status;
+
+    if (current.status === "completed") {
+      if (!current.result) {
+        throw new Error("Autofill completed but no result payload was returned.");
+      }
+      return current.result;
+    }
+    if (current.status === "failed") {
+      throw new Error(current.error || "Autofill failed.");
+    }
+    if (current.status === "cancelled") {
+      throw new DOMException("Autofill cancelled", "AbortError");
+    }
+
+    await new Promise((r) => setTimeout(r, AUTOFILL_POLL_INTERVAL_MS));
+  }
+}
+
+export const autofillSharedQuestionnaireAnswers = (
+  caseId: string,
+  callbacks?: AutofillOcrCallbacks,
+) => runAutofillJob(caseId, "shared", callbacks);
+
+export const autofillAttorneyAnswers = (
+  caseId: string,
+  callbacks?: AutofillOcrCallbacks,
+) => runAutofillJob(caseId, "attorney", callbacks);
+
+export const cancelAutofillJob = (jobId: string) =>
+  api
+    .delete<AutofillJobStatus>(`/questionnaire/autofill-jobs/${jobId}`, {
+      timeout: AUTOFILL_HTTP_TIMEOUT_MS,
+    })
+    .then((r) => r.data);
+
+export const getAutofillJob = (jobId: string) =>
+  api
+    .get<AutofillJobStatus>(`/questionnaire/autofill-jobs/${jobId}`, {
+      timeout: AUTOFILL_HTTP_TIMEOUT_MS,
+    })
+    .then((r) => r.data);
+
+export const getActiveAutofillJob = (
+  caseId: string,
+  kind: "shared" | "attorney",
+) =>
+  api
+    .get<AutofillJobStatus | null>(
+      `/cases/${caseId}/questionnaire/${kind}/autofill-jobs/active`,
+      { timeout: AUTOFILL_HTTP_TIMEOUT_MS },
+    )
+    .then((r) => r.data);
+
+export const generateFormFromAnswers = (caseId: string, formType: string) =>
+  api
+    .post<FormFillingJob>(`/cases/${caseId}/form-fill/generate`, { form_type: formType })
+    .then((r) => r.data);
+
+export const getFormFillingJobs = (caseId: string) =>
+  api.get<FormFillingJob[]>(`/cases/${caseId}/form-fill/jobs`).then((r) => r.data);
+
+export const getFormFillingJobStatus = (jobId: string) =>
+  api.get<FormFillingJob>(`/form-fill/jobs/${jobId}`).then((r) => r.data);
+
+export const regenerateFilledPdf = (jobId: string, preserveManualCorrections = true) =>
+  api.post<FormFillingJob>(`/form-fill/jobs/${jobId}/regenerate`, {
+    preserve_manual_corrections: preserveManualCorrections,
+  }).then((r) => r.data);
+
+export const downloadFilledPdf = (
+  jobId: string,
+  fallbackName: string,
+  cacheKey?: string | null
+) => exportFile(`/form-fill/jobs/${jobId}/download`, fallbackName, cacheKey);
+
+export const getFilledPdfBlobUrl = async (jobId: string, cacheKey?: string | null) => {
+  const res = await api.get(withCacheKey(`/form-fill/jobs/${jobId}/download`, cacheKey), {
+    responseType: "blob",
+  });
+  return URL.createObjectURL(res.data);
+};
+
+export const deleteFormFillingJob = (jobId: string) =>
+  api.delete(`/form-fill/jobs/${jobId}`);
 
 /* ── Extraction / OCR ──────────────────────────────────────────────── */
 
@@ -417,3 +741,72 @@ export const getAutopilotJob = (jobId: string) =>
 
 export const getAuditLog = (caseId: string) =>
   api.get<AuditEntry[]>(`/cases/${caseId}/audit`).then((r) => r.data);
+
+/* ── Users & Roles (admin) ──────────────────────────────────────────── */
+
+export interface UserRoleRef {
+  id: number;
+  name: string;
+}
+
+export interface UserDetail {
+  id: number;
+  email: string;
+  name: string;
+  roles: UserRoleRef[];
+  permissions: string[];
+  created_at?: string;
+}
+
+export interface RoleDetail {
+  id: number;
+  name: string;
+  permissions?: { id: number; name: string }[];
+  created_at?: string;
+}
+
+export const getUsers = () =>
+  api.get<UserDetail[]>("/users").then((r) => r.data);
+
+export const updateUserRoles = (userId: number, roleIds: number[]) =>
+  api
+    .put<UserDetail>(`/users/${userId}/roles`, { role_ids: roleIds })
+    .then((r) => r.data);
+
+export const deleteUser = (userId: number) =>
+  api.delete(`/users/${userId}`);
+
+export const getRoles = () =>
+  api.get<RoleDetail[]>("/roles").then((r) => r.data);
+
+/* ── Auth / SSO ────────────────────────────────────────────────────── */
+
+export interface AuthUser {
+  id: number;
+  email: string;
+  name: string;
+  roles: string[];
+  permissions: string[];
+}
+
+interface SSOLoginPayload {
+  email: string;
+  name: string;
+  first_name?: string;
+  last_name?: string;
+  role?: string;
+  signature: string;
+}
+
+interface SSOLoginResult {
+  token: string;
+  user: AuthUser;
+}
+
+export const authApi = {
+  ssoLogin: (data: SSOLoginPayload) =>
+    api.post<SSOLoginResult>("/sso-login", data).then((r) => r.data),
+
+  getMe: () =>
+    api.get<AuthUser>("/auth/me").then((r) => r.data),
+};

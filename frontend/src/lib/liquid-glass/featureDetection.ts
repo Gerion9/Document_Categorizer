@@ -12,4 +12,3 @@ export function supportsLiquidGlass(): boolean {
   isChromium = isChrome && !isSafari;
   return isChromium;
 }
-

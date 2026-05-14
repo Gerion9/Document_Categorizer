@@ -1,9 +1,10 @@
+import { memo } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import {
   SortableContext,
   verticalListSortingStrategy,
 } from "@dnd-kit/sortable";
-import { Inbox, FolderOpen, FileText, ChevronRight } from "lucide-react";
+import { Inbox, FolderOpen, FileText, ChevronRight, CheckCircle2 } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { Page } from "../types";
 import PageThumbnail from "./PageThumbnail";
@@ -61,11 +62,15 @@ interface Props {
   onRemovePage?: (pageId: string) => void;
   onClickPage?: (page: Page) => void;
   selectedPageId?: string | null;
+  /** Multi-select state */
+  multiSelectedIds?: Set<string>;
+  onToggleSelectPage?: (pageId: string, selected: boolean) => void;
+  onToggleSelectAll?: (pageIds: string[], selected: boolean) => void;
   /** If true, renders a simpler style (used for special zones like "extra", "unclassified") */
   isSpecialZone?: boolean;
 }
 
-export default function SectionDropZone({
+function SectionDropZone({
   sectionId,
   label,
   pathCode,
@@ -74,12 +79,23 @@ export default function SectionDropZone({
   onRemovePage,
   onClickPage,
   selectedPageId,
+  multiSelectedIds = new Set(),
+  onToggleSelectPage,
+  onToggleSelectAll,
   isSpecialZone = false,
 }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: sectionId });
 
   const extractedCount = pages.filter((p) => p.extraction_status === "done").length;
   const dc = depthConfig(depth);
+
+  const allSelected = pages.length > 0 && pages.every(p => multiSelectedIds.has(p.id));
+  
+  const handleToggleAll = () => {
+    if (onToggleSelectAll) {
+      onToggleSelectAll(pages.map(p => p.id), !allSelected);
+    }
+  };
 
   // Special zones (unclassified / extra) use neutral styling
   if (isSpecialZone) {
@@ -92,41 +108,56 @@ export default function SectionDropZone({
           backgroundColor: isOver ? "rgba(255, 251, 235, 0.4)" : "rgba(255, 255, 255, 0.2)",
         }}
         transition={{ duration: 0.2 }}
-        className="rounded-xl border border-dashed p-3 min-h-[80px] shadow-sm glass-fallback"
+        className="rounded-xl border border-dashed p-3 shadow-sm glass-fallback h-full min-h-[160px] overflow-hidden flex flex-col"
       >
-        {label && (
-          <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">
-            {label}
-          </h4>
-        )}
-        {pages.length === 0 ? (
-          <div className="flex flex-col items-center justify-center py-4 text-gray-300">
-            <Inbox className="w-6 h-6 mb-1 opacity-50" />
-            <span className="text-[10px]">Arrastra páginas aquí</span>
+        {label && label !== "" && (
+          <div className="flex items-center justify-between mb-2 shrink-0">
+            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">
+              {label}
+            </h4>
+            {onToggleSelectAll && pages.length > 0 && (
+              <button
+                onClick={handleToggleAll}
+                className="text-brand-500 hover:text-brand-600 transition-colors p-1 rounded-full hover:bg-brand-50"
+                title={allSelected ? "Deseleccionar todos" : "Seleccionar todos"}
+              >
+                {allSelected ? <CheckCircle2 className="w-4 h-4 fill-brand-100" /> : <div className="w-4 h-4 rounded-full border-2 border-brand-300" />}
+              </button>
+            )}
           </div>
-        ) : (
-          <SortableContext
-            items={pages.map((p) => `${p.id}::${sectionId}`)}
-            strategy={verticalListSortingStrategy}
-          >
-            <motion.div layout className="flex flex-wrap gap-2">
-              <AnimatePresence>
-                {pages.map((page) => (
-                  <PageThumbnail
-                    key={`${page.id}::${sectionId}`}
-                    page={page}
-                    sortableId={`${page.id}::${sectionId}`}
-                    sortable
-                    compact
-                    selected={selectedPageId === page.id}
-                    onRemove={onRemovePage ? () => onRemovePage(page.id) : undefined}
-                    onClick={() => onClickPage?.(page)}
-                  />
-                ))}
-              </AnimatePresence>
-            </motion.div>
-          </SortableContext>
         )}
+        <div className="flex-1 overflow-y-auto custom-scroll min-h-0">
+          {pages.length === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full py-4 text-gray-300">
+              <Inbox className="w-6 h-6 mb-1 opacity-50" />
+              <span className="text-[10px]">Arrastra páginas aquí</span>
+            </div>
+          ) : (
+            <SortableContext
+              items={pages.map((p) => `${p.id}::${sectionId}`)}
+              strategy={verticalListSortingStrategy}
+            >
+              <motion.div layout className="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] justify-items-center gap-2 pr-1 pb-2">
+                <AnimatePresence>
+                  {pages.map((page) => (
+                    <PageThumbnail
+                      key={`${page.id}::${sectionId}`}
+                      page={page}
+                      sortableId={`${page.id}::${sectionId}`}
+                      sortable
+                      compact
+                      selected={selectedPageId === page.id}
+                      multiSelected={multiSelectedIds.has(page.id)}
+                      onToggleSelect={(selected) => onToggleSelectPage?.(page.id, selected)}
+                      onRemove={onRemovePage ? () => onRemovePage(page.id) : undefined}
+                      onClick={() => onClickPage?.(page)}
+                    />
+                  ))}
+                </AnimatePresence>
+              </motion.div>
+            </SortableContext>
+          )}
+        </div>
       </motion.div>
     );
   }
@@ -177,6 +208,17 @@ export default function SectionDropZone({
           {label}
         </h4>
 
+        {/* Select all button */}
+        {onToggleSelectAll && pages.length > 0 && (
+          <button
+            onClick={handleToggleAll}
+            className="text-brand-500 hover:text-brand-600 transition-colors p-1 rounded-full hover:bg-brand-50 shrink-0 ml-2"
+            title={allSelected ? "Deseleccionar todos" : "Seleccionar todos"}
+          >
+            {allSelected ? <CheckCircle2 className="w-4 h-4 fill-brand-100" /> : <div className="w-4 h-4 rounded-full border-2 border-brand-300" />}
+          </button>
+        )}
+
         {/* Page count / extracted count */}
         <span className="text-[10px] text-gray-400 shrink-0">
           {pages.length > 0
@@ -207,7 +249,7 @@ export default function SectionDropZone({
           items={pages.map((p) => `${p.id}::${sectionId}`)}
           strategy={verticalListSortingStrategy}
         >
-          <motion.div layout className="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] gap-2">
+          <motion.div layout className="grid grid-cols-[repeat(auto-fill,minmax(96px,1fr))] justify-items-center gap-2">
             <AnimatePresence>
               {pages.map((page) => {
                 // Determine if this page is shown as secondary (reference) in this section
@@ -224,6 +266,8 @@ export default function SectionDropZone({
                     sortable
                     compact
                     selected={selectedPageId === page.id}
+                    multiSelected={multiSelectedIds.has(page.id)}
+                    onToggleSelect={(selected) => onToggleSelectPage?.(page.id, selected)}
                     onRemove={onRemovePage ? () => onRemovePage(page.id) : undefined}
                     onClick={() => onClickPage?.(page)}
                     isSecondary={isSecondary}
@@ -237,3 +281,5 @@ export default function SectionDropZone({
     </motion.div>
   );
 }
+
+export default memo(SectionDropZone);

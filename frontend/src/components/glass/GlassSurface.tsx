@@ -1,14 +1,15 @@
 import React, { HTMLAttributes } from "react";
+import type { MotionProps } from "framer-motion";
 import { supportsLiquidGlass } from "../../lib/liquid-glass/featureDetection";
 
-export interface GlassSurfaceProps extends HTMLAttributes<HTMLDivElement> {
+export type GlassSurfaceProps = Omit<HTMLAttributes<HTMLElement>, keyof MotionProps> &
+  Partial<MotionProps> & {
   filterId?: string;
   fallbackClassName?: string;
   children: React.ReactNode;
   as?: React.ElementType;
   contentClassName?: string;
-  [key: string]: any;
-}
+};
 
 export const GlassSurface = React.forwardRef<HTMLElement, GlassSurfaceProps>(
   (
