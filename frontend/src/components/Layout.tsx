@@ -229,11 +229,11 @@ export default function Layout() {
 
       <footer
         role="contentinfo"
-        className="relative z-[1] shrink-0 border-t border-brand-100/60 px-4 py-3 text-center"
+        className="relative z-[1] shrink-0 border-t border-brand-100/60 px-6 py-5 text-center"
       >
-        <p className="mx-auto max-w-3xl text-[11px] leading-relaxed text-brand-400/90">
-          Los contenidos generados por IA pueden contener errores. Revise siempre
-          la información con supervisión humana.
+        <p className="mx-auto max-w-3xl text-sm leading-relaxed text-brand-400/90">
+          Los contenidos generados por IA pueden contener errores.<br></br> 
+          Revise siempre la información con supervisión humana.
         </p>
       </footer>
     </div>
