@@ -10,6 +10,7 @@ import {
   type UserDetail,
 } from "../api/client";
 import type { TeamDetail, TeamSummary } from "../types";
+import { LoadingButton } from "../components/ui/LoadingButton";
 
 const ALLOWED_MEMBER_ROLES = new Set(["supervisor", "admin"]);
 
@@ -186,18 +187,18 @@ export default function TeamsPage() {
   };
 
   return (
-    <div className="max-w-screen-lg mx-auto px-4 py-8">
+    <div className="page-container">
       <div className="mb-8 flex items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Teams</h1>
-          <p className="mt-1 text-sm text-gray-500">
+          <h1 className="page-title">Equipos</h1>
+          <p className="page-subtitle">
             Gestiona los equipos asignados a tus case managers.
           </p>
         </div>
         <button
           type="button"
           onClick={() => setShowCreateModal(true)}
-          className="inline-flex items-center gap-2 rounded-xl bg-brand-600 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-brand-700"
+          className="inline-flex items-center gap-2 rounded-full bg-brand-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm transition-colors hover:bg-brand-700"
         >
           <Plus className="h-4 w-4" />
           Nuevo Team
@@ -235,7 +236,7 @@ export default function TeamsPage() {
                   <td colSpan={3} className="px-5 py-10 text-center text-gray-500">
                     <div className="inline-flex flex-col items-center gap-2">
                       <Users className="h-5 w-5" />
-                      <span>No tienes teams creados todavia.</span>
+                      <span>No hay teams creados todavia.</span>
                     </div>
                   </td>
                 </tr>
@@ -281,21 +282,23 @@ export default function TeamsPage() {
               </label>
 
               <div className="flex items-center justify-end gap-2 pt-2">
-                <button
+                <LoadingButton
                   type="button"
                   onClick={closeModal}
                   disabled={creating}
-                  className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  className="inline-flex items-center justify-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                 >
                   Cancelar
-                </button>
-                <button
+                </LoadingButton>
+                <LoadingButton
                   type="submit"
                   disabled={creating || teamName.trim().length === 0}
-                  className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+                  loading={creating}
+                  loadingLabel="Creando…"
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
                 >
-                  {creating ? "Creando…" : "Crear team"}
-                </button>
+                  Crear team
+                </LoadingButton>
               </div>
             </form>
           </div>
@@ -362,22 +365,24 @@ export default function TeamsPage() {
                 </div>
 
                 <div className="flex items-center justify-end gap-2 border-t border-gray-100 px-5 py-4">
-                  <button
+                  <LoadingButton
                     type="button"
                     onClick={closeMembersModal}
                     disabled={membersSaving}
-                    className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                    className="inline-flex items-center justify-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                   >
                     Cancelar
-                  </button>
-                  <button
+                  </LoadingButton>
+                  <LoadingButton
                     type="button"
                     onClick={handleSaveMembers}
                     disabled={membersSaving}
-                    className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+                    loading={membersSaving}
+                    loadingLabel="Guardando…"
+                    className="inline-flex items-center justify-center gap-2 rounded-full bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
                   >
-                    {membersSaving ? "Guardando…" : "Guardar miembros"}
-                  </button>
+                    Guardar miembros
+                  </LoadingButton>
                 </div>
               </>
             )}

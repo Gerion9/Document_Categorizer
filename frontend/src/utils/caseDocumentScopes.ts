@@ -11,24 +11,12 @@ export interface CaseSourceDocumentSummary {
   uploaded_at: string;
 }
 
-function getPageMetadataSource(page: Page): string {
-  const sourceValue = page.metadata_json?.source;
-  return typeof sourceValue === "string" ? sourceValue.trim() : "";
-}
-
-function isGeneratedFormPage(page: Page): boolean {
-  return (
-    getPageMetadataSource(page) === "form_filling" ||
-    (page.source_document_id ?? "").startsWith("form-filling-job:")
-  );
-}
-
 export function listSelectableCaseDocuments(pages: Page[]): CaseSourceDocumentSummary[] {
   const bySourceDocumentId = new Map<string, CaseSourceDocumentSummary>();
 
   for (const page of pages) {
     const sourceDocumentId = page.source_document_id?.trim();
-    if (!sourceDocumentId || isGeneratedFormPage(page)) {
+    if (!sourceDocumentId) {
       continue;
     }
 

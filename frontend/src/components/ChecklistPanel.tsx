@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import {
   CheckCircle2,
   Circle,
@@ -15,9 +15,10 @@ import {
   X,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import { motion, AnimatePresence } from "framer-motion";
 import { EmptyState } from "./ui/EmptyState";
 import { Tooltip } from "./ui/Tooltip";
+import { LoadingButton } from "./ui/LoadingButton";
+import { useBusyActions } from "../hooks/useBusyActions";
 import type { Checklist, ChecklistItem, DocumentType, Page, Section } from "../types";
 import {
   createChecklist,
@@ -108,48 +109,53 @@ export default function ChecklistPanel({
   const [itemDesc, setItemDesc] = useState("");
   const [expanded, setExpanded] = useState<Record<string, boolean>>({});
   const [mappingItem, setMappingItem] = useState<string | null>(null);
+  const { isBusy, run } = useBusyActions();
 
   const allSections = docTypes.flatMap((dt) => flattenSections(dt.sections));
 
   const toggleExpand = (id: string) =>
     setExpanded((p) => ({ ...p, [id]: !p[id] }));
 
-  const handleCreateChecklist = async () => {
-    if (!clName.trim()) return;
-    await createChecklist(caseId, clName.trim());
-    setClName("");
-    setAddingCl(false);
-    onRefresh();
-  };
-
-  const handleCreateItem = async (clId: string) => {
-    if (!itemDesc.trim()) return;
-    const cl = checklists.find((c) => c.id === clId);
-    await createChecklistItem(clId, {
-      description: itemDesc.trim(),
-      order: cl?.items.length ?? 0,
+  const handleCreateChecklist = () =>
+    run("create-checklist", async () => {
+      if (!clName.trim()) return;
+      await createChecklist(caseId, clName.trim());
+      setClName("");
+      setAddingCl(false);
+      onRefresh();
     });
-    setItemDesc("");
-    setAddingItemFor(null);
-    onRefresh();
-  };
 
-  const cycleStatus = async (item: ChecklistItem) => {
-    await updateChecklistItem(item.id, {
-      status: NEXT_STATUS[item.status] as ChecklistItem["status"],
+  const handleCreateItem = (clId: string) =>
+    run(`create-item:${clId}`, async () => {
+      if (!itemDesc.trim()) return;
+      const cl = checklists.find((c) => c.id === clId);
+      await createChecklistItem(clId, {
+        description: itemDesc.trim(),
+        order: cl?.items.length ?? 0,
+      });
+      setItemDesc("");
+      setAddingItemFor(null);
+      onRefresh();
     });
-    onRefresh();
-  };
 
-  const handleLinkEvidence = async (itemId: string) => {
-    if (!selectedPage) {
-      toast.error("Selecciona una pagina primero");
-      return;
-    }
-    await addEvidence(itemId, { page_id: selectedPage.id });
-    toast.success("Evidencia vinculada");
-    onRefresh();
-  };
+  const cycleStatus = (item: ChecklistItem) =>
+    run(`cycle-status:${item.id}`, async () => {
+      await updateChecklistItem(item.id, {
+        status: NEXT_STATUS[item.status] as ChecklistItem["status"],
+      });
+      onRefresh();
+    });
+
+  const handleLinkEvidence = (itemId: string) =>
+    run(`link-evidence:${itemId}`, async () => {
+      if (!selectedPage) {
+        toast.error("Selecciona una pagina primero");
+        return;
+      }
+      await addEvidence(itemId, { page_id: selectedPage.id });
+      toast.success("Evidencia vinculada");
+      onRefresh();
+    });
 
   const handleToggleTarget = async (itemId: string, sectionId: string, current: string[]) => {
     const descendantIds = getDescendantIds(sectionId, allSections);
@@ -199,12 +205,15 @@ export default function ChecklistPanel({
             autoFocus
             onKeyDown={(e) => e.key === "Enter" && handleCreateChecklist()}
           />
-          <button
+          <LoadingButton
             onClick={handleCreateChecklist}
-            className="text-xs bg-brand-600 text-white rounded px-2 hover:bg-brand-700"
+            disabled={!clName.trim()}
+            loading={isBusy("create-checklist")}
+            spinnerClassName="h-3 w-3"
+            className="inline-flex items-center justify-center gap-1 text-xs bg-brand-600 text-white rounded px-2 hover:bg-brand-700 disabled:opacity-50"
           >
             OK
-          </button>
+          </LoadingButton>
           <button
             onClick={() => setAddingCl(false)}
             className="text-xs bg-gray-200 rounded px-2"
@@ -242,10 +251,15 @@ export default function ChecklistPanel({
                 onClick={(e) => {
                   e.stopPropagation();
                   if (confirm("Eliminar checklist?")) {
-                    deleteChecklist(cl.id).then(onRefresh);
+                    run(`delete-checklist:${cl.id}`, async () => {
+                      await deleteChecklist(cl.id);
+                      onRefresh();
+                    });
                   }
                 }}
-                className="p-0.5 text-gray-400 hover:text-red-500 transition-colors"
+                disabled={isBusy(`delete-checklist:${cl.id}`)}
+                aria-busy={isBusy(`delete-checklist:${cl.id}`) || undefined}
+                className="p-0.5 text-gray-400 hover:text-red-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
@@ -263,7 +277,9 @@ export default function ChecklistPanel({
                       <Tooltip content={`Estado actual: ${item.status}. Clic para cambiar estado.`}>
                         <button
                           onClick={() => cycleStatus(item)}
-                          className="mt-0.5 shrink-0 transition-transform hover:scale-110"
+                          disabled={isBusy(`cycle-status:${item.id}`)}
+                          aria-busy={isBusy(`cycle-status:${item.id}`) || undefined}
+                          className="mt-0.5 shrink-0 transition-transform hover:scale-110 disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           {STATUS_ICON[item.status]}
                         </button>
@@ -295,7 +311,9 @@ export default function ChecklistPanel({
                       <Tooltip content="Vincular página seleccionada como evidencia">
                         <button
                           onClick={() => handleLinkEvidence(item.id)}
-                          className="opacity-0 group-hover:opacity-100 p-0.5 text-gray-400 hover:text-brand-600 transition-colors"
+                          disabled={isBusy(`link-evidence:${item.id}`)}
+                          aria-busy={isBusy(`link-evidence:${item.id}`) || undefined}
+                          className="opacity-0 group-hover:opacity-100 p-0.5 text-gray-400 hover:text-brand-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <Link2 className="w-3.5 h-3.5" />
                         </button>
@@ -303,9 +321,14 @@ export default function ChecklistPanel({
                       <Tooltip content="Eliminar ítem del checklist">
                         <button
                           onClick={() => {
-                            deleteChecklistItem(item.id).then(onRefresh);
+                            run(`delete-item:${item.id}`, async () => {
+                              await deleteChecklistItem(item.id);
+                              onRefresh();
+                            });
                           }}
-                          className="opacity-0 group-hover:opacity-100 p-0.5 text-gray-400 hover:text-red-500 transition-colors"
+                          disabled={isBusy(`delete-item:${item.id}`)}
+                          aria-busy={isBusy(`delete-item:${item.id}`) || undefined}
+                          className="opacity-0 group-hover:opacity-100 p-0.5 text-gray-400 hover:text-red-500 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                         >
                           <Trash2 className="w-3 h-3" />
                         </button>
@@ -431,12 +454,16 @@ export default function ChecklistPanel({
                       e.key === "Enter" && handleCreateItem(cl.id)
                     }
                   />
-                  <button
+                  <LoadingButton
                     onClick={() => handleCreateItem(cl.id)}
-                    className="text-[10px] bg-brand-600 text-white rounded px-1.5"
+                    disabled={!itemDesc.trim()}
+                    loading={isBusy(`create-item:${cl.id}`)}
+                    spinnerClassName="h-3 w-3"
+                    hideContentWhenLoading
+                    className="inline-flex items-center justify-center text-[10px] bg-brand-600 text-white rounded px-1.5 disabled:opacity-50"
                   >
                     OK
-                  </button>
+                  </LoadingButton>
                   <button
                     onClick={() => setAddingItemFor(null)}
                     className="text-[10px] bg-gray-200 rounded px-1.5"

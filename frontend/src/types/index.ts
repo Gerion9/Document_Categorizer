@@ -11,6 +11,7 @@ export interface Case {
   page_count: number;
   classified_count: number;
   checklist_count: number;
+  generated_form_count: number;
   form_filling_source_document_ids?: string[] | null;
   qc_checklist_source_document_ids?: string[] | null;
 }
@@ -220,6 +221,12 @@ export interface FormFillingFieldOption {
   label: string;
 }
 
+export interface FormFillingJobWarning {
+  code: string;
+  message: string;
+  details?: Record<string, unknown>;
+}
+
 export interface FormFillingJob {
   id: string;
   case_id: string;
@@ -236,6 +243,7 @@ export interface FormFillingJob {
   attorney_field_count: number;
   attorney_filled_count: number;
   error_message: string | null;
+  warnings?: FormFillingJobWarning[];
   created_at: string;
   updated_at: string;
   started_at: string | null;
@@ -280,6 +288,7 @@ export interface QuestionnaireItem {
   type: string;
   form_text: string;
   default_value?: unknown;
+  force_default?: boolean;
   instruction?: string;
   condition?: string;
   optional?: boolean;
@@ -288,7 +297,9 @@ export interface QuestionnaireItem {
   repeatable?: boolean;
   visible_on_pages?: number[];
   visible_slots?: Array<string | number>;
+  allow_overflow_rows?: boolean;
   also_validate_with?: string[];
+  exclude_from_form_mapping?: boolean;
   options?: QuestionnaireOptionInput[];
   fields?: QuestionnaireField[];
   details_fields?: QuestionnaireField[];
@@ -307,12 +318,22 @@ export interface QuestionnairePage {
 
 export type QuestionnaireAnswerMap = Record<string, unknown>;
 
+export type FieldOrigin = "manual" | "autofill";
+export type FieldOriginsMap = Record<string, Record<string, FieldOrigin>>;
+
+export interface QuestionnaireAnswersBundle {
+  answers: QuestionnaireAnswerMap;
+  field_origins: FieldOriginsMap;
+}
+
 export interface FieldVerification {
   status: "approved" | "needs_review" | "rejected";
   reason: string;
   evidence?: string;
   model?: string;
   verified_at?: string | null;
+  fields?: Record<string, FieldVerification>;
+  slots?: Record<string, Record<string, FieldVerification>>;
 }
 
 export type VerificationMap = Record<string, FieldVerification>;
@@ -322,6 +343,7 @@ export interface SaveQuestionnaireAnswerPayload {
   value: unknown;
   source: string;
   form_type?: string | null;
+  field_origins?: Record<string, FieldOrigin>;
 }
 
 export interface QuestionnaireAutofillResponse {
@@ -336,6 +358,8 @@ export interface QuestionnaireAutofillResponse {
   forced_form_answers?: Record<string, QuestionnaireAnswerMap>;
   verification_map?: VerificationMap;
   form_verification_map?: Record<string, VerificationMap>;
+  extraction_error_count?: number;
+  extraction_error_breakdown?: Record<string, number>;
 }
 
 export type AutofillJobStatusValue =

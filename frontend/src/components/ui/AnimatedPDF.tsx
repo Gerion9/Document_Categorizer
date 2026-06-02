@@ -15,7 +15,7 @@ export function AnimatedPDF({ className = "w-10 h-10" }: Props) {
       whileHover="hover"
     >
       <defs>
-        <linearGradient id="pdf-red" x1="0%" y1="0%" x2="100%" y2="100%">
+        <linearGradient id="pdf-red" x1="100%" y1="0%" x2="0%" y2="100%">
           <stop offset="0%" stopColor="#ef4444" /> {/* red-500 */}
           <stop offset="100%" stopColor="#dc2626" /> {/* red-600 */}
         </linearGradient>
@@ -79,18 +79,25 @@ export function AnimatedPDF({ className = "w-10 h-10" }: Props) {
       </motion.text>
 
       {/* Lines below badge */}
-      <motion.line
-        x1="35"
-        y1="75"
-        x2="65"
-        y2="75"
-        stroke="#d1d5db"
-        strokeWidth="3"
-        strokeLinecap="round"
+      <motion.g
         variants={{
-          animate: { x2: [65, 55, 65], y: [0, -3, 0], transition: { duration: 3, repeat: Infinity, ease: "easeInOut" } },
+          animate: { y: [0, -3, 0], transition: { duration: 3, repeat: Infinity, ease: "easeInOut" } },
         }}
-      />
+      >
+        <motion.line
+          x1="35"
+          y1="75"
+          x2="65"
+          y2="75"
+          stroke="#d1d5db"
+          strokeWidth="3"
+          strokeLinecap="round"
+          variants={{
+            initial: { x2: 65 },
+            animate: { x2: [65, 55, 65], transition: { duration: 3, repeat: Infinity, ease: "easeInOut" } },
+          }}
+        />
+      </motion.g>
     </motion.svg>
   );
 }

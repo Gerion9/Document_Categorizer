@@ -89,17 +89,17 @@ export function useQcAutopilot({ caseId, reload }: UseQcAutopilotOptions) {
 
           if (job.verified === 0 && job.skipped > 0) {
             toast.error(
-              `AI Autopilot: ${job.skipped} preguntas omitidas. Las preguntas necesitan paginas vinculadas (evidencia o secciones mapeadas con paginas clasificadas).`,
+              `AI Autopilot: ${job.skipped} questions skipped. Questions need linked pages (evidence or mapped sections with classified pages).`,
               { duration: 8000 }
             );
           } else if (job.verified > 0) {
             toast.success(
-              `AI Autopilot completado: ${job.verified} verificadas` +
-                (job.skipped > 0 ? `, ${job.skipped} omitidas (sin paginas)` : "") +
-                (job.errors > 0 ? `, ${job.errors} errores` : "")
+              `AI Autopilot completed: ${job.verified} verified` +
+                (job.skipped > 0 ? `, ${job.skipped} skipped (no pages)` : "") +
+                (job.errors > 0 ? `, ${job.errors} errors` : "")
             );
           } else {
-            toast.success("AI Autopilot completado");
+            toast.success("AI Autopilot completed");
           }
           await reload();
           setVerifyingCl(null);
@@ -108,7 +108,7 @@ export function useQcAutopilot({ caseId, reload }: UseQcAutopilotOptions) {
           clearAutopilotPoll();
           clearAutopilotSession();
           setVerifyingCl(null);
-          toast.error(`AI Autopilot fallo: ${job.error_message || "error desconocido"}`);
+          toast.error(`AI Autopilot failed: ${job.error_message || "unknown error"}`);
           setAutopilotJob(null);
         } else {
           autopilotPollRef.current = window.setTimeout(() => {
@@ -135,10 +135,10 @@ export function useQcAutopilot({ caseId, reload }: UseQcAutopilotOptions) {
       const job = await startAutopilot(checklistId);
       saveAutopilotSession(checklistId, job.id);
       setAutopilotJob(job);
-      toast.success("AI Autopilot iniciado");
+      toast.success("AI Autopilot started");
       pollAutopilotJob(job.id, checklistId);
     } catch (error: unknown) {
-      toast.error(getApiErrorMessage(error, "Error al iniciar AI Autopilot"));
+      toast.error(getApiErrorMessage(error, "Failed to start AI Autopilot"));
       setVerifyingCl(null);
     }
   };

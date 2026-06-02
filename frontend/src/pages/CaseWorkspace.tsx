@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { createPortal } from "react-dom";
 import { useParams, useNavigate, Link } from "react-router-dom";
 import {
   DndContext,
@@ -11,6 +12,7 @@ import {
 } from "@dnd-kit/core";
 import {
   ArrowLeft,
+  FileStack,
   LayoutGrid,
   Upload,
   X,
@@ -21,10 +23,12 @@ import {
   FileText,
   Copy,
   FolderOpen,
-  Sparkles,
-  RefreshCw,
   Search,
   Send,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
@@ -48,8 +52,6 @@ import {
   addPageSectionLink,
   removePageSectionLink,
   getExtractionStatus,
-  reindexPage,
-  reindexCase,
   ragQuery,
   deletePage,
   downloadExportPdf,
@@ -60,7 +62,8 @@ import PageThumbnail from "../components/PageThumbnail";
 import DocumentTree from "../components/DocumentTree";
 import SectionDropZone from "../components/SectionDropZone";
 import QCBuilderPanel from "../components/checklist/QCBuilderPanel";
-import { GlassSurface } from "../components/glass/GlassSurface";
+import { GlassButton } from "../components/glass/GlassButton";
+import { SolidCard } from "../components/ui/SolidCard";
 import { useAuth } from "../contexts/AuthContext";
 import { AnimatedPDF } from "../components/ui/AnimatedPDF";
 
@@ -68,6 +71,7 @@ import FormFillingPanel from "../components/form-filling/FormFillingPanel";
 import { getApiErrorMessage } from "../utils/apiErrors";
 import { flattenSections } from "../utils/sections";
 import { runSemanticSearch } from "../utils/semanticSearch";
+import { extractSnippet, highlightTerms } from "../utils/ragSearchDisplay";
 
 type Tab = "pages" | "organize" | "qc" | "forms";
 
@@ -79,6 +83,33 @@ const TAB_PERMISSIONS: Record<Tab, string> = {
 };
 
 const DND_REQUEST_CONCURRENCY = 8;
+const PAGES_GRID_PAGE_SIZE = 27;
+
+const getMetadataString = (metadata: Record<string, unknown>, key: string) => {
+  const value = metadata[key];
+  return typeof value === "string" ? value.trim() : "";
+};
+
+const normalizeRagLine = (value: string) =>
+  value
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .toLowerCase();
+
+const removeRepeatedRagHeading = (text: string, heading: string) => {
+  const trimmedText = text.trim();
+  const trimmedHeading = heading.trim();
+  if (!trimmedText || !trimmedHeading) return trimmedText;
+
+  const [firstLine = "", ...remainingLines] = trimmedText.split(/\r?\n/);
+  if (normalizeRagLine(firstLine) !== normalizeRagLine(trimmedHeading)) {
+    return trimmedText;
+  }
+
+  return remainingLines.join("\n").trim();
+};
 
 export default function CaseWorkspace() {
   const { caseId } = useParams<{ caseId: string }>();
@@ -97,17 +128,54 @@ export default function CaseWorkspace() {
   const [refreshKey, setRefreshKey] = useState(0);
   const [indexingConfigured, setIndexingConfigured] = useState(false);
   const [showOcrText, setShowOcrText] = useState(false);
-  const [reindexing, setReindexing] = useState(false);
-
   // RAG query state
   const [ragQuestion, setRagQuestion] = useState("");
   const [ragResults, setRagResults] = useState<RagMatch[]>([]);
   const [ragSearching, setRagSearching] = useState(false);
   const [showRagPanel, setShowRagPanel] = useState(false);
+  const [expandedRagResultIds, setExpandedRagResultIds] = useState<Set<string>>(new Set());
 
   const [pagesLoading, setPagesLoading] = useState(false);
+  const [deletingPageIds, setDeletingPageIds] = useState<Set<string>>(() => new Set());
+  const [pagesGridPage, setPagesGridPage] = useState(1);
 
   const refresh = useCallback(() => setRefreshKey((k) => k + 1), []);
+
+  const closePreview = useCallback(() => {
+    setPreviewPage(null);
+    setShowOcrText(false);
+  }, []);
+
+  useEffect(() => {
+    if (!previewPage) return;
+
+    const scrollY = window.scrollY;
+    const { style } = document.body;
+    const previous = {
+      overflow: style.overflow,
+      position: style.position,
+      top: style.top,
+      width: style.width,
+    };
+    style.overflow = "hidden";
+    style.position = "fixed";
+    style.top = `-${scrollY}px`;
+    style.width = "100%";
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closePreview();
+    };
+    document.addEventListener("keydown", onKeyDown);
+
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      style.overflow = previous.overflow;
+      style.position = previous.position;
+      style.top = previous.top;
+      style.width = previous.width;
+      window.scrollTo(0, scrollY);
+    };
+  }, [previewPage, closePreview]);
 
   // ── Data loading ─────────────────────────────────────────────────────
   useEffect(() => {
@@ -187,38 +255,70 @@ export default function CaseWorkspace() {
     () => pages.filter((p) => p.status === "classified"),
     [pages]
   );
+
+  const pagesGridTotalPages = useMemo(
+    () => Math.max(1, Math.ceil(pages.length / PAGES_GRID_PAGE_SIZE)),
+    [pages.length]
+  );
+
+  const safePagesGridPage = Math.min(pagesGridPage, pagesGridTotalPages);
+
+  const paginatedGridPages = useMemo(() => {
+    const start = (safePagesGridPage - 1) * PAGES_GRID_PAGE_SIZE;
+    return pages.slice(start, start + PAGES_GRID_PAGE_SIZE);
+  }, [pages, safePagesGridPage]);
+
+  const pagesGridRangeStart =
+    pages.length === 0 ? 0 : (safePagesGridPage - 1) * PAGES_GRID_PAGE_SIZE + 1;
+  const pagesGridRangeEnd = Math.min(
+    safePagesGridPage * PAGES_GRID_PAGE_SIZE,
+    pages.length
+  );
+
+  const goToPagesGridPage = useCallback((page: number) => {
+    setPagesGridPage(Math.min(Math.max(page, 1), pagesGridTotalPages));
+  }, [pagesGridTotalPages]);
+
+  useEffect(() => {
+    setPagesGridPage(1);
+  }, [caseId]);
+
+  useEffect(() => {
+    if (pagesGridPage > pagesGridTotalPages) {
+      setPagesGridPage(pagesGridTotalPages);
+    }
+  }, [pagesGridPage, pagesGridTotalPages]);
+
   const getRagMatchPageLabel = (match: RagMatch) => {
     const metadataFilename =
       typeof match.metadata.original_filename === "string"
         ? match.metadata.original_filename.trim()
         : "";
-    const metadataPageNumberValue =
-      match.metadata.page_number ?? match.metadata.original_page_number;
-    const metadataPageNumber =
-      typeof metadataPageNumberValue === "number"
-        ? metadataPageNumberValue
-        : typeof metadataPageNumberValue === "string" &&
-            metadataPageNumberValue.trim() !== "" &&
-            !Number.isNaN(Number(metadataPageNumberValue))
-          ? Number(metadataPageNumberValue)
-          : null;
-
-    if (metadataFilename && metadataPageNumber !== null) {
-      return `${metadataFilename} · pág. ${metadataPageNumber}`;
-    }
 
     const pageId = typeof match.metadata.page_id === "string" ? match.metadata.page_id : "";
     if (!pageId) {
-      return metadataFilename || (metadataPageNumber !== null ? `Pág. ${metadataPageNumber}` : null);
+      return metadataFilename || null;
     }
 
     const matchedPage = pages.find((page) => page.id === pageId);
     if (!matchedPage) {
-      return metadataFilename || (metadataPageNumber !== null ? `Pág. ${metadataPageNumber}` : null);
+      return metadataFilename || null;
     }
 
-    return `${matchedPage.original_filename} · pág. ${matchedPage.original_page_number}`;
+    return matchedPage.original_filename;
   };
+
+  const getRagMatchPage = (match: RagMatch) => {
+    const pageId = getMetadataString(match.metadata, "page_id");
+    if (!pageId) return null;
+    return pages.find((page) => page.id === pageId) ?? null;
+  };
+
+  const getRagMatchTitle = (match: RagMatch) =>
+    getMetadataString(match.metadata, "section_name") ||
+    getMetadataString(match.metadata, "section_label") ||
+    getMetadataString(match.metadata, "document_type_name") ||
+    "Resultado relacionado";
 
   const sectionPages = (sectionId: string) => {
     // Include pages linked to this section via section_links (covers both primary and secondary)
@@ -570,48 +670,26 @@ export default function CaseWorkspace() {
     refresh();
   };
 
-  // ── Reindex handlers ─────────────────────────────────────────────────
-  const handleReindexPage = async (page: Page) => {
-    try {
-      await reindexPage(page.id);
-      toast.success("Pagina en cola de re-indexacion");
-      setTimeout(() => refresh(), 4000);
-    } catch (error: unknown) {
-      toast.error(getApiErrorMessage(error, "Error al reindexar pagina"));
-    }
-  };
-
-  const handleReindexCase = async () => {
-    if (!caseId) return;
-    setReindexing(true);
-    try {
-      const result = await reindexCase(caseId);
-      toast.success(`${result.queued} paginas en cola de re-indexacion`);
-      setTimeout(() => refresh(), 5000);
-      setTimeout(() => refresh(), 15000);
-    } catch (error: unknown) {
-      toast.error(getApiErrorMessage(error, "Error al reindexar caso"));
-    }
-    setReindexing(false);
-  };
-
   // ── RAG query handler ──────────────────────────────────────────────
   const handleRagSearch = async () => {
     if (!caseId) return;
+    setExpandedRagResultIds(new Set());
     await runSemanticSearch({
       query: ragQuestion,
       search: (question) => ragQuery(caseId, question),
       setSearching: setRagSearching,
       setResults: setRagResults,
-      fallbackError: "Error en consulta semantica",
+      fallbackError: "No se pudo completar la búsqueda",
     });
   };
 
   const handleDeletePage = async (page: Page) => {
+    if (deletingPageIds.has(page.id)) return;
     const ok = window.confirm(
       `¿Eliminar definitivamente la página ${page.original_page_number} de "${page.original_filename}"?`
     );
     if (!ok) return;
+    setDeletingPageIds((prev) => new Set(prev).add(page.id));
     try {
       await deletePage(page.id);
       if (previewPage?.id === page.id) {
@@ -625,12 +703,18 @@ export default function CaseWorkspace() {
       refresh();
     } catch (error: unknown) {
       toast.error(getApiErrorMessage(error, "Error al eliminar pagina"));
+    } finally {
+      setDeletingPageIds((prev) => {
+        const next = new Set(prev);
+        next.delete(page.id);
+        return next;
+      });
     }
   };
 
   if (!caseId || !caseData) {
     return (
-      <div className="flex items-center justify-center h-96 text-gray-400">
+      <div className="flex items-center justify-center h-96 text-brand-500/70">
         Cargando…
       </div>
     );
@@ -640,49 +724,65 @@ export default function CaseWorkspace() {
 
   const renderPagesTab = () => (
     <div className="flex flex-col gap-6">
-      <FileUpload caseId={caseId} onUploaded={refresh} />
+      <div id="workspace-upload-zone">
+        <FileUpload caseId={caseId} onUploaded={refresh} />
+      </div>
 
       {/* Stats bar */}
-      <div className="flex items-center gap-6 text-sm text-gray-500 flex-wrap">
-        <span>{pages.length} paginas totales</span>
-        <span className="text-green-600">{classifiedPages.length} clasificadas</span>
-        <span className="text-gray-400">{unclassifiedPages.length} sin clasificar</span>
-        <span className="text-amber-500">{extraPages.length} extras</span>
+      <SolidCard className="workspace-stats-bar rounded-2xl px-4 py-3">
+        <div className="relative z-10 flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span
+              className="workspace-stat-badge"
+              aria-label={`${pages.length} páginas totales`}
+            >
+              <FileStack aria-hidden="true" />
+              <span>{pages.length} páginas totales</span>
+            </span>
+            <span
+              className="workspace-stat-badge workspace-stat-badge--success"
+              aria-label={`${classifiedPages.length} páginas clasificadas`}
+            >
+              <CheckCircle2 aria-hidden="true" />
+              <span>{classifiedPages.length} clasificadas</span>
+            </span>
+            <span
+              className="workspace-stat-badge workspace-stat-badge--pending"
+              aria-label={`${unclassifiedPages.length} páginas sin clasificar`}
+            >
+              <FileText aria-hidden="true" />
+              <span>{unclassifiedPages.length} sin clasificar</span>
+            </span>
+            <span
+              className="workspace-stat-badge"
+              aria-label={`${extraPages.length} páginas extra`}
+            >
+              <Tag aria-hidden="true" />
+              <span>{extraPages.length} extras</span>
+            </span>
+          </div>
 
-        {/* Service status pills */}
-        <div className="ml-auto flex items-center gap-2">
-          {indexingConfigured && pages.some((p) => p.extraction_status === "done") && (
-            <Tooltip content="Re-indexar todas las paginas extraidas en Pinecone">
-              <button
-                type="button"
-                onClick={handleReindexCase}
-                disabled={reindexing}
-                className="inline-flex items-center gap-1.5 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 transition hover:border-gray-300 hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                <RefreshCw className={`h-3.5 w-3.5 ${reindexing ? "animate-spin" : ""}`} />
-                Reindexar caso
-              </button>
-            </Tooltip>
-          )}
-
-          {indexingConfigured && (
-            <Tooltip content="Busqueda semantica en el contenido del caso">
-              <button
-                type="button"
-                onClick={() => setShowRagPanel(!showRagPanel)}
-                className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-medium transition ${
-                  showRagPanel
-                    ? "border-purple-600 bg-purple-600 text-white"
-                    : "border-gray-200 bg-white text-gray-700 hover:border-purple-200 hover:bg-purple-50 hover:text-purple-700"
-                }`}
-              >
-                <Search className="h-3.5 w-3.5" />
-                Buscar en documentos
-              </button>
-            </Tooltip>
-          )}
+          {/* Service status pills */}
+          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+            {indexingConfigured && (
+              <Tooltip content="Busca cualquier dato dentro de los documentos del caso">
+                <GlassButton
+                  type="button"
+                  onClick={() => setShowRagPanel(!showRagPanel)}
+                  variant="secondary"
+                  size="sm"
+                  iconOnly
+                  aria-pressed={showRagPanel}
+                  aria-label="Buscar en documentos"
+                  isActive={showRagPanel}
+                >
+                  <Search className="h-4 w-4" aria-hidden="true" />
+                </GlassButton>
+              </Tooltip>
+            )}
+          </div>
         </div>
-      </div>
+      </SolidCard>
 
       {/* RAG Semantic Search Panel */}
       <AnimatePresence>
@@ -693,110 +793,294 @@ export default function CaseWorkspace() {
             exit={{ height: 0, opacity: 0 }}
             className="overflow-hidden"
           >
-            <GlassSurface filterId="glass-panel" className="rounded-xl p-4">
+            <SolidCard className="rounded-xl p-4">
               <div className="flex items-center gap-2 mb-3">
-                <Search className="w-4 h-4 text-purple-500" />
-                <h4 className="text-sm font-semibold text-gray-700">Búsqueda</h4>
+                <Search className="w-4 h-4 text-brand-600" />
+                <h4 className="text-sm font-semibold text-brand-800">Búsqueda</h4>
               </div>
-              <div className="flex gap-2 mb-3">
+              <div className="flex flex-col gap-2 sm:flex-row">
                 <input
-                  className="flex-1 text-sm border border-gray-300 rounded-lg px-3 py-2 focus:ring-2 focus:ring-purple-300 focus:border-purple-400 outline-none"
-                  placeholder="Escribe tu pregunta sobre los documentos del caso…"
+                  className="flex-1 text-sm border border-brand-100 rounded-lg px-3 py-2 bg-nova-snow text-brand-800 focus:ring-2 focus:ring-brand-300 focus:border-brand-400 outline-none"
+                  placeholder="¿Dónde aparece el nombre del esposo?"
                   value={ragQuestion}
                   onChange={(e) => setRagQuestion(e.target.value)}
                   onKeyDown={(e) => e.key === "Enter" && handleRagSearch()}
+                  aria-label="Pregunta para buscar en documentos"
                 />
-                <button
-                  onClick={handleRagSearch}
-                  disabled={ragSearching || !ragQuestion.trim()}
-                  className="flex items-center gap-1 px-4 py-2 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition disabled:opacity-50 text-sm"
-                >
-                  {ragSearching ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
-                  Buscar
-                </button>
+                <Tooltip content="Buscar">
+                  <GlassButton
+                    type="button"
+                    onClick={handleRagSearch}
+                    disabled={!ragQuestion.trim()}
+                    loading={ragSearching}
+                    variant="primary"
+                    size="sm"
+                    iconOnly
+                    aria-label="Buscar"
+                  >
+                    <Send className="w-4 h-4" aria-hidden="true" />
+                  </GlassButton>
+                </Tooltip>
               </div>
 
-              {ragResults.length > 0 && (
-                <div className="flex flex-col gap-2 max-h-80 overflow-y-auto custom-scroll">
-                  {ragResults.map((match, i) => {
-                    const ragPageLabel = getRagMatchPageLabel(match);
-
-                    return (
-                      <div key={match.id} className="p-3 bg-white/60 rounded-lg border border-gray-200 text-xs">
-                        <div className="flex items-center justify-between mb-1">
-                          <span className="font-semibold text-gray-700">#{i + 1}</span>
-                        </div>
-                        {!!match.metadata.text && (
-                          <p className="text-gray-600 whitespace-pre-wrap line-clamp-4 mb-1">
-                            {String(match.metadata.text)}
-                          </p>
-                        )}
-                        <div className="flex flex-wrap gap-1 mt-1">
-                          {!!match.metadata.section_path_code && (
-                            <span className="text-[9px] bg-indigo-50 text-indigo-600 rounded px-1.5 py-0.5">
-                              {String(match.metadata.section_path_code)}
-                            </span>
-                          )}
-                          {ragPageLabel && (
-                            <span
-                              className="inline-flex max-w-[240px] items-center rounded bg-gray-100 px-1.5 py-0.5 text-[9px] text-gray-500"
-                              title={ragPageLabel}
-                            >
-                              <span className="truncate">{ragPageLabel}</span>
-                            </span>
-                          )}
-                          {match.metadata.chunk_index != null && (
-                            <span className="text-[9px] bg-gray-100 text-gray-500 rounded px-1.5 py-0.5">
-                              chunk #{String(match.metadata.chunk_index)}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    );
-                  })}
+              {ragSearching && (
+                <div className="flex flex-col gap-2" role="status" aria-live="polite">
+                  <span className="sr-only">Buscando en documentos</span>
+                  {Array.from({ length: 3 }).map((_, index) => (
+                    <div key={`rag-skeleton-${index}`} className="ai-result-row" aria-hidden="true">
+                      <div className="skeleton-block mb-3 h-3 w-44" />
+                      <div className="skeleton-block mb-2 h-2.5 w-full" />
+                      <div className="skeleton-block h-2.5 w-2/3" />
+                    </div>
+                  ))}
                 </div>
               )}
-            </GlassSurface>
+
+              {!ragSearching && ragResults.length > 0 && (
+                <div>
+                  <div className="mb-2 flex items-center justify-between gap-3">
+                    <p className="text-xs font-semibold text-brand-700 py-[10px] px-[5px]">
+                      {ragResults.length} {ragResults.length === 1 ? "resultado" : "resultados"}
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2 max-h-96 overflow-y-auto custom-scroll pr-1">
+                    {ragResults.map((match) => {
+                      const ragPageLabel = getRagMatchPageLabel(match);
+                      const matchPage = getRagMatchPage(match);
+                      const resultTitle = getRagMatchTitle(match);
+                      const rawText = getMetadataString(match.metadata, "text");
+                      const snippetText = removeRepeatedRagHeading(rawText, resultTitle);
+                      const snippet = extractSnippet(snippetText, ragQuestion);
+                      const isExpanded = expandedRagResultIds.has(match.id);
+                      const displayText = isExpanded ? snippetText : snippet.text;
+                      const canExpand = snippetText !== snippet.text;
+                      const sectionPathCode = getMetadataString(match.metadata, "section_path_code");
+                      const pageNumberValue =
+                        matchPage?.original_page_number ??
+                        match.metadata.page_number ??
+                        match.metadata.original_page_number;
+                      const pageNumberLabel =
+                        typeof pageNumberValue === "number"
+                          ? String(pageNumberValue)
+                          : typeof pageNumberValue === "string" && pageNumberValue.trim()
+                            ? pageNumberValue.trim()
+                            : "";
+
+                      return (
+                        <div key={match.id} className="ai-result-row">
+                          <div className="ai-result-row__header">
+                            <div className="min-w-0">
+                              <h5 className="mt-0.5 truncate text-sm font-semibold text-brand-800">
+                                {resultTitle}
+                              </h5>
+                            </div>
+                            {matchPage && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedPage(matchPage);
+                                  setPreviewPage(matchPage);
+                                  setShowOcrText(true);
+                                }}
+                                className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-brand-100 bg-white px-2.5 py-1.5 text-[11px] font-semibold text-brand-700 transition hover:border-brand-200 hover:bg-brand-50"
+                              >
+                                <FileText className="h-3.5 w-3.5" aria-hidden="true" />
+                                Ver página
+                              </button>
+                            )}
+                          </div>
+                          {displayText ? (
+                            <p
+                              className={`mt-2 text-sm leading-relaxed text-brand-700 whitespace-pre-wrap ${
+                                isExpanded ? "" : "line-clamp-4"
+                              }`}
+                            >
+                              {highlightTerms(displayText, ragQuestion)}
+                            </p>
+                          ) : (
+                            <p className="mt-2 text-sm text-brand-500">Sin texto disponible para este resultado.</p>
+                          )}
+                          <div className="mt-3 flex flex-wrap items-center gap-1.5">
+                            {sectionPathCode && (
+                              <span className="rag-result-meta-pill text-brand-700">
+                                {sectionPathCode}
+                              </span>
+                            )}
+                            {ragPageLabel && (
+                              <span
+                                className="rag-result-meta-pill max-w-[280px] text-brand-600"
+                                title={ragPageLabel}
+                              >
+                                <span className="truncate">{ragPageLabel}</span>
+                              </span>
+                            )}
+                            {pageNumberLabel && (
+                              <span className="rag-result-meta-pill text-brand-500">
+                                pág. {pageNumberLabel}
+                              </span>
+                            )}
+                          </div>
+                          {canExpand && (
+                            <button
+                              type="button"
+                              aria-expanded={isExpanded}
+                              onClick={() => {
+                                setExpandedRagResultIds((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(match.id)) next.delete(match.id);
+                                  else next.add(match.id);
+                                  return next;
+                                });
+                              }}
+                              className="mt-2 text-xs font-semibold text-brand-600 transition hover:text-brand-800"
+                            >
+                              {isExpanded ? "Ver menos" : "Ver más"}
+                            </button>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+            </SolidCard>
           </motion.div>
         )}
       </AnimatePresence>
 
       {/* All pages grid */}
-      <motion.div layout className="flex flex-wrap gap-3 relative min-h-[200px]">
-        {pagesLoading && (
-          <div className="absolute inset-0 z-10 bg-white/50 backdrop-blur-[1px] flex items-center justify-center rounded-xl">
-            <div className="flex flex-col items-center gap-2 bg-white p-4 rounded-xl shadow-lg border border-gray-100">
-              <Loader2 className="w-8 h-8 animate-spin text-brand-600" />
-              <p className="text-sm font-medium text-gray-600">Cargando páginas…</p>
+      <div
+        id="pages-grid"
+        className="flex flex-wrap justify-center gap-3 relative min-h-[200px]"
+      >
+        {pagesLoading && pages.length === 0 && (
+          <>
+            {Array.from({ length: 12 }).map((_, index) => (
+              <div
+                key={`page-skeleton-${index}`}
+                className="w-36 overflow-hidden rounded-xl border border-brand-100/70 bg-white/55 shadow-sm"
+                aria-hidden="true"
+              >
+                <div className="skeleton-block h-48 rounded-none" />
+                <div className="space-y-2 border-t border-white/50 px-2 py-2">
+                  <div className="skeleton-block h-2.5 w-24" />
+                  <div className="skeleton-block h-2 w-10" />
+                </div>
+              </div>
+            ))}
+            <div className="sr-only" role="status">
+              Cargando páginas
             </div>
-          </div>
+          </>
         )}
-        <AnimatePresence>
-          {pages.map((page) => (
-            <PageThumbnail
-              key={page.id}
-              page={page}
-              selected={selectedPage?.id === page.id}
-              onRemove={() => handleDeletePage(page)}
-              removeTooltip="Eliminar página definitivamente"
-              onClick={() => {
-                setSelectedPage(page);
-                setPreviewPage(page);
-              }}
-              showIndexStatus={indexingConfigured}
-            />
-          ))}
-        </AnimatePresence>
+        {paginatedGridPages.map((page) => (
+          <PageThumbnail
+            key={page.id}
+            page={page}
+            disableAnimation
+            selected={selectedPage?.id === page.id}
+            onRemove={() => handleDeletePage(page)}
+            removing={deletingPageIds.has(page.id)}
+            removeTooltip="Eliminar página definitivamente"
+            onClick={() => {
+              setSelectedPage(page);
+              setPreviewPage(page);
+            }}
+            showIndexStatus={indexingConfigured}
+          />
+        ))}
         {pages.length === 0 && !pagesLoading && (
           <div className="w-full flex justify-center py-12">
             <EmptyState
               icon="documents"
               title="Sin documentos"
               description="Sube o arrastra tus archivos PDF o imágenes aquí para comenzar a organizar tu caso."
+              action={
+                <button
+                  type="button"
+                  onClick={() => document.getElementById("workspace-upload-zone")?.scrollIntoView({ behavior: "smooth", block: "center" })}
+                  className="inline-flex items-center gap-2 rounded-full border border-brand-100 bg-nova-snow px-5 py-2.5 text-sm font-semibold text-brand-700 shadow-sm transition hover:border-brand-200 hover:bg-brand-50"
+                >
+                  <Upload className="h-4 w-4" aria-hidden="true" />
+                  Ir a subir archivos
+                </button>
+              }
             />
           </div>
         )}
-      </motion.div>
+      </div>
+
+      {pages.length > PAGES_GRID_PAGE_SIZE && (
+        <nav
+          aria-label="Paginación de páginas del caso"
+          className="flex flex-col items-center justify-center gap-3 sm:flex-row sm:justify-between"
+        >
+          <p className="text-xs font-medium text-brand-600">
+            Mostrando {pagesGridRangeStart}&ndash;{pagesGridRangeEnd} de {pages.length} páginas
+          </p>
+          <div className="inline-flex items-center gap-1">
+            <Tooltip content="Primera página">
+              <GlassButton
+                type="button"
+                variant="secondary"
+                size="xs"
+                iconOnly
+                onClick={() => goToPagesGridPage(1)}
+                disabled={safePagesGridPage === 1}
+                aria-label="Ir a la primera página"
+                className="bg-white/75"
+              >
+                <ChevronsLeft className="h-4 w-4" aria-hidden="true" />
+              </GlassButton>
+            </Tooltip>
+            <Tooltip content="Página anterior">
+              <GlassButton
+                type="button"
+                variant="secondary"
+                size="xs"
+                iconOnly
+                onClick={() => goToPagesGridPage(safePagesGridPage - 1)}
+                disabled={safePagesGridPage === 1}
+                aria-label="Página anterior"
+                className="bg-white/75"
+              >
+                <ChevronLeft className="h-4 w-4" aria-hidden="true" />
+              </GlassButton>
+            </Tooltip>
+            <span className="min-w-[5.5rem] px-2 text-center text-sm font-semibold text-brand-800">
+              {safePagesGridPage} / {pagesGridTotalPages}
+            </span>
+            <Tooltip content="Página siguiente">
+              <GlassButton
+                type="button"
+                variant="secondary"
+                size="xs"
+                iconOnly
+                onClick={() => goToPagesGridPage(safePagesGridPage + 1)}
+                disabled={safePagesGridPage === pagesGridTotalPages}
+                aria-label="Página siguiente"
+                className="bg-white/75"
+              >
+                <ChevronRight className="h-4 w-4" aria-hidden="true" />
+              </GlassButton>
+            </Tooltip>
+            <Tooltip content="Última página">
+              <GlassButton
+                type="button"
+                variant="secondary"
+                size="xs"
+                iconOnly
+                onClick={() => goToPagesGridPage(pagesGridTotalPages)}
+                disabled={safePagesGridPage === pagesGridTotalPages}
+                aria-label="Ir a la última página"
+                className="bg-white/75"
+              >
+                <ChevronsRight className="h-4 w-4" aria-hidden="true" />
+              </GlassButton>
+            </Tooltip>
+          </div>
+        </nav>
+      )}
     </div>
   );
 
@@ -871,10 +1155,10 @@ export default function CaseWorkspace() {
       onDragCancel={() => setDraggedId(null)}
       onDragEnd={handleDragEnd}
     >
-      <div className="grid grid-cols-12 gap-5 h-[calc(100vh-200px)]">
+      <div className="grid grid-cols-12 gap-5 h-[calc(100vh-200px)] min-h-0">
         {/* Left: Document tree */}
-        <div className="col-span-3 flex flex-col gap-4">
-          <GlassSurface filterId="glass-panel" className="rounded-2xl p-4 flex-1 overflow-y-auto custom-scroll">
+        <div className="col-span-3 flex min-h-0 flex-col gap-4">
+          <SolidCard className="rounded-2xl p-4 flex-1 min-h-0 overflow-y-auto custom-scroll">
             <DocumentTree
               caseId={caseId}
               docTypes={docTypes}
@@ -885,21 +1169,21 @@ export default function CaseWorkspace() {
               }}
               onRefresh={refresh}
             />
-          </GlassSurface>
+          </SolidCard>
 
           {/* PDF Download Button */}
           <motion.button
             whileHover={{ scale: 1.02 }}
             whileTap={{ scale: 0.98 }}
             onClick={() => downloadExportPdf(caseId)}
-            className="flex items-center gap-3 p-3 rounded-2xl border border-white/40 bg-white/30 hover:bg-white/50 shadow-sm hover:shadow-md transition-[background-color,box-shadow] group text-left"
+            className="solid-panel flex items-center gap-3 rounded-2xl p-3 text-left shadow-sm transition-[background-color,border-color,box-shadow] hover:border-brand-200 hover:bg-brand-50 hover:shadow-md"
           >
-            <div className="p-2 rounded-lg bg-red-50 group-hover:bg-red-100 transition shrink-0">
+            <div className="shrink-0 rounded-lg bg-red-50 p-2 transition">
               <AnimatedPDF className="w-6 h-6" />
             </div>
             <div>
-              <p className="font-semibold text-xs text-gray-800">Descargar PDF</p>
-              <p className="text-[10px] text-gray-500 leading-tight mt-0.5">
+              <p className="font-semibold text-xs text-brand-800">Descargar PDF</p>
+              <p className="text-[10px] text-brand-500 leading-tight mt-0.5">
                 Consolidado con marcadores navegables
               </p>
             </div>
@@ -907,7 +1191,7 @@ export default function CaseWorkspace() {
         </div>
 
         {/* Center: Section content / Drop zones — hierarchical */}
-        <div className="col-span-6 flex flex-col gap-5 overflow-y-auto custom-scroll pr-2">
+        <div className="col-span-5 flex min-h-0 flex-col gap-4 overflow-y-auto custom-scroll pr-1">
           {/* ─── When a specific section is selected ─── */}
           {selectedSectionId && selectedDocTypeId && (() => {
             const dt = docTypes.find((d) => d.id === selectedDocTypeId);
@@ -918,11 +1202,11 @@ export default function CaseWorkspace() {
             return (
               <div className="flex flex-col gap-2">
                 {/* Breadcrumb header */}
-                <div className="flex items-center gap-1.5 text-xs text-gray-400 mb-1">
-                  <FolderOpen className="w-3.5 h-3.5 text-amber-500" />
-                  <span className="font-medium text-gray-600">{dt.code} – {dt.name}</span>
+                <div className="flex items-center gap-1.5 text-xs text-brand-500/70 mb-1">
+                  <FolderOpen className="w-3.5 h-3.5 text-brand-600" />
+                  <span className="font-medium text-brand-600">{dt.code} – {dt.name}</span>
                   <span>›</span>
-                  <span className="font-semibold text-gray-700">{sec.path_code || `${dt.code}.${sec.code}`} – {sec.name}</span>
+                  <span className="font-semibold text-brand-800">{sec.path_code || `${dt.code}.${sec.code}`} – {sec.name}</span>
                 </div>
                 {renderSectionZones(sec, dt, 0)}
               </div>
@@ -937,12 +1221,12 @@ export default function CaseWorkspace() {
               .map((dt) => (
                 <div key={dt.id} className="flex flex-col gap-2">
                   {/* Document Type header card */}
-                  <div className="flex items-center gap-2 px-3 py-2 bg-gradient-to-r from-gray-50 to-white rounded-lg border border-gray-200 shadow-sm sticky top-0 z-10">
-                    <FolderOpen className="w-4 h-4 text-amber-500 shrink-0" />
-                    <span className="text-sm font-bold text-gray-800 truncate">
+                  <div className="flex items-center gap-2 px-3 py-2 bg-nova-ice/80 rounded-lg border border-white/50 shadow-sm sticky top-0 z-10">
+                    <FolderOpen className="w-4 h-4 text-brand-600 shrink-0" />
+                    <span className="text-sm font-bold text-brand-800 truncate">
                       {dt.code} – {dt.name}
                     </span>
-                    <span className="ml-auto text-[10px] text-gray-400">
+                    <span className="ml-auto text-[10px] text-brand-500/70">
                       {dt.sections.length} {dt.sections.length === 1 ? "sección" : "secciones"}
                     </span>
                   </div>
@@ -954,7 +1238,7 @@ export default function CaseWorkspace() {
                     .map((sec) => renderSectionZones(sec, dt, 0))}
 
                   {dt.sections.length === 0 && (
-                    <p className="text-xs text-gray-400 italic text-center py-3">
+                    <p className="text-xs text-brand-500/70 italic text-center py-3">
                       Sin secciones — agrega desde el panel izquierdo
                     </p>
                   )}
@@ -981,21 +1265,20 @@ export default function CaseWorkspace() {
           />
 
           {docTypes.length === 0 && (
-            <div className="flex flex-col items-center justify-center py-12 h-full">
-              <EmptyState
-                icon="organize"
-                title="Sin estructura"
-                description="Crea tipos de documento o aplica una plantilla desde el panel izquierdo para comenzar a clasificar."
-              />
+            <div className="rounded-xl border border-dashed border-brand-100 bg-white/40 px-4 py-6 text-center">
+              <p className="text-sm font-medium text-brand-700">Zonas de clasificación</p>
+              <p className="mt-1 text-xs leading-relaxed text-brand-500">
+                Define la estructura en el panel izquierdo para ver aquí las secciones del expediente.
+              </p>
             </div>
           )}
         </div>
 
         {/* Right: Unclassified pages */}
-        <div className="col-span-3 flex flex-col h-full min-h-0 overflow-hidden">
-          <GlassSurface filterId="glass-panel" className="rounded-2xl p-4 flex-1 overflow-y-auto custom-scroll flex flex-col min-h-0 h-full w-full max-w-full">
+        <div className="col-span-4 flex min-h-0 flex-col overflow-hidden">
+          <SolidCard className="rounded-2xl p-4 flex-1 overflow-y-auto custom-scroll flex flex-col min-h-0 h-full w-full max-w-full">
             <div className="flex items-center justify-between mb-3 shrink-0">
-              <h3 className="text-xs font-bold text-gray-500 uppercase tracking-wider">
+              <h3 className="text-xs font-bold text-brand-500 uppercase tracking-wider">
                 Sin Clasificar ({unclassifiedPages.length})
               </h3>
               {unclassifiedPages.length > 0 && (() => {
@@ -1017,6 +1300,7 @@ export default function CaseWorkspace() {
                 label=""
                 pages={unclassifiedPages}
                 isSpecialZone
+                fillHeight
                 onClickPage={(p) => {
                   setSelectedPage(p);
                   setPreviewPage(p);
@@ -1026,7 +1310,7 @@ export default function CaseWorkspace() {
                 onToggleSelectPage={handleToggleSelectPage}
               />
             </div>
-          </GlassSurface>
+          </SolidCard>
         </div>
       </div>
       {/* Drag ghost that follows cursor across the whole workspace */}
@@ -1055,10 +1339,10 @@ export default function CaseWorkspace() {
                   draggable={false}
                 />
                 <div className="px-1.5 py-1 bg-white">
-                  <p className="text-[10px] text-gray-500 truncate" title={draggedPage.original_filename}>
+                  <p className="text-[10px] text-brand-500 truncate" title={draggedPage.original_filename}>
                     {draggedPage.original_filename}
                   </p>
-                  <div className="flex items-center justify-between text-[10px] text-gray-400">
+                  <div className="flex items-center justify-between text-[10px] text-brand-500/70">
                     <span>p. {draggedPage.original_page_number}</span>
                     {draggedPage.subindex && <span className="font-semibold text-brand-600">{draggedPage.subindex}</span>}
                   </div>
@@ -1085,44 +1369,45 @@ export default function CaseWorkspace() {
   );
 
   return (
-    <div className="max-w-screen-2xl mx-auto px-4 py-4">
+    <>
+    <div className="page-container">
       {/* ── Header ────────────────────────────────────────────────── */}
-      <div className="flex items-center gap-3 mb-4">
-        <Link
-          to="/"
-          className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-500"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </Link>
-        <div className="flex-1">
-          <h1 className="text-xl font-bold text-gray-900">{caseData.name}</h1>
-          {caseData.description && (
-            <p className="text-xs text-gray-400">{caseData.description}</p>
-          )}
+      <div className="dashboard-section-header mb-6">
+        <div className="flex items-start gap-3">
+          <Link
+            to="/"
+            aria-label="Volver al dashboard"
+            className="mt-1 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-brand-600 transition-colors hover:bg-brand-50 hover:text-brand-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-300"
+          >
+            <ArrowLeft className="w-5 h-5" aria-hidden="true" />
+          </Link>
+          <div className="min-w-0 flex-1">
+            <h1 className="page-title">{caseData.name}</h1>
+            {caseData.description && (
+              <p className="page-subtitle">{caseData.description}</p>
+            )}
+          </div>
         </div>
       </div>
 
       {/* ── Tab bar ───────────────────────────────────────────────── */}
       <div className="mb-8 flex justify-center">
-        <GlassSurface
-          filterId="glass-tabs"
-          className="rounded-2xl p-2 w-full max-w-3xl"
-          contentClassName="relative z-10 h-full w-full flex flex-wrap sm:flex-nowrap items-center justify-center gap-1.5"
-        >
+        <SolidCard className="nav-tabs-bar rounded-2xl p-2 w-full max-w-3xl">
+          <div className="relative z-10 h-full w-full flex flex-wrap sm:flex-nowrap items-center justify-center gap-1.5">
           {tabs.map((t) => {
             const isActive = tab === t.key;
             return (
               <button
                 key={t.key}
                 onClick={() => setTab(t.key)}
-                className={`relative inline-flex items-center justify-center gap-2 px-5 py-2.5 min-w-[150px] text-sm font-medium transition-colors rounded-xl ${
-                  isActive ? "text-brand-800" : "text-gray-600 hover:text-gray-900"
+                className={`relative inline-flex items-center justify-center gap-2 px-5 py-2.5 min-w-[150px] text-sm font-medium transition-colors rounded-full ${
+                  isActive ? "text-brand-800" : "text-brand-600 hover:text-brand-800"
                 }`}
               >
                 {isActive && (
                   <motion.div
                     layoutId="active-tab"
-                    className="absolute inset-0 bg-white/65 shadow-sm border border-white/60 rounded-xl"
+                    className="absolute inset-0 nav-tab-active rounded-full"
                     transition={{ type: "spring", stiffness: 360, damping: 32, mass: 0.8 }}
                     style={{ zIndex: -1 }}
                   />
@@ -1132,7 +1417,8 @@ export default function CaseWorkspace() {
               </button>
             );
           })}
-        </GlassSurface>
+          </div>
+        </SolidCard>
       </div>
 
       {/* ── Tab content ───────────────────────────────────────────── */}
@@ -1162,85 +1448,83 @@ export default function CaseWorkspace() {
         />
       )}
 
-      {/* ── Full-size page preview modal ──────────────────────────── */}
-      <AnimatePresence>
-        {previewPage && (() => {
-          return (
+    </div>
+
+      {/* ── Full-size page preview modal (portal, viewport-centered) ─ */}
+      {createPortal(
+        <AnimatePresence>
+          {previewPage && (
             <motion.div
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 backdrop-blur-sm"
-              onClick={() => { setPreviewPage(null); setShowOcrText(false); }}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Vista previa de página"
+              className="fixed inset-0 z-[80] flex items-center justify-center bg-nova-slate/60 p-4 sm:p-8"
+              onClick={closePreview}
             >
               <motion.div
                 initial={{ scale: 0.95, opacity: 0, y: 10 }}
                 animate={{ scale: 1, opacity: 1, y: 0 }}
                 exit={{ scale: 0.95, opacity: 0, y: 10 }}
                 transition={{ type: "spring", stiffness: 300, damping: 25 }}
+                className={`relative w-full max-h-[calc(100vh-2rem)] ${
+                  showOcrText && previewPage.ocr_text ? "max-w-6xl" : "max-w-3xl"
+                }`}
                 onClick={(e: React.MouseEvent) => e.stopPropagation()}
               >
-                <GlassSurface
-                  filterId="glass-panel"
-                  className={`relative rounded-3xl shadow-2xl flex flex-col
-                    ${showOcrText && previewPage.ocr_text ? "max-w-6xl w-full" : "max-w-3xl"} max-h-[92vh]`}
+                <SolidCard
+                  reading
+                  className="relative rounded-3xl shadow-2xl flex flex-col max-h-[calc(100vh-2rem)] overflow-hidden"
                 >
                 {/* Close button */}
                 <Tooltip content="Cerrar vista previa">
                   <button
-                    onClick={() => { setPreviewPage(null); setShowOcrText(false); }}
-                    className="absolute top-3 right-3 z-10 bg-white/80 rounded-full p-1.5 hover:bg-gray-200 transition-colors"
+                    onClick={closePreview}
+                    className="absolute top-2 right-3 z-10 inline-flex h-7 w-7 items-center justify-center rounded-full bg-white/85 text-brand-600 transition-colors hover:bg-brand-50 hover:text-brand-800"
+                    aria-label="Cerrar vista previa"
                   >
-                    <X className="w-5 h-5" />
+                    <X className="h-4 w-4" />
                   </button>
                 </Tooltip>
 
               {/* Content area */}
-              <div className={`flex flex-1 overflow-hidden ${showOcrText && previewPage.ocr_text ? "flex-row" : ""}`}>
+              <div className={`flex flex-1 min-h-0 overflow-hidden ${showOcrText && previewPage.ocr_text ? "flex-row" : ""}`}>
                 {/* Image */}
                 <div className={`overflow-auto ${showOcrText && previewPage.ocr_text ? "w-1/2 border-r" : "w-full"}`}>
                   <img
                     src={previewPage.file_url}
                     alt="Preview"
-                    className="max-h-[80vh] w-auto mx-auto"
+                    className="max-h-[calc(100vh-12rem)] w-auto mx-auto"
                   />
                 </div>
 
                 {/* OCR Text panel */}
                 {showOcrText && previewPage.ocr_text && (
-                  <div className="w-1/2 flex flex-col overflow-hidden">
-                    <div className="px-3 py-2 bg-gray-50 border-b flex items-center justify-between">
+                  <div className="w-1/2 flex flex-col overflow-hidden min-h-0">
+                    <div className="px-3 py-2 pr-12 bg-brand-50/70 border-b border-brand-100/70 flex items-center justify-between">
                       <div className="flex items-center gap-2">
                         <FileText className="w-4 h-4 text-brand-600" />
-                        <span className="text-xs font-semibold text-gray-700">
+                        <span className="text-xs font-semibold text-brand-800">
                           Texto Extraído
                         </span>
-                        {previewPage.extraction_method && (
-                          <span className={`text-[10px] px-1.5 py-0.5 rounded-full ${
-                            previewPage.extraction_method === "gemini_tables"
-                              ? "bg-purple-100 text-purple-700"
-                              : "bg-blue-100 text-blue-700"
-                          }`}>
-                            {previewPage.extraction_method === "gemini_tables"
-                              ? "Tablas (Gemini)"
-                              : "OCR (Gemini)"}
-                          </span>
-                        )}
                       </div>
                       <button
                         onClick={() => {
                           navigator.clipboard.writeText(previewPage.ocr_text || "");
                           toast.success("Texto copiado");
                         }}
-                        className="p-1 rounded hover:bg-gray-200 text-gray-500"
+                        className="p-1 rounded text-brand-500 transition-colors hover:bg-brand-100 hover:text-brand-700"
+                        aria-label="Copiar texto extraído"
                         title="Copiar texto"
                       >
                         <Copy className="w-3.5 h-3.5" />
                       </button>
                     </div>
                     <div className="flex-1 overflow-y-auto p-4 custom-scroll">
-                      <pre className="text-xs text-gray-700 whitespace-pre-wrap font-mono leading-relaxed">
+                      <pre className="text-xs text-brand-700 whitespace-pre-wrap font-mono leading-relaxed">
                         {previewPage.ocr_text}
                       </pre>
                     </div>
@@ -1249,8 +1533,8 @@ export default function CaseWorkspace() {
               </div>
 
               {/* Footer bar */}
-              <div className="px-4 py-3 bg-gray-50 border-t flex items-center justify-between text-sm">
-                <span className="text-gray-600 font-medium">
+              <div className="px-4 py-3 bg-brand-50/70 border-t border-brand-100/70 flex items-center justify-between text-sm shrink-0">
+                <span className="text-brand-600 font-medium">
                   {previewPage.original_filename} &mdash; Pagina{" "}
                   {previewPage.original_page_number}
                 </span>
@@ -1279,7 +1563,7 @@ export default function CaseWorkspace() {
                   )}
 
                   {previewPage.extraction_status === "processing" ? (
-                    <span className="flex items-center gap-1 text-xs text-amber-600">
+                    <span className="flex items-center gap-1 text-xs text-brand-600">
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
                       Extrayendo desde AI Autopilot…
                     </span>
@@ -1288,14 +1572,9 @@ export default function CaseWorkspace() {
                   {/* Search readiness status */}
                   {indexingConfigured && previewPage.extraction_status === "done" && (
                     <>
-                      <div className="h-4 w-px bg-gray-300" />
-                      {previewPage.index_status === "done" ? (
-                        <span className="flex items-center gap-1 text-xs text-purple-600">
-                          <Sparkles className="w-3.5 h-3.5" />
-                          Lista para búsqueda
-                        </span>
-                      ) : previewPage.index_status === "processing" ? (
-                        <span className="flex items-center gap-1 text-xs text-amber-600">
+                      <div className="h-4 w-px bg-brand-200" />
+                      {previewPage.index_status === "processing" ? (
+                        <span className="flex items-center gap-1 text-xs text-brand-600">
                           <Loader2 className="w-3.5 h-3.5 animate-spin" />
                           Preparando búsqueda…
                         </span>
@@ -1305,19 +1584,11 @@ export default function CaseWorkspace() {
                           Error al preparar búsqueda
                         </span>
                       ) : null}
-                      <button
-                        onClick={() => handleReindexPage(previewPage)}
-                        className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-600 hover:bg-indigo-100 transition"
-                        title="Volver a preparar esta página para búsqueda"
-                      >
-                        <RefreshCw className="w-3 h-3" />
-                        Reindexar
-                      </button>
                     </>
                   )}
 
                   {/* Divider */}
-                  <div className="h-4 w-px bg-gray-300" />
+                  <div className="h-4 w-px bg-brand-200" />
 
                   {previewPage.subindex && (
                     <span className="flex items-center gap-1 text-brand-600 font-semibold">
@@ -1329,21 +1600,22 @@ export default function CaseWorkspace() {
                       previewPage.status === "classified"
                         ? "bg-green-100 text-green-700"
                         : previewPage.status === "extra"
-                          ? "bg-amber-100 text-amber-700"
-                          : "bg-gray-100 text-gray-500"
+                          ? "bg-brand-100 text-brand-700"
+                          : "bg-brand-50 text-brand-500"
                     }`}
                   >
                     {previewPage.status}
                   </span>
                 </div>
               </div>
-                </GlassSurface>
+                </SolidCard>
               </motion.div>
-          </motion.div>
-        );
-      })()}
-    </AnimatePresence>
-    </div>
+            </motion.div>
+          )}
+        </AnimatePresence>,
+        document.body
+      )}
+    </>
   );
 }
 

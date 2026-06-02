@@ -22,6 +22,7 @@ import type {
   Page,
   PageSectionLink,
   QuestionnaireAnswerMap,
+  QuestionnaireAnswersBundle,
   QuestionnaireAutofillResponse,
   QuestionnairePage,
   RagQueryResponse,
@@ -46,7 +47,16 @@ function _isTransientNetworkError(error: unknown): boolean {
   if (error.code === "ERR_NETWORK") return true;
   if (/timeout/i.test(error.message || "")) return true;
   const status = error.response?.status ?? 0;
-  return status === 502 || status === 503 || status === 504;
+  // 404 is treated as transient on the autofill status endpoint because the
+  // job state lives in the backend process memory: a deploy, OOM kill or
+  // gunicorn worker recycle wipes it. The runAutofillJob loop waits for a
+  // few polls before giving up, so a momentary 404 does not abort the flow.
+  return (
+    status === 404 ||
+    status === 502 ||
+    status === 503 ||
+    status === 504
+  );
 }
 
 api.interceptors.request.use((config) => {
@@ -461,6 +471,11 @@ export const getAvailableFormTypes = () =>
 export const getSharedQuestions = () =>
   api.get<QuestionnairePage[]>("/questionnaire/shared-questions").then((r) => r.data);
 
+export const getSharedAttorneyQuestions = () =>
+  api
+    .get<QuestionnairePage[]>("/questionnaire/shared-attorney-questions")
+    .then((r) => r.data);
+
 export const getFormClientQuestions = (formType: string) =>
   api
     .get<QuestionnairePage[]>(`/questionnaire/${formType}/client-questions`)
@@ -471,12 +486,34 @@ export const getFormAttorneyQuestions = (formType: string) =>
     .get<QuestionnairePage[]>(`/questionnaire/${formType}/attorney-questions`)
     .then((r) => r.data);
 
-export const getQuestionnaireAnswers = (caseId: string, formType?: string) =>
+export const getQuestionnaireAnswers = (
+  caseId: string,
+  formType?: string,
+  options?: { includeDynamic?: boolean },
+): Promise<QuestionnaireAnswersBundle> =>
   api
-    .get<QuestionnaireAnswerMap>(`/cases/${caseId}/questionnaire/answers`, {
-      params: formType ? { form_type: formType } : {},
-    })
-    .then((r) => r.data);
+    .get<QuestionnaireAnswersBundle | QuestionnaireAnswerMap>(
+      `/cases/${caseId}/questionnaire/answers`,
+      {
+        params: {
+          ...(formType ? { form_type: formType } : {}),
+          ...(options?.includeDynamic ? { include_dynamic: true } : {}),
+        },
+      }
+    )
+    .then((r) => {
+      const data = r.data;
+      if (data && typeof data === "object" && "answers" in data) {
+        return {
+          answers: (data as QuestionnaireAnswersBundle).answers ?? {},
+          field_origins: (data as QuestionnaireAnswersBundle).field_origins ?? {},
+        };
+      }
+      return {
+        answers: (data as QuestionnaireAnswerMap) ?? {},
+        field_origins: {},
+      };
+    });
 
 export const getQuestionnaireVerifications = (caseId: string, formType?: string) =>
   api
@@ -493,32 +530,28 @@ export const saveQuestionnaireAnswers = (
     .post<{ saved_count: number }>(`/cases/${caseId}/questionnaire/answers`, { answers })
     .then((r) => r.data);
 
-interface AutofillOcrCallbacks {
+export interface AutofillOcrCallbacks {
   onOcrProgress?: (msg: string, pct: number) => void;
   onOcrComplete?: () => void;
   onJobStarted?: (jobId: string) => void;
   signal?: AbortSignal;
 }
 
-async function runAutofillJob(
-  caseId: string,
-  kind: "shared" | "attorney",
+const ACTIVE_AUTOFILL_STATUSES = new Set<AutofillJobStatus["status"]>([
+  "queued",
+  "running",
+  "ocr_preparing",
+]);
+
+export function isActiveAutofillStatus(status: AutofillJobStatus["status"]): boolean {
+  return ACTIVE_AUTOFILL_STATUSES.has(status);
+}
+
+export async function pollAutofillJobById(
+  jobId: string,
   callbacks?: AutofillOcrCallbacks,
 ): Promise<QuestionnaireAutofillResponse> {
-  const startEndpoint = `/cases/${caseId}/questionnaire/${kind}/autofill`;
-  const startRes = await api.post<AutofillJobStatus>(startEndpoint, null, {
-    timeout: AUTOFILL_HTTP_TIMEOUT_MS,
-    validateStatus: (s) => (s >= 200 && s < 300) || s === 202,
-    signal: callbacks?.signal,
-  });
-
-  const job = startRes.data;
-  if (!job || !job.id) {
-    throw new Error("Autofill could not be started: no job id returned by server.");
-  }
-  callbacks?.onJobStarted?.(job.id);
-
-  const statusEndpoint = `/questionnaire/autofill-jobs/${job.id}`;
+  const statusEndpoint = `/questionnaire/autofill-jobs/${jobId}`;
   const startedAt = Date.now();
   let lastStatus: AutofillJobStatus["status"] | null = null;
   let transientFailures = 0;
@@ -551,6 +584,12 @@ async function runAutofillJob(
       if (_isTransientNetworkError(err)) {
         transientFailures += 1;
         if (transientFailures >= AUTOFILL_POLL_MAX_TRANSIENT_FAILURES) {
+          const status = axios.isAxiosError(err) ? err.response?.status ?? 0 : 0;
+          if (status === 404) {
+            throw new Error(
+              "The autofill background job is no longer available (the server may have restarted). Please run the autofill again.",
+            );
+          }
           throw new Error(
             "Lost connection to the autofill service. The job is still running on the server; please refresh in a few moments.",
           );
@@ -594,6 +633,27 @@ async function runAutofillJob(
 
     await new Promise((r) => setTimeout(r, AUTOFILL_POLL_INTERVAL_MS));
   }
+}
+
+async function runAutofillJob(
+  caseId: string,
+  kind: "shared" | "attorney",
+  callbacks?: AutofillOcrCallbacks,
+): Promise<QuestionnaireAutofillResponse> {
+  const startEndpoint = `/cases/${caseId}/questionnaire/${kind}/autofill`;
+  const startRes = await api.post<AutofillJobStatus>(startEndpoint, null, {
+    timeout: AUTOFILL_HTTP_TIMEOUT_MS,
+    validateStatus: (s) => (s >= 200 && s < 300) || s === 202,
+    signal: callbacks?.signal,
+  });
+
+  const job = startRes.data;
+  if (!job || !job.id) {
+    throw new Error("Autofill could not be started: no job id returned by server.");
+  }
+  callbacks?.onJobStarted?.(job.id);
+
+  return pollAutofillJobById(job.id, callbacks);
 }
 
 export const autofillSharedQuestionnaireAnswers = (

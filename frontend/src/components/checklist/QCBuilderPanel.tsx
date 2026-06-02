@@ -1,9 +1,11 @@
-import { memo, useEffect, useMemo, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   Plus,
   Trash2,
   ChevronDown,
   ChevronRight,
+  ChevronUp,
   FolderOpen,
   ClipboardList,
   Check,
@@ -14,15 +16,14 @@ import {
   Sparkles,
   Loader2,
   Bot,
-  MapPin,
   Link2,
   Search,
   Send,
-  Library,
   Save,
   FilePlus,
   Bookmark,
   MoreVertical,
+  Library,
 } from "lucide-react";
 import toast from "react-hot-toast";
 import { motion, AnimatePresence } from "framer-motion";
@@ -30,7 +31,11 @@ import { Tooltip } from "../ui/Tooltip";
 import { EmptyState } from "../ui/EmptyState";
 import { AnimatedAIBot } from "../ui/AnimatedAIBot";
 import CaseDocumentScopePicker from "../document-scopes/CaseDocumentScopePicker";
-import { GlassSurface } from "../glass/GlassSurface";
+import { SolidCard } from "../ui/SolidCard";
+import { NovaBreathingLogo } from "../ui/NovaBreathingLogo";
+import { GlassButton } from "../glass/GlassButton";
+import { LoadingButton } from "../ui/LoadingButton";
+import { useBusyActions } from "../../hooks/useBusyActions";
 import type {
   Case,
   QCChecklist,
@@ -74,6 +79,7 @@ import { flattenSections } from "../../utils/sections";
 import { runSemanticSearch } from "../../utils/semanticSearch";
 import { autopilotPhaseSummary, nextCode } from "./qcBuilderUtils";
 import { useQcAutopilot } from "./useQcAutopilot";
+import { groupQcTemplates } from "../../utils/qcTemplateGroups";
 
 interface Props {
   caseId: string;
@@ -85,10 +91,10 @@ interface Props {
 }
 
 const ANSWER_STYLES: Record<string, { bg: string; text: string; label: string }> = {
-  unanswered: { bg: "bg-gray-100", text: "text-gray-500", label: "—" },
-  yes: { bg: "bg-green-100", text: "text-green-700", label: "Sí" },
+  unanswered: { bg: "bg-brand-50", text: "text-brand-500", label: "—" },
+  yes: { bg: "bg-green-100", text: "text-green-700", label: "Yes" },
   no: { bg: "bg-red-100", text: "text-red-700", label: "No" },
-  na: { bg: "bg-gray-200", text: "text-gray-600", label: "N/A" },
+  na: { bg: "bg-brand-100", text: "text-brand-700", label: "N/A" },
   insufficient: { bg: "bg-amber-100", text: "text-amber-700", label: "Ins." },
 };
 
@@ -104,10 +110,8 @@ function QCBuilderPanel({
   const [templates, setTemplates] = useState<QCChecklist[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedParts, setExpandedParts] = useState<Record<string, boolean>>({});
-  const [expandedCl, setExpandedCl] = useState<Record<string, boolean>>({});
-  const [showTemplates, setShowTemplates] = useState(false);
+  const [expandedClId, setExpandedClId] = useState<string | null>(null);
   const [geminiOk, setGeminiOk] = useState(false);
-  const [mappingQ, setMappingQ] = useState<string | null>(null);
 
   const allSections = useMemo(
     () => docTypes.flatMap((dt) => flattenSections(dt.sections)),
@@ -131,6 +135,8 @@ function QCBuilderPanel({
   const [linkPresets, setLinkPresets] = useState<QCLinkPreset[]>([]);
   const [showPresetMenuFor, setShowPresetMenuFor] = useState<string | null>(null);
   const [savingDocumentScope, setSavingDocumentScope] = useState(false);
+  const [templatesCollapsed, setTemplatesCollapsed] = useState(false);
+  const { isBusy, run } = useBusyActions();
 
   const reload = async () => {
     setLoading(true);
@@ -146,6 +152,19 @@ function QCBuilderPanel({
   };
 
   useEffect(() => { reload(); }, [caseId]);
+
+  useEffect(() => {
+    if (checklists.length === 0) {
+      setExpandedClId(null);
+      return;
+    }
+    setExpandedClId((current) => {
+      if (current && checklists.some((cl) => cl.id === current)) {
+        return current;
+      }
+      return checklists[0].id;
+    });
+  }, [checklists]);
 
   const qcScopeDocuments = listSelectableCaseDocuments(pages);
   const selectedQcSourceDocumentIds = resolveSelectedSourceDocumentIds(
@@ -170,14 +189,16 @@ function QCBuilderPanel({
       );
       onCaseUpdated?.(updatedCase);
     } catch {
-      toast.error("No se pudo guardar el alcance de documentos para QC");
+      toast.error("Could not save QC document scope");
     } finally {
       setSavingDocumentScope(false);
     }
   };
 
   const togglePart = (id: string) => setExpandedParts((p) => ({ ...p, [id]: !p[id] }));
-  const toggleCl = (id: string) => setExpandedCl((p) => ({ ...p, [id]: !p[id] }));
+  const toggleCl = (id: string) => {
+    setExpandedClId((current) => (current === id ? null : id));
+  };
   const appliedTemplateIds = useMemo(
     () =>
       new Set(
@@ -187,64 +208,123 @@ function QCBuilderPanel({
       ),
     [checklists]
   );
+  const groupedTemplates = useMemo(
+    () => groupQcTemplates(templates),
+    [templates]
+  );
+  const appliedTemplateCount = appliedTemplateIds.size;
+  const canCollapseTemplates = !loading && templates.length > 0;
+  const isTemplatesContentCollapsed = canCollapseTemplates && templatesCollapsed;
 
-  const handleCreateChecklist = async () => {
-    if (!clName.trim()) return;
-    await createQCChecklist({ name: clName.trim() }, caseId);
-    setClName(""); setAddingCl(false);
-    await reload(); onRefresh();
-  };
-
-  const handleApplyTemplate = async (tplId: string) => {
-    if (appliedTemplateIds.has(tplId)) {
-      toast("Esta plantilla QC ya fue aplicada a este caso.");
-      return;
-    }
-    const promise = applyQCTemplate(caseId, tplId).then(async () => {
-      setShowTemplates(false);
+  const handleCreateChecklist = () =>
+    run("create-qc-checklist", async () => {
+      if (!clName.trim()) return;
+      await createQCChecklist({ name: clName.trim() }, caseId);
+      setClName("");
+      setAddingCl(false);
       await reload();
       onRefresh();
     });
-    toast.promise(promise, {
-      loading: "Aplicando plantilla…",
-      success: "Plantilla QC aplicada",
-      error: (error: unknown) => getApiErrorMessage(error, "Error al aplicar plantilla")
+
+  const closeCreateChecklistModal = () => {
+    setAddingCl(false);
+    setClName("");
+  };
+
+  const createChecklistModalRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!addingCl) return;
+
+    const scrollY = window.scrollY;
+    const { style } = document.body;
+    const previous = {
+      overflow: style.overflow,
+      position: style.position,
+      top: style.top,
+      width: style.width,
+    };
+    style.overflow = "hidden";
+    style.position = "fixed";
+    style.top = `-${scrollY}px`;
+    style.width = "100%";
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") closeCreateChecklistModal();
+    };
+    document.addEventListener("keydown", onKeyDown);
+
+    const focusFrame = requestAnimationFrame(() => {
+      createChecklistModalRef.current
+        ?.querySelector<HTMLInputElement>("input")
+        ?.focus({ preventScroll: true });
+    });
+
+    return () => {
+      cancelAnimationFrame(focusFrame);
+      document.removeEventListener("keydown", onKeyDown);
+      style.overflow = previous.overflow;
+      style.position = previous.position;
+      style.top = previous.top;
+      style.width = previous.width;
+      window.scrollTo(0, scrollY);
+    };
+  }, [addingCl]);
+
+  const handleApplyTemplate = (tplId: string) => {
+    if (appliedTemplateIds.has(tplId)) {
+      toast("This QC template has already been applied to this case.");
+      return;
+    }
+    run(`apply-qc-template:${tplId}`, async () => {
+      const promise = applyQCTemplate(caseId, tplId).then(async () => {
+        await reload();
+        onRefresh();
+      });
+      await toast.promise(promise, {
+        loading: "Applying template…",
+        success: "QC template applied",
+        error: (error: unknown) => getApiErrorMessage(error, "Failed to apply template"),
+      });
     });
   };
 
-  const handleSeedAll = async () => {
-    const promise = seedAllQCTemplates().then(reload);
-    toast.promise(promise, {
-      loading: "Precargando todas las plantillas…",
-      success: "Plantillas QC precargadas",
-      error: "Error al precargar plantillas"
+  const handleSeedAll = () =>
+    run("seed-all-templates", async () => {
+      const promise = seedAllQCTemplates().then(reload);
+      await toast.promise(promise, {
+        loading: "Reloading all templates…",
+        success: "Templates reloaded",
+        error: "Failed to reload templates",
+      });
     });
-  };
 
-  const handleAddPart = async (clId: string, parentPartId?: string) => {
-    if (!newName.trim()) return;
-    try {
-      await createQCPart(clId, { name: newName.trim(), code: newCode, parent_part_id: parentPartId });
-      setNewName(""); setNewCode(""); setAddingPartFor(null); setAddingSubpartFor(null);
-      await reload();
-    } catch { toast.error("Error al crear parte"); }
-  };
+  const handleAddPart = (clId: string, parentPartId?: string) =>
+    run(parentPartId ? `add-subpart:${parentPartId}` : `add-part:${clId}`, async () => {
+      if (!newName.trim()) return;
+      try {
+        await createQCPart(clId, { name: newName.trim(), code: newCode, parent_part_id: parentPartId });
+        setNewName(""); setNewCode(""); setAddingPartFor(null); setAddingSubpartFor(null);
+        await reload();
+      } catch { toast.error("Failed to create part"); }
+    });
 
-  const handleAddQuestion = async (partId: string) => {
-    if (!newDesc.trim()) return;
-    try {
-      await createQCQuestion(partId, { code: newCode, description: newDesc.trim(), where_to_verify: newVerify });
-      setNewDesc(""); setNewCode(""); setNewVerify(""); setAddingQuestionFor(null);
-      await reload();
-    } catch { toast.error("Error al crear pregunta"); }
-  };
+  const handleAddQuestion = (partId: string) =>
+    run(`add-question:${partId}`, async () => {
+      if (!newDesc.trim()) return;
+      try {
+        await createQCQuestion(partId, { code: newCode, description: newDesc.trim(), where_to_verify: newVerify });
+        setNewDesc(""); setNewCode(""); setNewVerify(""); setAddingQuestionFor(null);
+        await reload();
+      } catch { toast.error("Failed to create question"); }
+    });
 
   const handleSetAnswer = async (q: QCQuestion, answer: string) => {
     const next = q.answer === answer ? "unanswered" : answer;
     try {
       await updateQCQuestion(q.id, { answer: next });
       await reload();
-    } catch { toast.error("Error al actualizar respuesta"); }
+    } catch { toast.error("Failed to update answer"); }
   };
 
   const { autopilotJob, verifyingCl, handleAIVerifyChecklist } = useQcAutopilot({
@@ -271,28 +351,49 @@ function QCBuilderPanel({
       search: (question) => qcSemanticQuery(clId, question),
       setSearching: setSemanticSearching,
       setResults: setSemanticResults,
-      fallbackError: "Error en consulta semantica",
+      fallbackError: "Search failed",
     });
   };
 
-  const handleToggleSectionTarget = async (qId: string, sectionId: string, current: string[]) => {
-    const next = current.includes(sectionId)
-      ? current.filter((id) => id !== sectionId)
-      : [...current, sectionId];
-    try {
-      await updateQCQuestion(qId, { target_section_ids: next });
-      await reload();
-    } catch { toast.error("Error al actualizar secciones"); }
-  };
-
   // ── Link preset handlers ──
-  const handleSaveLinkPreset = async (clId: string, clName: string) => {
-    try {
-      await saveLinkPreset(clId, { name: `Preset - ${clName}` });
-      toast.success("Preset de vinculación guardado");
-      await reload();
-    } catch { toast.error("Error al guardar preset"); }
-  };
+  const handleSaveLinkPreset = (clId: string, clName: string) =>
+    run(`save-link-preset:${clId}`, async () => {
+      try {
+        await saveLinkPreset(clId, { name: `Preset - ${clName}` });
+        toast.success("Link preset saved");
+        await reload();
+      } catch { toast.error("Failed to save preset"); }
+    });
+
+  const handleApplyLinkPreset = (clId: string, presetId: string) =>
+    run(`apply-link-preset:${presetId}`, async () => {
+      try {
+        await applyLinkPreset(caseId, clId, presetId);
+        toast.success("Link preset applied");
+        setShowPresetMenuFor(null);
+        await reload();
+      } catch { toast.error("Failed to apply preset"); }
+    });
+
+  const handleAutoLinkSections = (clId: string) =>
+    run(`auto-link:${clId}`, async () => {
+      try {
+        await autoLinkQCSections(caseId, clId);
+        toast.success("Auto-link completed");
+        await reload();
+      } catch (error: unknown) {
+        toast.error(getApiErrorMessage(error, "Failed to auto-link sections"));
+      }
+    });
+
+  const handleDeleteLinkPreset = (presetId: string) =>
+    run(`delete-link-preset:${presetId}`, async () => {
+      try {
+        await deleteLinkPreset(presetId);
+        toast.success("Preset deleted");
+        setLinkPresets((prev) => prev.filter((p) => p.id !== presetId));
+      } catch { toast.error("Failed to delete preset"); }
+    });
 
   const handleShowPresets = async (clId: string, sourceTemplateId: string | null) => {
     if (showPresetMenuFor === clId) {
@@ -306,122 +407,81 @@ function QCBuilderPanel({
     setShowPresetMenuFor(clId);
   };
 
-  const handleApplyLinkPreset = async (clId: string, presetId: string) => {
-    try {
-      await applyLinkPreset(caseId, clId, presetId);
-      toast.success("Preset de vinculación aplicado");
-      setShowPresetMenuFor(null);
-      await reload();
-    } catch { toast.error("Error al aplicar preset"); }
-  };
-
-  const handleAutoLinkSections = async (clId: string) => {
-    try {
-      await autoLinkQCSections(caseId, clId);
-      toast.success("Auto-mapeo ejecutado");
-      await reload();
-    } catch (error: unknown) {
-      toast.error(getApiErrorMessage(error, "Error al auto-mapear secciones"));
-    }
-  };
-
-  const handleDeleteLinkPreset = async (presetId: string) => {
-    try {
-      await deleteLinkPreset(presetId);
-      toast.success("Preset eliminado");
-      setLinkPresets((prev) => prev.filter((p) => p.id !== presetId));
-    } catch { toast.error("Error al eliminar preset"); }
-  };
-
   const [expandedAI, setExpandedAI] = useState<Record<string, boolean>>({});
 
   // Render a question row
   const renderQuestion = (q: QCQuestion) => {
     const hasAI = !!q.ai_answer;
     const aiExpanded = expandedAI[q.id];
-    const mappedCount = q.target_section_ids?.length || 0;
     return (
-      <div key={q.id} className="border-l-2 border-transparent hover:border-brand-300 transition rounded-md">
+      <div key={q.id} className="border-l-2 border-transparent hover:border-brand-300 transition rounded-xl">
         {/* Main row */}
-        <div className="group flex items-start gap-2 py-2 px-2 hover:bg-gray-50 transition-colors text-xs">
+        <div className="group flex items-start gap-2 rounded-xl px-2 py-2 text-xs transition-colors hover:bg-brand-50/70">
           {/* Delete Action (Left side) */}
-          <Tooltip content="Eliminar pregunta">
-            <button
+          <Tooltip content="Delete question">
+            <GlassButton
+              type="button"
+              variant="ghost"
+              size="xs"
+              iconOnly
               onClick={() => deleteQCQuestion(q.id).then(reload)}
-              aria-label="Eliminar pregunta"
-              className="shrink-0 p-1.5 mt-0.5 rounded-md text-gray-400 hover:bg-red-50 hover:text-red-500 transition-colors opacity-40 group-hover:opacity-100 focus:opacity-100 focus-visible:ring-2 focus-visible:ring-red-300 outline-none"
+              aria-label="Delete question"
+              className="mt-0.5 opacity-40 group-hover:opacity-100 !border-transparent !bg-transparent !shadow-none hover:!bg-red-50 hover:!text-red-500 focus:opacity-100"
             >
-              <Trash2 className="w-3 h-3" />
-            </button>
+              <Trash2 className="w-3 h-3" aria-hidden="true" />
+            </GlassButton>
           </Tooltip>
 
           {/* Code */}
-          <span className="shrink-0 font-mono text-xs text-gray-400 w-6 text-right mt-1">{q.code}</span>
+          <span className="mt-1 w-6 shrink-0 text-right font-mono text-xs text-brand-400">{q.code}</span>
 
           {/* Description + metadata */}
           <div className="flex-1 min-w-0 mt-0.5">
-            <p className="text-sm text-gray-800 leading-snug">{q.description}</p>
+            <p className="text-sm leading-snug text-brand-800">{q.description}</p>
             {q.where_to_verify && (
-              <p className="text-xs text-indigo-500 mt-1 flex items-center gap-0.5">
+              <p className="mt-1 flex items-center gap-0.5 text-xs text-brand-500">
                 <FileSearch className="w-3 h-3 shrink-0" />
                 {q.where_to_verify}
               </p>
             )}
             {q.correction && (
-              <p className="text-xs text-amber-600 mt-0.5 italic">Corrección: {q.correction}</p>
+              <p className="text-xs text-amber-600 mt-0.5 italic">Correction: {q.correction}</p>
             )}
-            {/* Section target chips */}
+            {/* Read-only section targets */}
             {q.target_section_ids && q.target_section_ids.length > 0 && (
-              <div className="flex flex-wrap gap-1 mt-1">
+              <div className="mt-1 flex flex-wrap items-center gap-1">
+                <span className="text-xs font-medium text-brand-500">Sections to verify:</span>
                 {q.target_section_ids.map((sid) => {
                   const sec = allSections.find((s) => s.id === sid);
                   return sec ? (
-                    <span key={sid} className="text-xs bg-indigo-50 text-indigo-600 rounded px-1 py-0.5">
+                    <span key={sid} className="rounded bg-brand-50 px-1 py-0.5 text-xs text-brand-700">
                       {sec.path_code || sec.name}
                     </span>
                   ) : null;
                 })}
               </div>
             )}
-            {/* Priority action bar */}
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
-              <Tooltip content="Mapear a secciones del documento">
-                <button
-                  onClick={() => setMappingQ(mappingQ === q.id ? null : q.id)}
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold border transition ${
-                    mappingQ === q.id
-                      ? "bg-indigo-100 text-indigo-700 border-indigo-300 shadow-sm"
-                      : "bg-white text-indigo-600 border-indigo-200 hover:bg-indigo-50"
-                  }`}
-                >
-                  <MapPin className="w-3.5 h-3.5" />
-                  {mappingQ === q.id ? "EDITANDO MAPEO" : "MAPEAR SECCIONES"}
-                  <span className="px-1 py-0.5 rounded bg-indigo-200/70 text-xs font-mono">
-                    {mappedCount}
-                  </span>
-                </button>
-              </Tooltip>
-
-              {hasAI && (
+            {hasAI && (
+              <div className="mt-2 flex flex-wrap items-center gap-1.5">
                 <button
                   onClick={() => setExpandedAI((p) => ({ ...p, [q.id]: !p[q.id] }))}
                   className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full font-semibold transition ${
                     q.ai_answer === "yes" ? "bg-green-100 text-green-700" :
                     q.ai_answer === "no" ? "bg-red-100 text-red-700" :
                     q.ai_answer === "insufficient" ? "bg-amber-100 text-amber-700" :
-                    "bg-gray-100 text-gray-500"
-                  } hover:ring-1 hover:ring-purple-300`}
-                  title="Ver resultado AI"
+                    "bg-brand-50 text-brand-500"
+                  } hover:ring-1 hover:ring-accent-300`}
+                  title="View AI result"
                 >
                   <Bot className="w-3 h-3" />
-                  AI {String(q.ai_answer).toUpperCase()} · {q.ai_confidence === "high" ? "Alta" : q.ai_confidence === "medium" ? "Media" : "Baja"}
+                  AI {String(q.ai_answer).toUpperCase()} · {q.ai_confidence === "high" ? "High" : q.ai_confidence === "medium" ? "Medium" : "Low"}
                 </button>
-              )}
-            </div>
+              </div>
+            )}
           </div>
 
           {/* Segmented Control for manual answering */}
-          <div className="shrink-0 flex items-center bg-gray-100 p-0.5 rounded-lg border border-gray-200 mt-0.5">
+          <div className="mt-0.5 flex shrink-0 items-center rounded-xl border border-brand-100 bg-brand-50 p-0.5">
             {(["yes", "no", "na", "insufficient"] as const).map((ansKey) => {
               const isSelected = q.answer === ansKey;
               const style = ANSWER_STYLES[ansKey];
@@ -429,11 +489,11 @@ function QCBuilderPanel({
                 <button
                   key={ansKey}
                   onClick={() => handleSetAnswer(q, ansKey)}
-                  aria-label={isSelected ? "Quitar selección" : `Marcar como ${style.label}`}
+                  aria-label={isSelected ? "Clear selection" : `Mark as ${style.label}`}
                   className={`w-9 sm:w-10 py-2 rounded-md text-xs font-semibold transition-[background-color,border-color,color,box-shadow] ${
                     isSelected
                       ? `${style.bg} ${style.text} shadow-sm border border-black/5`
-                      : "text-gray-500 hover:bg-gray-200 border border-transparent"
+                      : "border border-transparent text-brand-500 hover:bg-brand-100"
                   }`}
                 >
                   {style.label}
@@ -456,46 +516,19 @@ function QCBuilderPanel({
                 q.ai_answer === "yes" ? "bg-green-50 border border-green-200" :
                 q.ai_answer === "no" ? "bg-red-50 border border-red-200" :
                 q.ai_answer === "insufficient" ? "bg-amber-50 border border-amber-200" :
-                "bg-gray-50 border border-gray-200"
+                "border border-brand-100 bg-brand-50"
               }`}>
                 <div className="flex items-center gap-1 mb-1 font-semibold">
                   <Bot className="w-3 h-3" />
-                  Resultado AI: <span className="uppercase">{q.ai_answer}</span>
-                  <span className="text-gray-400 font-normal ml-1">(confianza: {q.ai_confidence || "?"})</span>
+                  AI result: <span className="uppercase">{q.ai_answer}</span>
+                  <span className="ml-1 font-normal text-brand-400">(confidence: {q.ai_confidence || "?"})</span>
                 </div>
-                {q.ai_notes && <p className="text-gray-700">{q.ai_notes}</p>}
+                {q.ai_notes && <p className="text-brand-700">{q.ai_notes}</p>}
               </div>
             </motion.div>
           )}
         </AnimatePresence>
 
-        {/* Section mapping picker */}
-        {mappingQ === q.id && (
-          <div className="mx-2 mb-1 p-2 bg-indigo-50 rounded-lg border border-indigo-200 max-h-36 overflow-y-auto custom-scroll">
-            <div className="flex items-center justify-between mb-1">
-              <span className="text-xs font-semibold text-indigo-700 uppercase">Secciones donde verificar</span>
-              <button aria-label="Cerrar mapeo" onClick={() => setMappingQ(null)} className="text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 rounded"><XIcon className="w-3 h-3" /></button>
-            </div>
-            {allSections.length === 0 ? (
-              <p className="text-xs text-gray-400 italic">Crea secciones de documento primero</p>
-            ) : (
-              <div className="flex flex-col gap-0.5">
-                {allSections.map((sec) => {
-                  const dt = docTypes.find((d) => d.id === sec.document_type_id);
-                  const label = sec.path_code || `${dt?.code || ""}.${sec.code}`;
-                  const isTarget = (q.target_section_ids || []).includes(sec.id);
-                  return (
-                    <label key={sec.id} className={`flex items-center gap-1.5 text-xs px-1.5 py-0.5 rounded cursor-pointer transition ${isTarget ? "bg-indigo-100 text-indigo-800" : "hover:bg-indigo-100/50 text-gray-600"}`} style={{ paddingLeft: `${4 + (sec.depth || 0) * 12}px` }}>
-                      <input type="checkbox" checked={isTarget} onChange={() => handleToggleSectionTarget(q.id, sec.id, q.target_section_ids || [])} className="rounded border-indigo-300 text-indigo-600 w-3 h-3" />
-                      <span className="font-mono">{label}</span>
-                      <span className="text-gray-400">{sec.name}</span>
-                    </label>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
       </div>
     );
   };
@@ -521,48 +554,89 @@ function QCBuilderPanel({
     const hasChildren = part.children && part.children.length > 0;
     const stats = countPartQuestions(part, allParts);
     const pct = stats.total > 0 ? Math.round((stats.answered / stats.total) * 100) : 0;
-    const pctColor = pct === 100 ? "bg-green-500" : pct > 50 ? "bg-blue-500" : pct > 0 ? "bg-amber-500" : "bg-gray-300";
+    const pctColor = pct === 100 ? "bg-brand-600" : pct > 50 ? "bg-brand-500" : pct > 0 ? "bg-accent-500" : "bg-brand-200";
 
     return (
       <div key={part.id} className="mt-1">
         {/* Part header */}
         <div
-          className="flex items-center gap-1.5 py-1.5 px-3 rounded-lg hover:bg-gray-50 cursor-pointer group border border-transparent hover:border-gray-200 transition"
+          className="group flex cursor-pointer items-center gap-1.5 rounded-xl border border-transparent px-3 py-1.5 transition hover:border-brand-100 hover:bg-brand-50/70"
           style={{ marginLeft: `${indent * 16}px` }}
           onClick={() => togglePart(part.id)}
         >
-          {isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-gray-400 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-gray-400 shrink-0" />}
+          {isExpanded ? <ChevronDown className="w-3.5 h-3.5 text-brand-400 shrink-0" /> : <ChevronRight className="w-3.5 h-3.5 text-brand-400 shrink-0" />}
           <FolderOpen className="w-4 h-4 text-amber-500 shrink-0" />
-          <span className="font-medium text-gray-800 flex-1 truncate text-sm">
+          <span className="flex-1 truncate text-sm font-medium text-brand-800">
             {part.code} &ndash; {part.name}
           </span>
 
           {/* Progress pill */}
           {stats.total > 0 && (
             <div className="flex items-center gap-1.5 shrink-0">
-              <div className="w-16 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+              <div className="h-1.5 w-16 overflow-hidden rounded-full bg-brand-100">
                 <div className={`h-full rounded-full transition-[width,background-color] ${pctColor}`} style={{ width: `${pct}%` }} />
               </div>
-              <span className="text-xs text-gray-500 font-mono w-12 text-right">{stats.answered}/{stats.total}</span>
+              <span className="w-12 text-right font-mono text-xs text-brand-500">{stats.answered}/{stats.total}</span>
             </div>
           )}
 
           {/* Secondary actions */}
           <div className="flex items-center gap-0.5 opacity-40 group-hover:opacity-100 focus-within:opacity-100 transition shrink-0">
-            <Tooltip content="Agregar subparte">
-              <button aria-label="Agregar subparte" onClick={(e) => { e.stopPropagation(); const sib = part.children || []; setNewCode(nextCode(sib)); setNewName(""); setAddingSubpartFor(part.id); setAddingPartFor(clId); }} className="p-1.5 text-gray-400 hover:text-brand-600 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300 rounded">
-                <Plus className="w-3.5 h-3.5" />
-              </button>
+            <Tooltip content="Add subpart">
+              <GlassButton
+                type="button"
+                variant="ghost"
+                size="xs"
+                iconOnly
+                aria-label="Add subpart"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const sib = part.children || [];
+                  setNewCode(nextCode(sib));
+                  setNewName("");
+                  setAddingSubpartFor(part.id);
+                  setAddingPartFor(clId);
+                }}
+                className="!border-transparent !bg-transparent !shadow-none text-brand-400 hover:!bg-brand-50 hover:!text-brand-600"
+              >
+                <Plus className="w-3.5 h-3.5" aria-hidden="true" />
+              </GlassButton>
             </Tooltip>
-            <Tooltip content="Agregar pregunta">
-              <button aria-label="Agregar pregunta" onClick={(e) => { e.stopPropagation(); const sib = part.questions || []; setNewCode(nextCode(sib)); setNewDesc(""); setNewVerify(""); setAddingQuestionFor(part.id); }} className="p-1.5 text-gray-400 hover:text-indigo-600 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300 rounded">
-                <HelpCircle className="w-3.5 h-3.5" />
-              </button>
+            <Tooltip content="Add question">
+              <GlassButton
+                type="button"
+                variant="ghost"
+                size="xs"
+                iconOnly
+                aria-label="Add question"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const sib = part.questions || [];
+                  setNewCode(nextCode(sib));
+                  setNewDesc("");
+                  setNewVerify("");
+                  setAddingQuestionFor(part.id);
+                }}
+                className="!border-transparent !bg-transparent !shadow-none text-brand-400 hover:!bg-brand-50 hover:!text-accent-600"
+              >
+                <HelpCircle className="w-3.5 h-3.5" aria-hidden="true" />
+              </GlassButton>
             </Tooltip>
-            <Tooltip content="Eliminar parte">
-              <button aria-label="Eliminar parte" onClick={(e) => { e.stopPropagation(); deleteQCPart(part.id).then(reload); }} className="p-1.5 text-gray-400 hover:text-red-500 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 rounded">
-                <Trash2 className="w-3.5 h-3.5" />
-              </button>
+            <Tooltip content="Delete part">
+              <GlassButton
+                type="button"
+                variant="ghost"
+                size="xs"
+                iconOnly
+                aria-label="Delete part"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  deleteQCPart(part.id).then(reload);
+                }}
+                className="!border-transparent !bg-transparent !shadow-none text-brand-400 hover:!bg-red-50 hover:!text-red-500"
+              >
+                <Trash2 className="w-3.5 h-3.5" aria-hidden="true" />
+              </GlassButton>
             </Tooltip>
           </div>
         </div>
@@ -574,29 +648,29 @@ function QCBuilderPanel({
 
             {/* Add question form */}
             {addingQuestionFor === part.id && (
-              <div className="flex flex-col gap-1 p-2 bg-indigo-50 rounded-lg border border-indigo-200 mt-1 mx-2" style={{ marginLeft: `${indent * 16}px` }}>
-                <div className="flex gap-1">
-                  <input className="w-14 text-xs font-mono border rounded px-1.5 py-0.5 text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300" value={newCode} onChange={(e) => setNewCode(e.target.value)} placeholder="Código" />
-                  <input className="flex-1 text-xs border rounded px-2 py-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300" value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="Pregunta exacta" autoFocus />
+              <div className="mx-2 mt-1 flex flex-col gap-2 rounded-xl border border-brand-100 bg-brand-50/80 p-3" style={{ marginLeft: `${indent * 16}px` }}>
+                <div className="flex gap-2">
+                  <input className="input-glass w-16 px-2 py-1.5 text-center font-mono text-xs" value={newCode} onChange={(e) => setNewCode(e.target.value)} placeholder="Code" />
+                  <input className="input-glass flex-1 px-3 py-1.5 text-xs" value={newDesc} onChange={(e) => setNewDesc(e.target.value)} placeholder="Exact question" autoFocus />
                 </div>
-                <input className="text-xs border rounded px-2 py-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300" value={newVerify} onChange={(e) => setNewVerify(e.target.value)} placeholder="¿Dónde verificar? (ej. Intake; Bio Call; Declaration)" />
-                <div className="flex gap-1">
-                  <button onClick={() => handleAddQuestion(part.id)} disabled={!newDesc.trim()} className="flex-1 text-xs bg-indigo-600 text-white rounded py-0.5 hover:bg-indigo-700 disabled:opacity-40 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-300">Crear pregunta</button>
-                  <button onClick={() => setAddingQuestionFor(null)} className="flex-1 text-xs bg-gray-200 rounded py-0.5 hover:bg-gray-300 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400">Cancelar</button>
+                <input className="input-glass px-3 py-1.5 text-xs" value={newVerify} onChange={(e) => setNewVerify(e.target.value)} placeholder="Where to verify? (e.g. Intake; Bio Call; Declaration)" />
+                <div className="flex gap-2">
+                  <LoadingButton onClick={() => handleAddQuestion(part.id)} disabled={!newDesc.trim()} loading={isBusy(`add-question:${part.id}`)} spinnerClassName="h-3 w-3" className="cta-primary inline-flex flex-1 items-center justify-center gap-1 px-4 py-2 text-xs font-semibold disabled:opacity-40">Create question</LoadingButton>
+                  <button onClick={() => setAddingQuestionFor(null)} className="flex-1 rounded-full border border-brand-100 bg-nova-snow px-4 py-2 text-xs font-semibold text-brand-700 transition hover:border-brand-200 hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">Cancel</button>
                 </div>
               </div>
             )}
 
             {/* Add subpart form */}
             {addingSubpartFor === part.id && (
-              <div className="flex flex-col gap-1 p-2 bg-blue-50 rounded-lg border border-blue-200 mt-1 mx-2" style={{ marginLeft: `${indent * 16}px` }}>
-                <div className="flex gap-1">
-                  <input className="w-14 text-xs font-mono border rounded px-1.5 py-0.5 text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300" value={newCode} onChange={(e) => setNewCode(e.target.value)} placeholder="Código" />
-                  <input className="flex-1 text-xs border rounded px-2 py-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Nombre de la subparte" autoFocus />
+              <div className="mx-2 mt-1 flex flex-col gap-2 rounded-xl border border-brand-100 bg-brand-50/80 p-3" style={{ marginLeft: `${indent * 16}px` }}>
+                <div className="flex gap-2">
+                  <input className="input-glass w-16 px-2 py-1.5 text-center font-mono text-xs" value={newCode} onChange={(e) => setNewCode(e.target.value)} placeholder="Code" />
+                  <input className="input-glass flex-1 px-3 py-1.5 text-xs" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Subpart name" autoFocus />
                 </div>
-                <div className="flex gap-1">
-                  <button onClick={() => handleAddPart(clId, part.id)} disabled={!newName.trim()} className="flex-1 text-xs bg-brand-600 text-white rounded py-0.5 hover:bg-brand-700 disabled:opacity-40 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">Crear subparte</button>
-                  <button onClick={() => { setAddingSubpartFor(null); setNewName(""); }} className="flex-1 text-xs bg-gray-200 rounded py-0.5 hover:bg-gray-300 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400">Cancelar</button>
+                <div className="flex gap-2">
+                  <LoadingButton onClick={() => handleAddPart(clId, part.id)} disabled={!newName.trim()} loading={isBusy(`add-subpart:${part.id}`)} spinnerClassName="h-3 w-3" className="cta-primary inline-flex flex-1 items-center justify-center gap-1 px-4 py-2 text-xs font-semibold disabled:opacity-40">Create subpart</LoadingButton>
+                  <button onClick={() => { setAddingSubpartFor(null); setNewName(""); }} className="flex-1 rounded-full border border-brand-100 bg-nova-snow px-4 py-2 text-xs font-semibold text-brand-700 transition hover:border-brand-200 hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">Cancel</button>
                 </div>
               </div>
             )}
@@ -610,124 +684,263 @@ function QCBuilderPanel({
   };
 
   return (
-    <div className="flex flex-col gap-3">
+    <div className="flex flex-col gap-4">
       {/* Header */}
-      <div className="flex items-center justify-between mb-2">
-        <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wider flex items-center gap-1.5">
+      <div className="mb-1 flex items-center justify-between">
+        <h3 className="label-caps mb-0 flex items-center gap-1.5">
           <ClipboardList className="w-4 h-4" /> QC Checklists
         </h3>
-        <div className="flex gap-2 items-center">
-          <div className="flex gap-1">
-            <Tooltip content="Plantillas QC disponibles">
-              <button aria-label="Plantillas QC disponibles" onClick={() => setShowTemplates(!showTemplates)} className={`p-1.5 rounded transition focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-300 ${showTemplates ? "bg-purple-100 text-purple-600" : "text-gray-500 hover:bg-gray-200"}`}>
-                <Library className="w-4 h-4" />
-              </button>
-            </Tooltip>
-            <Tooltip content="Crear QC checklist nuevo">
-              <button aria-label="Crear QC checklist nuevo" onClick={() => setAddingCl(true)} className="p-1.5 rounded hover:bg-gray-200 text-brand-600 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">
-                <Plus className="w-4 h-4" />
-              </button>
-            </Tooltip>
-          </div>
-        </div>
+        <Tooltip content="Create new QC checklist">
+          <GlassButton
+            type="button"
+            variant="secondary"
+            size="sm"
+            iconOnly
+            aria-label="Create new QC checklist"
+            onClick={() => setAddingCl(true)}
+          >
+            <Plus className="w-4 h-4" aria-hidden="true" />
+          </GlassButton>
+        </Tooltip>
       </div>
 
+      {/* Templates — grouped, collapsible */}
+      <SolidCard className="section-panel-accent p-5">
+        <div className={`flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between ${isTemplatesContentCollapsed ? "" : ""}`}>
+          <div className="flex items-start gap-3">
+            <div className="mt-1 flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-brand-100 text-brand-600">
+              <Library className="h-4 w-4" />
+            </div>
+            <div>
+              <p className="text-base font-semibold text-brand-900">Templates</p>
+              <p className="mt-0.5 max-w-xl text-sm text-brand-600">
+                Apply preloaded templates to this case checklist.
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3 self-start sm:self-auto">
+            {!loading && templates.length > 0 && (
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-semibold tracking-wide ${
+                  appliedTemplateCount > 0
+                    ? "bg-emerald-100 text-emerald-700"
+                    : "bg-amber-100 text-amber-700"
+                }`}
+              >
+                {appliedTemplateCount}/{templates.length} applied
+              </span>
+            )}
+            {canCollapseTemplates && (
+              <button
+                type="button"
+                aria-expanded={!isTemplatesContentCollapsed}
+                aria-controls="qc-templates-details"
+                onClick={() => setTemplatesCollapsed((current) => !current)}
+                className="inline-flex items-center gap-1.5 rounded-full border border-brand-100 bg-nova-snow px-4 py-2 text-xs font-semibold text-brand-700 shadow-sm transition hover:border-brand-200 hover:bg-brand-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-1"
+              >
+                {isTemplatesContentCollapsed ? (
+                  <>
+                    <ChevronDown className="h-3.5 w-3.5" />
+                    <span>Show templates</span>
+                  </>
+                ) : (
+                  <>
+                    <ChevronUp className="h-3.5 w-3.5" />
+                    <span>Hide templates</span>
+                  </>
+                )}
+              </button>
+            )}
+            <LoadingButton
+              onClick={handleSeedAll}
+              loading={isBusy("seed-all-templates")}
+              spinnerClassName="h-3.5 w-3.5"
+              className="inline-flex items-center justify-center gap-2 rounded-full border border-brand-100 bg-nova-snow px-4 py-2 text-xs font-semibold text-brand-700 shadow-sm transition hover:border-brand-200 hover:bg-brand-50 focus:outline-none focus:ring-2 focus:ring-brand-500 focus:ring-offset-1 disabled:opacity-50"
+            >
+              Reload templates
+            </LoadingButton>
+          </div>
+        </div>
+        {!isTemplatesContentCollapsed && (
+          <div id="qc-templates-details" className="mt-4 flex flex-col gap-4">
+            {loading ? (
+              <div className="flex justify-center py-3">
+                <Loader2 className="h-5 w-5 animate-spin text-brand-400" />
+              </div>
+            ) : groupedTemplates.length === 0 ? (
+              <p className="text-xs italic text-brand-500">No templates available.</p>
+            ) : (
+              <div className="max-h-72 overflow-y-auto rounded-2xl border border-brand-100/80 bg-white/60 p-1.5 shadow-inner custom-scroll">
+                <div className="grid grid-cols-1 gap-4 pr-1 lg:grid-cols-3">
+                  {groupedTemplates.map((group) => (
+                    <section
+                      key={group.id}
+                      aria-labelledby={`qc-template-group-${group.id}`}
+                      className={group.id === "visa-t" ? "lg:col-span-2" : "lg:col-span-1"}
+                    >
+                      <h4
+                        id={`qc-template-group-${group.id}`}
+                        className="sticky top-0 z-10 mb-2 bg-white/95 py-1 text-xs font-semibold uppercase tracking-wide text-brand-700 backdrop-blur-sm"
+                      >
+                        {group.label}
+                      </h4>
+                      <div
+                        className={`grid gap-2 ${
+                          group.id === "visa-t" ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"
+                        }`}
+                      >
+                        {group.templates.map((tpl) => {
+                          const isApplied = appliedTemplateIds.has(tpl.id);
+                          return (
+                            <LoadingButton
+                              key={tpl.id}
+                              onClick={() => handleApplyTemplate(tpl.id)}
+                              disabled={isApplied}
+                              loading={isBusy(`apply-qc-template:${tpl.id}`)}
+                              spinnerClassName="h-4 w-4"
+                              title={tpl.name}
+                              className={`inline-flex w-full min-w-0 items-center gap-2 rounded-xl border p-3 text-left text-xs transition disabled:opacity-50 ${
+                                isApplied
+                                  ? "cursor-not-allowed border-brand-100 bg-white/70 text-brand-400"
+                                  : "border-transparent hover:border-brand-200 hover:bg-brand-50/70"
+                              }`}
+                            >
+                              {isApplied ? (
+                                <Check className="h-4 w-4 shrink-0 text-green-500" />
+                              ) : (
+                                <FilePlus className="h-4 w-4 shrink-0 text-accent-500" />
+                              )}
+                              <div className="min-w-0 flex-1">
+                                <span
+                                  className={`block truncate font-medium ${
+                                    isApplied ? "text-brand-500" : "text-brand-800"
+                                  }`}
+                                >
+                                  {tpl.name}
+                                </span>
+                                <span className="mt-0.5 block text-brand-400">
+                                  {tpl.total_questions} questions
+                                </span>
+                              </div>
+                              {isApplied && (
+                                <span className="shrink-0 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700">
+                                  Applied
+                                </span>
+                              )}
+                            </LoadingButton>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </SolidCard>
+
       <CaseDocumentScopePicker
-        title="Documentos para QC automatico"
-        description="Selecciona que documentos del caso puede usar el AI Autopilot y la verificacion automatica del QC."
+        title="Documents for automatic QC"
+        description="Select which case documents AI Autopilot and automatic QC verification can use."
         documents={qcScopeDocuments}
         selectedIds={selectedQcSourceDocumentIds}
         saving={savingDocumentScope}
+        collapsible
+        defaultCollapsed
+        listMaxHeightClassName="max-h-40"
         onChange={handleQcScopeChange}
       />
 
-      {/* Template selector */}
-      {showTemplates && (
-        <div className="p-2 bg-purple-50 rounded-lg border border-purple-200">
-          <div className="flex justify-between items-center mb-1">
-            <p className="text-xs font-semibold text-purple-700 uppercase">Plantillas QC</p>
-            <button onClick={handleSeedAll} className="text-[10px] bg-purple-100 text-purple-700 px-1.5 py-0.5 rounded hover:bg-purple-200 transition font-medium border border-purple-200">
-              Recargar plantillas
-            </button>
+      {createPortal(
+        addingCl ? (
+          <div
+            className="fixed inset-0 z-[80] flex items-center justify-center bg-nova-slate/60 p-4 sm:p-8"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="new-qc-checklist-title"
+            onClick={closeCreateChecklistModal}
+          >
+            <div
+              ref={createChecklistModalRef}
+              className="relative max-h-[calc(100vh-2rem)] w-full max-w-lg overflow-y-auto rounded-2xl border border-brand-100 bg-white p-6 shadow-2xl"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <h2
+                id="new-qc-checklist-title"
+                className="mb-4 font-heading text-lg font-bold text-brand-900"
+              >
+                Create QC Checklist
+              </h2>
+              <div>
+                <label className="label-caps" htmlFor="new-qc-checklist-name">
+                  Name
+                </label>
+                <input
+                  id="new-qc-checklist-name"
+                  className="input-glass"
+                  placeholder="QC Checklist name"
+                  value={clName}
+                  onChange={(event) => setClName(event.target.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") void handleCreateChecklist();
+                  }}
+                />
+              </div>
+              <div className="mt-6 flex gap-3">
+                <GlassButton
+                  variant="primary"
+                  onClick={() => void handleCreateChecklist()}
+                  disabled={!clName.trim()}
+                  loading={isBusy("create-qc-checklist")}
+                  loadingLabel="Creating…"
+                >
+                  Create checklist
+                </GlassButton>
+                <GlassButton variant="ghost" onClick={closeCreateChecklistModal} disabled={isBusy("create-qc-checklist")}>
+                  Cancel
+                </GlassButton>
+              </div>
+            </div>
           </div>
-          {loading ? (
-            <div className="flex justify-center p-3">
-              <Loader2 className="w-5 h-5 animate-spin text-purple-400" />
-            </div>
-          ) : templates.length === 0 ? (
-            <div className="flex flex-col gap-2">
-              <p className="text-xs text-gray-400 italic">No hay plantillas disponibles.</p>
-            </div>
-          ) : (
-            <div className="flex flex-col gap-1">
-              {templates.map((tpl) => {
-                const isApplied = appliedTemplateIds.has(tpl.id);
-                return (
-                  <button
-                    key={tpl.id}
-                    onClick={() => handleApplyTemplate(tpl.id)}
-                    disabled={isApplied}
-                    className={`flex items-center gap-1.5 text-xs text-left px-2 py-1.5 rounded transition ${
-                      isApplied
-                        ? "bg-white/70 text-gray-400 cursor-not-allowed"
-                        : "hover:bg-purple-100"
-                    }`}
-                  >
-                    {isApplied ? (
-                      <Check className="w-3.5 h-3.5 text-green-500 shrink-0" />
-                    ) : (
-                      <FilePlus className="w-3.5 h-3.5 text-purple-500 shrink-0" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <span className={`font-medium ${isApplied ? "text-gray-500" : "text-gray-800"}`}>
-                        {tpl.name}
-                      </span>
-                      <span className="text-xs text-gray-400 ml-1">{tpl.total_questions} preguntas</span>
-                    </div>
-                    {isApplied && (
-                      <span className="shrink-0 rounded-full bg-green-100 px-2 py-0.5 text-[10px] font-semibold text-green-700">
-                        Aplicada
-                      </span>
-                    )}
-                  </button>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* New checklist form */}
-      {addingCl && (
-        <div className="flex gap-1">
-          <input className="flex-1 text-xs border rounded px-2 py-1 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300" placeholder="Nombre del QC Checklist" value={clName} onChange={(e) => setClName(e.target.value)} autoFocus onKeyDown={(e) => e.key === "Enter" && handleCreateChecklist()} />
-          <button onClick={handleCreateChecklist} className="text-xs bg-brand-600 text-white rounded px-2 hover:bg-brand-700 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">OK</button>
-          <button onClick={() => setAddingCl(false)} className="text-xs bg-gray-200 rounded px-2 focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400">X</button>
-        </div>
+        ) : null,
+        document.body
       )}
 
       {/* Checklist list */}
       {checklists.map((cl) => {
-        const isExp = expandedCl[cl.id] !== false;
+        const isExp = expandedClId === cl.id;
         const pct = cl.total_questions > 0 ? Math.round((cl.answered_questions / cl.total_questions) * 100) : 0;
         const activeJob = verifyingCl === cl.id && autopilotJob?.checklist_id === cl.id ? autopilotJob : null;
         const activeProgress = Math.round(activeJob?.overall_progress_pct ?? 0);
         const activePhase = autopilotPhaseSummary(activeJob);
         return (
-          <GlassSurface filterId="glass-panel" key={cl.id} className="rounded-xl overflow-hidden mb-3">
+          <SolidCard key={cl.id} className="mb-3 overflow-hidden rounded-2xl">
             {/* Checklist header */}
-            <div className="flex items-center gap-2 px-4 py-3 cursor-pointer hover:bg-white/40 transition-colors" onClick={() => toggleCl(cl.id)}>
-              {isExp ? <ChevronDown className="w-3.5 h-3.5 text-gray-400" /> : <ChevronRight className="w-3.5 h-3.5 text-gray-400" />}
-              <span className="text-sm font-semibold flex-1">{cl.name}</span>
+            <div
+              className="flex cursor-pointer items-center gap-2 px-4 py-3 transition-colors hover:bg-brand-50/60"
+              role="button"
+              tabIndex={0}
+              aria-expanded={isExp}
+              onClick={() => toggleCl(cl.id)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" || event.key === " ") {
+                  event.preventDefault();
+                  toggleCl(cl.id);
+                }
+              }}
+            >
+              {isExp ? <ChevronDown className="w-3.5 h-3.5 text-brand-400" /> : <ChevronRight className="w-3.5 h-3.5 text-brand-400" />}
+              <span className="flex-1 font-heading text-sm font-semibold text-brand-900">{cl.name}</span>
               <div className="shrink-0 min-w-[150px]">
                 {activeJob ? (
                   <div className="flex flex-col items-end gap-1">
-                    <span className="text-xs text-purple-600">{activePhase.detail}</span>
+                    <span className="text-xs text-accent-600">{activePhase.detail}</span>
                     <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-400">{activeProgress}%</span>
-                      <div className="w-24 h-1.5 bg-purple-100 rounded-full overflow-hidden">
+                      <span className="text-xs text-brand-500">{activeProgress}%</span>
+                      <div className="ai-progress-track w-24">
                         <div
-                          className="h-full rounded-full bg-gradient-to-r from-purple-500 to-blue-500 transition-[width]"
+                          className="ai-progress-bar"
                           style={{ width: `${activeProgress}%` }}
                         />
                       </div>
@@ -735,9 +948,9 @@ function QCBuilderPanel({
                   </div>
                 ) : (
                   <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-400">{cl.answered_questions}/{cl.total_questions} ({pct}%)</span>
-                    <div className="w-20 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                      <div className="h-full bg-green-500 rounded-full transition-[width]" style={{ width: `${pct}%` }} />
+                    <span className="text-xs text-brand-500">{cl.answered_questions}/{cl.total_questions} ({pct}%)</span>
+                    <div className="h-1.5 w-20 overflow-hidden rounded-full bg-brand-100">
+                      <div className="h-full rounded-full bg-brand-500 transition-[width]" style={{ width: `${pct}%` }} />
                     </div>
                   </div>
                 )}
@@ -746,28 +959,24 @@ function QCBuilderPanel({
               {/* AI Verify Checklist — PREMIUM BUTTON */}
               {cl.total_questions > 0 && (
                 <button
-                  onClick={(e) => { e.stopPropagation(); geminiOk ? handleAIVerifyChecklist(cl.id) : toast.error("Configura GEMINI_API_KEY en el archivo .env del proyecto"); }}
+                  onClick={(e) => { e.stopPropagation(); geminiOk ? handleAIVerifyChecklist(cl.id) : toast.error("Set GEMINI_API_KEY in the project .env file"); }}
                   disabled={verifyingCl === cl.id || !canRunQcAutopilot}
-                  className={`flex items-center gap-2 px-3 py-1.5 rounded-xl text-xs font-bold transition-[background-color,border-color,color,box-shadow,opacity] disabled:opacity-50 shrink-0 border relative overflow-hidden group/ai ${
+                  className={`flex items-center gap-2 px-4 py-2 rounded-full text-xs font-bold transition-[background-color,border-color,color,box-shadow,opacity] disabled:opacity-50 shrink-0 border relative overflow-hidden group/ai ${
                     geminiOk
-                      ? "bg-[#0B0F19] text-white border-gray-700 shadow-lg hover:shadow-purple-500/25 hover:border-purple-500/50"
-                      : "bg-gray-100 text-gray-400 hover:bg-gray-200"
+                      ? "ai-cta-button"
+                      : "border-brand-100 bg-brand-50 text-brand-400 hover:bg-brand-100"
                   }`}
                 >
-                  {geminiOk && (
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-purple-500/20 to-transparent translate-x-[-100%] group-hover/ai:animate-[shimmer_1.5s_infinite]" />
-                  )}
-                  
-                  {verifyingCl === cl.id ? (
-                    <Loader2 className="w-4 h-4 animate-spin text-purple-400" />
+                  {verifyingCl === cl.id || activeJob ? (
+                    <NovaBreathingLogo size="sm" label="Verifying checklist with AI" className="relative z-10" />
                   ) : (
-                    <AnimatedAIBot className={`w-4 h-4 ${geminiOk ? "text-purple-400" : "text-gray-400"}`} />
+                    <AnimatedAIBot className={`w-4 h-4 ${geminiOk ? "text-nova-snow" : "text-brand-400"}`} />
                   )}
-                  <span className={`tracking-wide ${geminiOk ? "text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400" : ""}`}>
+                  <span className="tracking-wide">
                     {activeJob
                       ? activePhase.title
                       : verifyingCl === cl.id
-                        ? "INICIANDO…"
+                        ? "STARTING…"
                         : "AI AUTOPILOT"}
                   </span>
                 </button>
@@ -775,18 +984,25 @@ function QCBuilderPanel({
 
               {/* Actions Dropdown */}
               <div className="relative group/menu" onClick={(e) => e.stopPropagation()}>
-                <button className="p-1.5 text-gray-400 hover:text-gray-600 transition rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-300">
-                  <MoreVertical className="w-4 h-4" />
-                </button>
+                <GlassButton
+                  type="button"
+                  variant="ghost"
+                  size="xs"
+                  iconOnly
+                  aria-label="Checklist actions"
+                  className="!border-transparent !bg-transparent !shadow-none text-brand-400 hover:!bg-brand-50 hover:!text-brand-700"
+                >
+                  <MoreVertical className="w-4 h-4" aria-hidden="true" />
+                </GlassButton>
                 {/* Invisible bridge to keep hover active */}
                 <div className="absolute right-0 top-full w-full h-2"></div>
-                <div className="absolute right-0 top-full mt-1 w-56 bg-white rounded-lg shadow-xl border border-gray-100 opacity-0 invisible -translate-y-2 scale-95 group-hover/menu:opacity-100 group-hover/menu:visible group-hover/menu:translate-y-0 group-hover/menu:scale-100 transition-[opacity,transform] duration-200 ease-out origin-top-right z-50 flex flex-col py-1">
+                <div className="invisible absolute right-0 top-full z-50 mt-1 flex w-60 origin-top-right -translate-y-2 scale-95 flex-col rounded-2xl border border-brand-100 bg-white/95 py-1 opacity-0 shadow-glass-lg backdrop-blur-md transition-[opacity,transform] duration-200 ease-out group-hover/menu:visible group-hover/menu:translate-y-0 group-hover/menu:scale-100 group-hover/menu:opacity-100">
                   <button
                     onClick={() => downloadExportSingleQCReport(caseId, cl.id)}
-                    className="flex items-center gap-2 px-3 py-2 text-xs text-gray-600 hover:bg-emerald-50 hover:text-emerald-700 transition-colors w-full text-left"
+                    className="flex w-full items-center gap-2 px-3 py-2 text-left text-xs text-brand-700 transition-colors hover:bg-emerald-50 hover:text-emerald-700"
                   >
                     <Download className="w-3.5 h-3.5" />
-                    Descargar reporte PDF
+                    Download PDF report
                   </button>
 
                   {indexingOk && !cl.is_template && cl.case_id && (
@@ -796,61 +1012,86 @@ function QCBuilderPanel({
                         setSemanticResults([]);
                         setSemanticQ("");
                       }}
-                      className="flex items-center gap-2 px-3 py-2 text-xs text-gray-600 hover:bg-purple-50 hover:text-purple-700 transition-colors text-left"
+                      className="flex items-center gap-2 px-3 py-2 text-left text-xs text-brand-700 transition-colors hover:bg-accent-50 hover:text-accent-700"
                     >
                       <Search className="w-3.5 h-3.5" />
-                      Búsqueda semántica
+                      Search answers
                     </button>
                   )}
 
                   <button
-                    onClick={async () => { try { await saveQCAsTemplate(cl.id); toast.success("Guardado como plantilla"); await reload(); } catch { toast.error("Error"); } }}
-                    className="flex items-center gap-2 px-3 py-2 text-xs text-gray-600 hover:bg-purple-50 hover:text-purple-700 transition-colors text-left"
+                    onClick={() => {
+                      run(`save-as-template:${cl.id}`, async () => {
+                        try {
+                          await saveQCAsTemplate(cl.id);
+                          toast.success("Saved as template");
+                          await reload();
+                        } catch {
+                          toast.error("Error");
+                        }
+                      });
+                    }}
+                    disabled={isBusy(`save-as-template:${cl.id}`)}
+                    aria-busy={isBusy(`save-as-template:${cl.id}`) || undefined}
+                    className="flex items-center gap-2 px-3 py-2 text-left text-xs text-brand-700 transition-colors hover:bg-accent-50 hover:text-accent-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Save className="w-3.5 h-3.5" />
-                    Guardar como plantilla
+                    Save as template
                   </button>
 
                   <button
                     onClick={() => handleSaveLinkPreset(cl.id, cl.name)}
-                    className="flex items-center gap-2 px-3 py-2 text-xs text-gray-600 hover:bg-teal-50 hover:text-teal-700 transition-colors text-left"
+                    disabled={isBusy(`save-link-preset:${cl.id}`)}
+                    aria-busy={isBusy(`save-link-preset:${cl.id}`) || undefined}
+                    className="flex items-center gap-2 px-3 py-2 text-left text-xs text-brand-700 transition-colors hover:bg-teal-50 hover:text-teal-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Bookmark className="w-3.5 h-3.5" />
-                    Guardar preset de vinculación
+                    Save link preset
                   </button>
 
                   <button
                     onClick={() => handleShowPresets(cl.id, cl.source_template_id)}
-                    className="flex items-center gap-2 px-3 py-2 text-xs text-gray-600 hover:bg-teal-50 hover:text-teal-700 transition-colors text-left"
+                    className="flex items-center gap-2 px-3 py-2 text-left text-xs text-brand-700 transition-colors hover:bg-teal-50 hover:text-teal-700"
                   >
                     <Link2 className="w-3.5 h-3.5" />
-                    Aplicar preset de vinculación
+                    Apply link preset
                   </button>
 
                   <button
                     onClick={() => handleAutoLinkSections(cl.id)}
-                    className="flex items-center gap-2 px-3 py-2 text-xs text-gray-600 hover:bg-amber-50 hover:text-amber-700 transition-colors text-left"
+                    disabled={isBusy(`auto-link:${cl.id}`)}
+                    aria-busy={isBusy(`auto-link:${cl.id}`) || undefined}
+                    className="flex items-center gap-2 px-3 py-2 text-left text-xs text-brand-700 transition-colors hover:bg-amber-50 hover:text-amber-700 disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Sparkles className="w-3.5 h-3.5" />
-                    Auto-mapear secciones
+                    Auto-link sections
                   </button>
 
-                  <div className="h-px bg-gray-100 my-1"></div>
+                  <div className="my-1 h-px bg-brand-100"></div>
 
                   <button
                     onClick={() => { const sib = cl.parts || []; setNewCode(nextCode(sib)); setNewName(""); setAddingPartFor(cl.id); setAddingSubpartFor(null); }}
-                    className="flex items-center gap-2 px-3 py-2 text-xs text-gray-600 hover:bg-brand-50 hover:text-brand-700 transition-colors text-left"
+                    className="flex items-center gap-2 px-3 py-2 text-left text-xs text-brand-700 transition-colors hover:bg-brand-50 hover:text-brand-800"
                   >
                     <Plus className="w-3.5 h-3.5" />
-                    Agregar parte raíz
+                    Add root part
                   </button>
 
                   <button
-                    onClick={() => { if (confirm("Eliminar QC checklist?")) deleteQCChecklist(cl.id).then(reload); }}
-                    className="flex items-center gap-2 px-3 py-2 text-xs text-red-600 hover:bg-red-50 transition-colors text-left"
+                    onClick={() => {
+                      if (confirm("Delete this QC checklist?")) {
+                        run(`delete-qc-checklist:${cl.id}`, async () => {
+                          await deleteQCChecklist(cl.id);
+                          await reload();
+                        });
+                      }
+                    }}
+                    disabled={isBusy(`delete-qc-checklist:${cl.id}`)}
+                    aria-busy={isBusy(`delete-qc-checklist:${cl.id}`) || undefined}
+                    className="flex items-center gap-2 px-3 py-2 text-xs text-red-600 hover:bg-red-50 transition-colors text-left disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
-                    Eliminar checklist
+                    Delete checklist
                   </button>
                 </div>
               </div>
@@ -858,26 +1099,47 @@ function QCBuilderPanel({
 
             {/* Preset picker */}
             {showPresetMenuFor === cl.id && (
-              <div className="px-4 py-2 bg-teal-50 border-t border-teal-200">
+              <div className="border-t border-teal-200 bg-teal-50/80 px-4 py-3">
                 <div className="flex items-center justify-between mb-1">
-                  <span className="text-xs font-semibold text-teal-700 uppercase">Presets de vinculación</span>
-                  <button aria-label="Cerrar presets" onClick={() => setShowPresetMenuFor(null)} className="text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-teal-300 rounded"><XIcon className="w-3 h-3" /></button>
+                  <span className="text-xs font-semibold text-teal-700 uppercase">Link presets</span>
+                  <Tooltip content="Close presets">
+                    <GlassButton
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      iconOnly
+                      aria-label="Close presets"
+                      onClick={() => setShowPresetMenuFor(null)}
+                      className="!border-transparent !bg-transparent !shadow-none text-brand-400 hover:!text-brand-600"
+                    >
+                      <XIcon className="w-3 h-3" aria-hidden="true" />
+                    </GlassButton>
+                  </Tooltip>
                 </div>
                 {linkPresets.length === 0 ? (
-                  <p className="text-xs text-gray-400 italic">No hay presets guardados para esta plantilla QC.</p>
+                  <p className="text-xs italic text-brand-500">No saved presets for this QC template.</p>
                 ) : (
                   <div className="flex flex-col gap-1">
                     {linkPresets.map((preset) => (
-                      <div key={preset.id} className="flex items-center gap-1.5 text-xs px-2 py-1 rounded hover:bg-teal-100 transition">
-                        <button onClick={() => handleApplyLinkPreset(cl.id, preset.id)} className="flex-1 text-left flex items-center gap-1.5">
+                      <div key={preset.id} className="flex items-center gap-1.5 rounded-xl px-2 py-1 text-xs transition hover:bg-teal-100">
+                        <LoadingButton onClick={() => handleApplyLinkPreset(cl.id, preset.id)} loading={isBusy(`apply-link-preset:${preset.id}`)} spinnerClassName="h-3 w-3" className="inline-flex flex-1 items-center gap-1.5 text-left disabled:opacity-50">
                           <Link2 className="w-3 h-3 text-teal-500 shrink-0" />
-                          <span className="font-medium text-gray-800">{preset.name}</span>
-                          <span className="text-xs text-gray-400 ml-auto">{preset.mapping_count} mapeos</span>
-                        </button>
-                        <Tooltip content="Eliminar preset">
-                          <button aria-label="Eliminar preset" onClick={() => handleDeleteLinkPreset(preset.id)} className="p-1.5 text-gray-400 hover:text-red-500 transition shrink-0 focus:outline-none focus-visible:ring-2 focus-visible:ring-red-300 rounded">
-                            <Trash2 className="w-3 h-3" />
-                          </button>
+                          <span className="font-medium text-brand-800">{preset.name}</span>
+                          <span className="ml-auto text-xs text-brand-400">{preset.mapping_count} mappings</span>
+                        </LoadingButton>
+                        <Tooltip content="Delete preset">
+                          <GlassButton
+                            type="button"
+                            variant="ghost"
+                            size="xs"
+                            iconOnly
+                            aria-label="Delete preset"
+                            onClick={() => handleDeleteLinkPreset(preset.id)}
+                            loading={isBusy(`delete-link-preset:${preset.id}`)}
+                            className="!border-transparent !bg-transparent !shadow-none text-brand-400 hover:!text-red-500 hover:!bg-red-50"
+                          >
+                            <Trash2 className="w-3 h-3" aria-hidden="true" />
+                          </GlassButton>
                         </Tooltip>
                       </div>
                     ))}
@@ -888,44 +1150,63 @@ function QCBuilderPanel({
 
             {/* Semantic query panel */}
             {semanticClId === cl.id && (
-              <div className="px-4 py-3 bg-purple-50 border-t border-purple-200">
+              <div className="border-t border-brand-100 bg-brand-50 px-4 py-3">
                 <div className="flex items-center gap-2 mb-2">
-                  <Search className="w-3.5 h-3.5 text-purple-500" />
-                  <span className="text-xs font-semibold text-purple-700 uppercase">Busqueda Semantica QC</span>
-                  <button aria-label="Cerrar búsqueda semántica" onClick={() => { setSemanticClId(null); setSemanticResults([]); }} className="ml-auto text-gray-400 hover:text-gray-600 focus:outline-none focus-visible:ring-2 focus-visible:ring-purple-300 rounded">
-                    <XIcon className="w-3 h-3" />
-                  </button>
+                  <Search className="w-3.5 h-3.5 text-brand-600" />
+                  <span className="text-xs font-semibold text-brand-700 uppercase">Search answers</span>
+                  <Tooltip content="Close search">
+                    <GlassButton
+                      type="button"
+                      variant="ghost"
+                      size="xs"
+                      iconOnly
+                      aria-label="Close search"
+                      onClick={() => {
+                        setSemanticClId(null);
+                        setSemanticResults([]);
+                      }}
+                      className="ml-auto !border-transparent !bg-transparent !shadow-none text-brand-400 hover:!text-brand-600"
+                    >
+                      <XIcon className="w-3 h-3" aria-hidden="true" />
+                    </GlassButton>
+                  </Tooltip>
                 </div>
                 <div className="flex gap-1.5 mb-2">
                   <input
-                    className="flex-1 text-xs border border-purple-200 rounded-lg px-2.5 py-1.5 focus:ring-1 focus:ring-purple-300 outline-none"
-                    placeholder="Pregunta sobre las respuestas del QC…"
+                    className="input-glass flex-1 px-3 py-1.5 text-xs"
+                    placeholder="Ask about QC answers…"
                     value={semanticQ}
                     onChange={(e) => setSemanticQ(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && handleSemanticSearch(cl.id)}
                   />
-                  <button
-                    onClick={() => handleSemanticSearch(cl.id)}
-                    disabled={semanticSearching || !semanticQ.trim()}
-                    className="flex items-center gap-1 px-3 py-1.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 transition disabled:opacity-50 text-xs font-semibold"
-                  >
-                    {semanticSearching ? <Loader2 className="w-3 h-3 animate-spin" /> : <Send className="w-3 h-3" />}
-                    Buscar
-                  </button>
+                  <Tooltip content="Search">
+                    <GlassButton
+                      type="button"
+                      variant="primary"
+                      size="xs"
+                      iconOnly
+                      aria-label="Search"
+                      onClick={() => handleSemanticSearch(cl.id)}
+                      disabled={!semanticQ.trim()}
+                      loading={semanticSearching}
+                    >
+                      <Send className="w-3 h-3" aria-hidden="true" />
+                    </GlassButton>
+                  </Tooltip>
                 </div>
                 {semanticResults.length > 0 && (
                   <div className="flex flex-col gap-1.5 max-h-48 overflow-y-auto custom-scroll">
                     {semanticResults.map((match, i) => (
-                      <div key={match.id} className="p-2 bg-white/70 rounded-lg border border-purple-100 text-xs">
+                      <div key={match.id} className="ai-result-row">
                         <div className="flex items-center justify-between mb-0.5">
-                          <span className="font-semibold text-gray-700">#{i + 1}</span>
-                          <span className="text-purple-600 font-mono">score: {match.score.toFixed(3)}</span>
+                          <span className="font-semibold text-brand-800">#{i + 1}</span>
+                          <span className="text-brand-600 font-mono tabular-nums">score: {match.score.toFixed(3)}</span>
                         </div>
                         {!!match.metadata.text && (
-                          <p className="text-gray-600 whitespace-pre-wrap line-clamp-3">{String(match.metadata.text)}</p>
+                          <p className="text-brand-600 whitespace-pre-wrap line-clamp-3">{String(match.metadata.text)}</p>
                         )}
                         {!!match.metadata.question_code && (
-                          <span className="inline-block mt-0.5 text-xs bg-indigo-50 text-indigo-600 rounded px-1 py-0.5">
+                          <span className="inline-block mt-0.5 text-xs bg-brand-50 text-brand-700 rounded px-1 py-0.5">
                             {String(match.metadata.question_code)}
                           </span>
                         )}
@@ -943,29 +1224,29 @@ function QCBuilderPanel({
 
                 {/* Add root part form */}
                 {addingPartFor === cl.id && !addingSubpartFor && (
-                  <div className="flex flex-col gap-1 p-2 bg-blue-50 rounded-lg border border-blue-200 mt-1 mx-2">
-                    <div className="flex gap-1">
-                      <input className="w-14 text-xs font-mono border rounded px-1.5 py-0.5 text-center focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300" value={newCode} onChange={(e) => setNewCode(e.target.value)} placeholder="Código" />
-                      <input className="flex-1 text-xs border rounded px-2 py-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Nombre de la parte (ej. Part 1)" autoFocus />
+                  <div className="mx-2 mt-1 flex flex-col gap-2 rounded-xl border border-brand-100 bg-brand-50/80 p-3">
+                    <div className="flex gap-2">
+                      <input className="input-glass w-16 px-2 py-1.5 text-center font-mono text-xs" value={newCode} onChange={(e) => setNewCode(e.target.value)} placeholder="Code" />
+                      <input className="input-glass flex-1 px-3 py-1.5 text-xs" value={newName} onChange={(e) => setNewName(e.target.value)} placeholder="Part name (e.g. Part 1)" autoFocus />
                     </div>
-                    <div className="flex gap-1">
-                      <button onClick={() => handleAddPart(cl.id)} disabled={!newName.trim()} className="flex-1 text-xs bg-brand-600 text-white rounded py-0.5 hover:bg-brand-700 disabled:opacity-40 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">Crear parte</button>
-                      <button onClick={() => { setAddingPartFor(null); setNewName(""); }} className="flex-1 text-xs bg-gray-200 rounded py-0.5 hover:bg-gray-300 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-gray-400">Cancelar</button>
+                    <div className="flex gap-2">
+                      <LoadingButton onClick={() => handleAddPart(cl.id)} disabled={!newName.trim()} loading={isBusy(`add-part:${cl.id}`)} spinnerClassName="h-3 w-3" className="cta-primary inline-flex flex-1 items-center justify-center gap-1 px-4 py-2 text-xs font-semibold disabled:opacity-40">Create part</LoadingButton>
+                      <button onClick={() => { setAddingPartFor(null); setNewName(""); }} className="flex-1 rounded-full border border-brand-100 bg-nova-snow px-4 py-2 text-xs font-semibold text-brand-700 transition hover:border-brand-200 hover:bg-brand-50 focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-300">Cancel</button>
                     </div>
                   </div>
                 )}
 
                 {cl.parts.length === 0 && !addingPartFor && (
-                  <p className="text-xs text-gray-400 italic text-center py-3">Agrega partes con el botón + del encabezado</p>
+                  <p className="py-3 text-center text-xs italic text-brand-400">Add parts using the + button in the header menu</p>
                 )}
               </div>
             )}
-          </GlassSurface>
+          </SolidCard>
         );
       })}
 
       {checklists.length === 0 && !addingCl && !loading && (
-        <EmptyState icon="checklists" title="Sin QC Checklists" description="Crea uno manualmente o aplica la plantilla I-914 precargada." />
+        <EmptyState icon="checklists" title="No QC Checklists" description="Create one manually or apply the preloaded I-914 template." />
       )}
     </div>
   );

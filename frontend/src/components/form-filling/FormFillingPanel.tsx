@@ -15,6 +15,7 @@ import {
   CheckCircle2,
   FileDown,
   FileText,
+  Info,
   Loader2,
   Minus,
   Plus,
@@ -22,10 +23,29 @@ import {
   X,
 } from "lucide-react";
 import toast from "react-hot-toast";
-import { GlassSurface } from "../glass/GlassSurface";
+import { SolidCard } from "../ui/SolidCard";
 import CaseDocumentScopePicker from "../document-scopes/CaseDocumentScopePicker";
 import { AnimatedAIBot } from "../ui/AnimatedAIBot";
+import { AutofillProgressStatus } from "./AutofillProgressStatus";
+import {
+  ATTORNEY_AUTOFILL_DEFAULT_PHASES,
+  ATTORNEY_AUTOFILL_POST_OCR_PHASES,
+  CLIENT_AUTOFILL_DEFAULT_PHASES,
+  CLIENT_AUTOFILL_POST_OCR_PHASES,
+  formatAutofillProgressMessage,
+} from "./formAutofillProgressMessages";
 import { EmptyState } from "./FormFillingPanelEmptyState";
+import { LoadingButton } from "../ui/LoadingButton";
+import {
+  buildAutofillResultMessage,
+  getFieldOrigin,
+  isProtectedAutofillField,
+  MANUAL_FIELD_TITLE,
+  markFieldManual,
+  mergeAutofillAnswers,
+  seedFieldOriginsOnLoad,
+  type FieldOriginsMap,
+} from "./formFillingFieldOrigins";
 import type {
   Case,
   FieldVerification,
@@ -33,6 +53,7 @@ import type {
   FormTypeInfo,
   Page,
   QuestionnaireAnswerMap,
+  QuestionnaireAutofillResponse,
   QuestionnaireField,
   QuestionnaireItem,
   QuestionnaireOption,
@@ -47,6 +68,8 @@ import {
   deleteFormFillingJob,
   downloadFilledPdf,
   generateFormFromAnswers,
+  getActiveAutofillJob,
+  getAutofillJob,
   getAvailableFormTypes,
   getFilledPdfBlobUrl,
   getFormAttorneyQuestions,
@@ -55,11 +78,20 @@ import {
   getFormFillingJobStatus,
   getQuestionnaireAnswers,
   getQuestionnaireVerifications,
+  isActiveAutofillStatus,
+  pollAutofillJobById,
   getSharedQuestions,
+  getSharedAttorneyQuestions,
   regenerateFilledPdf,
   saveQuestionnaireAnswers,
   updateCase,
 } from "../../api/client";
+import {
+  clearFormAutofillSession,
+  readFormAutofillSession,
+  saveFormAutofillSession,
+  type FormAutofillKind,
+} from "./formAutofillSession";
 import {
   buildScopeUpdatePayload,
   listSelectableCaseDocuments,
@@ -73,14 +105,15 @@ import {
   formatLongDateTime,
   parseFlexibleDate,
 } from "../../utils/dateFormat";
+import { getSharedAttorneyAnswerAliases } from "./sharedAttorneyAliases";
 import {
-  formatPendingFieldLabel,
-  getClientConfirmationBlockMessage,
-  getClientPendingFieldsLead,
-  getClientRegenerationBlockMessage,
-  getPreviewStepBlockedMessage,
-  type MissingRequiredField,
-} from "./formFillingClientMessages";
+  buildPageHandlingInstructionSummary,
+  formatPageNumberList,
+  getRenderableQuestionnairePages,
+  humanizeQuestionnaireCode,
+  isInstructionOnlyQuestionnaireItem,
+  shouldHideQuestionnaireFieldLabel,
+} from "./questionnaireDisplayUtils";
 import {
   formatJobTimestamp,
   getJobDisplayTimestamp,
@@ -113,6 +146,7 @@ type ClientQuestionPlan = {
   pages: QuestionnairePage[];
   clearedAnswers: Array<Pick<SaveQuestionnaireAnswerPayload, "question_id" | "value">>;
 };
+type AttorneyQuestionPlan = ClientQuestionPlan;
 type QuestionnaireSaveScope = "client" | "all";
 type QuestionnaireSignatures = {
   shared: string;
@@ -209,29 +243,213 @@ function shouldShowOptionalBadge(
   return Boolean(optional && !isPreFilledDefaultValue(value, defaultValue, forceDefault));
 }
 
-function getDefaultAwareVerificationEntry(
-  verificationMap: VerificationMap,
+function OptionalBadge() {
+  return (
+    <span className="rounded-full bg-brand-50 px-2.5 py-1 text-[10px] font-medium text-brand-600">
+      Optional
+    </span>
+  );
+}
+
+function getItemOptionalUnits(item: QuestionnaireItem): boolean[] {
+  if (isInstructionOnlyQuestionnaireItem(item)) {
+    return [];
+  }
+
+  const units: boolean[] = [];
+
+  if ((item.fields?.length ?? 0) > 0) {
+    for (const field of item.fields ?? []) {
+      units.push(Boolean(field.optional));
+    }
+  } else if ((item.details_fields?.length ?? 0) === 0) {
+    units.push(Boolean(item.optional));
+  }
+
+  for (const field of item.details_fields ?? []) {
+    units.push(Boolean(field.optional));
+  }
+
+  return units;
+}
+
+function isItemEntirelyOptional(item: QuestionnaireItem): boolean {
+  const units = getItemOptionalUnits(item);
+  return units.length > 0 && units.every(Boolean);
+}
+
+function isSectionEntirelyOptional(items: QuestionnaireItem[]): boolean {
+  let foundUnit = false;
+
+  for (const item of items) {
+    const units = getItemOptionalUnits(item);
+    if (units.length === 0) {
+      continue;
+    }
+    foundUnit = true;
+    if (units.some((unitOptional) => !unitOptional)) {
+      return false;
+    }
+  }
+
+  return foundUnit;
+}
+
+function shouldShowQuestionOptionalBadge(
+  item: QuestionnaireItem,
+  answers: QuestionnaireAnswerMap,
+  sectionAllOptional: boolean,
+): boolean {
+  if (sectionAllOptional) {
+    return false;
+  }
+
+  if (isItemEntirelyOptional(item)) {
+    if (item.optional) {
+      return shouldShowOptionalBadge(item.optional, answers[item.id], item.default_value);
+    }
+    return true;
+  }
+
+  if (item.optional) {
+    return shouldShowOptionalBadge(item.optional, answers[item.id], item.default_value);
+  }
+
+  return false;
+}
+
+function shouldShowFieldOptionalBadge(
+  item: QuestionnaireItem,
+  field: QuestionnaireField,
+  value: unknown,
+  sectionAllOptional: boolean,
+  showQuestionOptionalBadge: boolean,
+): boolean {
+  if (
+    sectionAllOptional ||
+    showQuestionOptionalBadge ||
+    isItemEntirelyOptional(item) ||
+    !field.optional
+  ) {
+    return false;
+  }
+
+  return shouldShowOptionalBadge(
+    field.optional,
+    value,
+    field.default_value,
+    field.force_default,
+  );
+}
+
+const VERIFICATION_SEVERITY: Record<FieldVerification["status"], number> = {
+  approved: 0,
+  needs_review: 1,
+  rejected: 2,
+};
+
+function collectActionableVerification(
+  verification: FieldVerification | undefined,
   value: unknown,
   defaultValue: unknown,
-  ...keys: Array<string | undefined>
 ): FieldVerification | undefined {
-  const verification = getVerificationEntry(verificationMap, ...keys);
-  if (verification && answerMatchesDefaultValue(value, defaultValue)) {
+  if (!verification || verification.status === "approved") {
+    return undefined;
+  }
+  if (answerMatchesDefaultValue(value, defaultValue)) {
     return undefined;
   }
   return verification;
 }
 
-function getRepeatableVerificationKeys(
-  item: QuestionnaireItem,
-  rowIndex: number,
-  fieldId: string
-): string[] {
-  const canonicalKey = `${item.id}.${fieldId}`;
-  if ((item.visible_slots?.length ?? 0) > rowIndex) {
-    return [`${item.id}[${rowIndex}].${fieldId}`, canonicalKey];
+function pickWorstActionableVerification(
+  candidates: FieldVerification[],
+): FieldVerification | undefined {
+  if (candidates.length === 0) {
+    return undefined;
   }
-  return [canonicalKey];
+  return candidates.reduce((worst, current) =>
+    VERIFICATION_SEVERITY[current.status] > VERIFICATION_SEVERITY[worst.status]
+      ? current
+      : worst
+  );
+}
+
+function getSlotFieldVerifications(
+  slots: FieldVerification["slots"] | undefined,
+  rowIndex: number,
+): Record<string, FieldVerification> | undefined {
+  if (!slots) {
+    return undefined;
+  }
+  return slots[rowIndex] ?? slots[String(rowIndex)];
+}
+
+function getItemActionableVerification(
+  item: QuestionnaireItem,
+  answers: QuestionnaireAnswerMap,
+  verificationMap: VerificationMap,
+): FieldVerification | undefined {
+  const entry = verificationMap[item.id];
+  if (!entry) {
+    return collectActionableVerification(
+      getVerificationEntry(verificationMap, item.id),
+      answers[item.id],
+      item.default_value,
+    );
+  }
+
+  const candidates: FieldVerification[] = [];
+  const pushCandidate = (
+    verification: FieldVerification | undefined,
+    value: unknown,
+    defaultValue: unknown,
+  ) => {
+    const actionable = collectActionableVerification(verification, value, defaultValue);
+    if (actionable) {
+      candidates.push(actionable);
+    }
+  };
+
+  if (entry.fields) {
+    for (const field of item.fields ?? []) {
+      const groupValue = normalizeGroupValue(answers[item.id], item.fields ?? []);
+      pushCandidate(entry.fields[field.id], groupValue[field.id], field.default_value);
+    }
+    for (const field of item.details_fields ?? []) {
+      if (field.repeatable) {
+        continue;
+      }
+      const detailKey = `${item.id}.${field.id}`;
+      pushCandidate(entry.fields[field.id], answers[detailKey], field.default_value);
+    }
+  }
+
+  if (entry.slots) {
+    const fields = item.fields ?? [];
+    for (const slotKey of Object.keys(entry.slots)) {
+      const rowIndex = Number(slotKey);
+      if (Number.isNaN(rowIndex)) {
+        continue;
+      }
+      const slotFields = getSlotFieldVerifications(entry.slots, rowIndex);
+      if (!slotFields) {
+        continue;
+      }
+      const rows = normalizeRepeatableGroupValue(answers[item.id], fields);
+      const row = rows[rowIndex] ?? createEmptyGroupValue(fields);
+      for (const field of fields) {
+        pushCandidate(slotFields[field.id], row[field.id], field.default_value);
+      }
+    }
+  }
+
+  if (candidates.length > 0) {
+    return pickWorstActionableVerification(candidates);
+  }
+
+  pushCandidate(entry, answers[item.id], item.default_value);
+  return candidates[0];
 }
 
 function VerificationBadge({ verification }: { verification: FieldVerification }) {
@@ -336,7 +554,7 @@ function VerificationBadge({ verification }: { verification: FieldVerification }
               <button
                 type="button"
                 aria-label="Close"
-                className="-mt-1 -mr-1 rounded p-1 text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400/40"
+                className="-mt-1 -mr-1 inline-flex h-7 w-7 items-center justify-center rounded-full text-slate-400 transition hover:bg-slate-100 hover:text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-400/40"
                 onClick={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
@@ -789,6 +1007,37 @@ function normalizeOption(option: QuestionnaireOptionInput): QuestionnaireOption 
     : { value: option.value, label: option.label };
 }
 
+function isSingleChoiceOptionSelected(
+  option: QuestionnaireOption,
+  rawValue: string
+): boolean {
+  const value = rawValue.trim().toLowerCase();
+  if (!value) {
+    return false;
+  }
+
+  const optionValue = option.value.trim().toLowerCase();
+  const optionLabel = option.label.trim().toLowerCase();
+  if (value === optionValue || value === optionLabel) {
+    return true;
+  }
+
+  const sexAliases: Record<string, readonly string[]> = {
+    male: ["male", "m", "masculino", "hombre"],
+    female: ["female", "f", "femenino", "mujer"],
+  };
+  for (const aliases of Object.values(sexAliases)) {
+    if (
+      aliases.includes(value) &&
+      (aliases.includes(optionValue) || aliases.includes(optionLabel))
+    ) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
 function isChoiceGroupType(type: string, options?: QuestionnaireOptionInput[]): boolean {
   const normalizedType = type.toLowerCase();
   return (
@@ -980,17 +1229,22 @@ function sanitizeQuestionnaireFieldValue(
   if (!trimmed) {
     return "";
   }
+  const autofillSanitized = sanitizeAutofillSuggestion(item.id, field?.id, trimmed);
+  const value = autofillSanitized.shouldApply ? autofillSanitized.value : trimmed;
+  if (!hasText(value)) {
+    return "";
+  }
   if (looksLikeUsStateField(item, field)) {
-    const normalizedState = normalizeStateValue(trimmed);
+    const normalizedState = normalizeStateValue(value);
     return US_STATE_CODE_MAP.has(normalizedState.toLowerCase()) ? normalizedState : "";
   }
   if (looksLikeCountryField(item, field)) {
-    return normalizeCountryValue(trimmed);
+    return normalizeCountryValue(value);
   }
   if (looksLikeImmigrationStatusField(item, field)) {
-    return normalizeImmigrationStatusValue(trimmed);
+    return normalizeImmigrationStatusValue(value);
   }
-  return trimmed;
+  return value;
 }
 
 function splitCompoundLatamNameParts(
@@ -1131,13 +1385,163 @@ function getRepeatableRowCount(
   return Math.max(fixedSlotCount, groupCount, detailCount, 1);
 }
 
-function getRepeatableRowLabel(item: QuestionnaireItem, index: number): string {
-  const slotLabel = item.visible_slots?.[index];
-  return slotLabel ? String(slotLabel) : `Row ${index + 1}`;
+const PART9_CONTINUATION_ENTRIES_PER_SHEET = 4;
+
+function isI914Part9EntriesItem(item: QuestionnaireItem): boolean {
+  return item.id === "p9_entries";
 }
 
-function isAdditionalRepeatableRow(index: number): boolean {
-  return index > 0;
+function getRepeatableRowLabel(item: QuestionnaireItem, index: number): string {
+  const fixedSlotCount = item.visible_slots?.length ?? 0;
+  const isOverflowRow =
+    Boolean(item.allow_overflow_rows) && fixedSlotCount > 0 && index >= fixedSlotCount;
+
+  if (isOverflowRow && isI914Part9EntriesItem(item)) {
+    const overflowIndex = index - fixedSlotCount;
+    const sheet = Math.floor(overflowIndex / PART9_CONTINUATION_ENTRIES_PER_SHEET) + 1;
+    const entry = (overflowIndex % PART9_CONTINUATION_ENTRIES_PER_SHEET) + 1;
+    return `Continuacion - Hoja ${sheet} - Entrada ${entry}`;
+  }
+
+  const slotLabel = item.visible_slots?.[index];
+  if (slotLabel) {
+    if (isI914Part9EntriesItem(item)) {
+      return `Item 9.${slotLabel} - Pagina 12`;
+    }
+    return String(slotLabel);
+  }
+  if (isOverflowRow) {
+    return `Overflow #${index - fixedSlotCount + 1}`;
+  }
+  return `Row ${index + 1}`;
+}
+
+function getNativeSlotCount(item: QuestionnaireItem): number {
+  return item.visible_slots?.length ?? 0;
+}
+
+function canEditRepeatableRows(item: QuestionnaireItem): boolean {
+  return !item.visible_slots?.length || Boolean(item.allow_overflow_rows);
+}
+
+function getContinuationOverflowInfo(
+  item: QuestionnaireItem,
+  rowCount: number
+): { overflowCount: number; extraSheets: number } | null {
+  if (!isI914Part9EntriesItem(item) || !item.allow_overflow_rows) {
+    return null;
+  }
+  const fixedSlots = getNativeSlotCount(item);
+  if (fixedSlots <= 0) {
+    return null;
+  }
+  const overflowCount = Math.max(0, rowCount - fixedSlots);
+  if (overflowCount <= 0) {
+    return null;
+  }
+  const extraSheets = Math.ceil(overflowCount / PART9_CONTINUATION_ENTRIES_PER_SHEET);
+  return { overflowCount, extraSheets };
+}
+
+interface Part9ContinuationJobSummary {
+  pagesAdded: number;
+  entriesCount: number;
+  truncatedCount: number;
+  truncatedEntries: Array<{
+    page_number?: string;
+    part_number?: string;
+    item_number?: string;
+    entry_number?: string;
+    char_count?: string;
+  }>;
+}
+
+interface GenerationValidationWarningSummary {
+  message: string;
+  missingRequiredCount: number;
+  validationIssueCount: number;
+}
+
+function getGenerationValidationWarningSummary(
+  job: FormFillingJob
+): GenerationValidationWarningSummary | null {
+  const warning = job.warnings?.find((entry) => entry?.code === "form_generation_validation_issues");
+  if (!warning) {
+    return null;
+  }
+  const details = (warning.details ?? {}) as Record<string, unknown>;
+  const missingRequiredCount = Number(details.missing_required_count ?? 0) || 0;
+  const validationIssueCount = Number(details.validation_issue_count ?? 0) || 0;
+  if (missingRequiredCount <= 0 && validationIssueCount <= 0) {
+    return null;
+  }
+  const message =
+    typeof warning.message === "string" && warning.message.trim()
+      ? warning.message
+      : `${missingRequiredCount || validationIssueCount} pending field${(missingRequiredCount || validationIssueCount) === 1 ? "" : "s"} found.`;
+  return {
+    message,
+    missingRequiredCount,
+    validationIssueCount,
+  };
+}
+
+function getPart9ContinuationSummary(
+  job: FormFillingJob
+): Part9ContinuationJobSummary | null {
+  const warning = job.warnings?.find((entry) => entry?.code === "i914_part9_continuation");
+  if (!warning) {
+    return null;
+  }
+  const details = (warning.details ?? {}) as Record<string, unknown>;
+  const pagesAdded = Number(details.pages_added ?? 0) || 0;
+  if (pagesAdded <= 0) {
+    return null;
+  }
+  const entriesCount = Number(details.entries_count ?? 0) || 0;
+  const truncatedCount = Number(details.truncated_count ?? 0) || 0;
+  const truncatedEntriesRaw = Array.isArray(details.truncated_entries)
+    ? (details.truncated_entries as Array<Record<string, unknown>>)
+    : [];
+  const truncatedEntries = truncatedEntriesRaw.map((entry) => ({
+    page_number: entry?.page_number != null ? String(entry.page_number) : undefined,
+    part_number: entry?.part_number != null ? String(entry.part_number) : undefined,
+    item_number: entry?.item_number != null ? String(entry.item_number) : undefined,
+    entry_number: entry?.entry_number != null ? String(entry.entry_number) : undefined,
+    char_count: entry?.char_count != null ? String(entry.char_count) : undefined,
+  }));
+  return {
+    pagesAdded,
+    entriesCount,
+    truncatedCount,
+    truncatedEntries,
+  };
+}
+
+function findQuestionnaireItemById(
+  pages: QuestionnairePage[],
+  itemId: string
+): QuestionnaireItem | null {
+  for (const page of pages) {
+    const item = page.items.find((candidate) => candidate.id === itemId);
+    if (item) {
+      return item;
+    }
+  }
+  return null;
+}
+
+function getRepeatableRowsForItem(
+  item: QuestionnaireItem,
+  answers: QuestionnaireAnswerMap
+): RepeatableRow[] {
+  const fields = item.fields ?? [];
+  if (!fields.length) {
+    return [];
+  }
+  return trimTrailingEmptyRows(
+    normalizeRepeatableGroupValue(answers[item.id], fields)
+  ).filter((row) => Object.values(row).some((value) => hasText(value)));
 }
 
 function extractRelevantAnswers(
@@ -1210,7 +1614,7 @@ function applyQuestionnaireDefaults(
       if (
         item.default_value !== undefined &&
         !item.fields?.length &&
-        !hasMeaningfulAnswerValue(next[item.id])
+        (item.force_default || !hasMeaningfulAnswerValue(next[item.id]))
       ) {
         next[item.id] = cloneAnswerValue(item.default_value);
       }
@@ -1239,7 +1643,10 @@ function applyQuestionnaireDefaults(
           continue;
         }
         const detailKey = `${item.id}.${detailField.id}`;
-        if (!hasMeaningfulAnswerValue(next[detailKey])) {
+        if (
+          detailField.force_default ||
+          !hasMeaningfulAnswerValue(next[detailKey])
+        ) {
           next[detailKey] = toText(detailField.default_value);
         }
       }
@@ -1253,16 +1660,13 @@ function buildQuestionnairePayload(
   pages: QuestionnairePage[],
   answers: QuestionnaireAnswerMap,
   source: string,
-  formType?: string | null
+  formType?: string | null,
+  fieldOrigins: FieldOriginsMap = {}
 ) {
   return pages.flatMap((page) =>
     page.items.flatMap((item) => {
-      const payload: Array<{
-        question_id: string;
-        value: unknown;
-        source: string;
-        form_type?: string | null;
-      }> = [];
+      const payload: Array<SaveQuestionnaireAnswerPayload> = [];
+      const itemOrigins = fieldOrigins[item.id];
 
       if (item.fields?.length) {
         if (isRepeatableItem(item)) {
@@ -1281,6 +1685,7 @@ function buildQuestionnairePayload(
             ),
             source,
             form_type: formType ?? null,
+            ...(itemOrigins ? { field_origins: itemOrigins } : {}),
           });
         } else {
           payload.push({
@@ -1288,6 +1693,7 @@ function buildQuestionnairePayload(
             value: getSanitizedGroupValue(item, answers),
             source,
             form_type: formType ?? null,
+            ...(itemOrigins ? { field_origins: itemOrigins } : {}),
           });
         }
       } else {
@@ -1296,11 +1702,13 @@ function buildQuestionnairePayload(
           value: sanitizeQuestionnaireFieldValue(item, answers[item.id]),
           source,
           form_type: formType ?? null,
+          ...(itemOrigins ? { field_origins: itemOrigins } : {}),
         });
       }
 
       for (const detailField of item.details_fields ?? []) {
         const detailKey = `${item.id}.${detailField.id}`;
+        const detailOrigins = fieldOrigins[detailKey];
         payload.push({
           question_id: detailKey,
           value: detailField.repeatable
@@ -1314,6 +1722,7 @@ function buildQuestionnairePayload(
             : sanitizeQuestionnaireFieldValue(item, answers[detailKey], detailField),
           source,
           form_type: formType ?? null,
+          ...(detailOrigins ? { field_origins: detailOrigins } : {}),
         });
       }
 
@@ -1327,20 +1736,68 @@ function buildClientSectionPayload(
   sharedAnswers: QuestionnaireAnswerMap,
   formTypes: FormTypeInfo[],
   allFormsClientPlan: Record<string, ClientQuestionPlan>,
-  formAnswers: QuestionnaireAnswerMap
+  formAnswers: QuestionnaireAnswerMap,
+  fieldOrigins: FieldOriginsMap = {}
 ): SaveQuestionnaireAnswerPayload[] {
   const payload: SaveQuestionnaireAnswerPayload[] = [
-    ...buildQuestionnairePayload(sharedPages, sharedAnswers, "shared"),
+    ...buildQuestionnairePayload(sharedPages, sharedAnswers, "shared", null, fieldOrigins),
   ];
 
   for (const form of formTypes) {
     const plan = allFormsClientPlan[form.form_type];
     if (plan) {
       payload.push(
-        ...buildQuestionnairePayload(plan.pages, formAnswers, "form_client", form.form_type),
+        ...buildQuestionnairePayload(
+          plan.pages,
+          formAnswers,
+          "form_client",
+          form.form_type,
+          fieldOrigins
+        ),
         ...plan.clearedAnswers.map((entry) => ({
           ...entry,
           source: "form_client",
+          form_type: form.form_type,
+        }))
+      );
+    }
+  }
+
+  return payload;
+}
+
+function buildAttorneySectionPayload(
+  sharedAttorneyPages: QuestionnairePage[],
+  sharedAttorneyAnswers: QuestionnaireAnswerMap,
+  formTypes: FormTypeInfo[],
+  allFormsAttorneyPlan: Record<string, AttorneyQuestionPlan>,
+  formAnswers: QuestionnaireAnswerMap,
+  fieldOrigins: FieldOriginsMap = {}
+): SaveQuestionnaireAnswerPayload[] {
+  const payload: SaveQuestionnaireAnswerPayload[] = [
+    ...buildQuestionnairePayload(
+      sharedAttorneyPages,
+      sharedAttorneyAnswers,
+      "shared_attorney",
+      null,
+      fieldOrigins
+    ),
+  ];
+
+  for (const form of formTypes) {
+    const plan = allFormsAttorneyPlan[form.form_type];
+    if (plan) {
+      payload.push(
+        ...buildQuestionnairePayload(
+          plan.pages,
+          formAnswers,
+          "form_attorney",
+          form.form_type,
+          fieldOrigins
+        ),
+        ...plan.clearedAnswers.map((entry) => ({
+          ...entry,
+          source: "form_attorney",
           form_type: form.form_type,
         }))
       );
@@ -1355,27 +1812,30 @@ function buildFullQuestionnairePayload(
   sharedAnswers: QuestionnaireAnswerMap,
   formTypes: FormTypeInfo[],
   allFormsClientPlan: Record<string, ClientQuestionPlan>,
-  allFormsAttorneyPages: Record<string, QuestionnairePage[]>,
-  formAnswers: QuestionnaireAnswerMap
+  sharedAttorneyPages: QuestionnairePage[],
+  sharedAttorneyAnswers: QuestionnaireAnswerMap,
+  allFormsAttorneyPlan: Record<string, AttorneyQuestionPlan>,
+  formAnswers: QuestionnaireAnswerMap,
+  fieldOrigins: FieldOriginsMap = {}
 ): SaveQuestionnaireAnswerPayload[] {
-  const payload = buildClientSectionPayload(
-    sharedPages,
-    sharedAnswers,
-    formTypes,
-    allFormsClientPlan,
-    formAnswers
-  );
-
-  for (const form of formTypes) {
-    const attPages = allFormsAttorneyPages[form.form_type];
-    if (attPages) {
-      payload.push(
-        ...buildQuestionnairePayload(attPages, formAnswers, "form_attorney", form.form_type)
-      );
-    }
-  }
-
-  return payload;
+  return [
+    ...buildClientSectionPayload(
+      sharedPages,
+      sharedAnswers,
+      formTypes,
+      allFormsClientPlan,
+      formAnswers,
+      fieldOrigins
+    ),
+    ...buildAttorneySectionPayload(
+      sharedAttorneyPages,
+      sharedAttorneyAnswers,
+      formTypes,
+      allFormsAttorneyPlan,
+      formAnswers,
+      fieldOrigins
+    ),
+  ];
 }
 
 function groupItemsBySection(items: QuestionnaireItem[]) {
@@ -1441,8 +1901,68 @@ function normalizeAddressFieldId(fieldId: string): string {
   return normalized;
 }
 
+function buildForceDefaultProtectedKeys(pages: QuestionnairePage[]): Set<string> {
+  const keys = new Set<string>();
+  for (const page of pages) {
+    for (const item of page.items) {
+      if (
+        item.force_default &&
+        item.default_value !== undefined &&
+        !(item.fields?.length ?? 0)
+      ) {
+        keys.add(item.id);
+      }
+      for (const field of item.fields ?? []) {
+        if (field.force_default && field.default_value !== undefined) {
+          keys.add(`${item.id}.${field.id}`);
+        }
+      }
+      for (const detailField of item.details_fields ?? []) {
+        if (detailField.force_default && detailField.default_value !== undefined) {
+          keys.add(`${item.id}.${detailField.id}`);
+        }
+      }
+    }
+  }
+  return keys;
+}
+
+function clearVerificationForManualField(
+  setVerificationMap: Dispatch<SetStateAction<VerificationMap>>,
+  questionId: string,
+  fieldId?: string
+): void {
+  setVerificationMap((prev) => {
+    const entry = prev[questionId];
+    if (!entry) {
+      return prev;
+    }
+    if (!fieldId) {
+      const next = { ...prev };
+      delete next[questionId];
+      return next;
+    }
+    const nestedFields = (
+      entry as FieldVerification & { fields?: Record<string, FieldVerification> }
+    ).fields;
+    if (!nestedFields?.[fieldId]) {
+      return prev;
+    }
+    const nextFields = { ...nestedFields };
+    delete nextFields[fieldId];
+    return {
+      ...prev,
+      [questionId]: {
+        ...entry,
+        fields: nextFields,
+      },
+    };
+  });
+}
+
 function clearDuplicateSafeAddress(
-  answers: QuestionnaireAnswerMap
+  answers: QuestionnaireAnswerMap,
+  protectedKeys: Set<string> = new Set()
 ): QuestionnaireAnswerMap {
   const physicalValue = answers[SHARED_PHYSICAL_ADDRESS_ID];
   const safeValue = answers[SHARED_SAFE_MAILING_ADDRESS_ID];
@@ -1453,6 +1973,15 @@ function clearDuplicateSafeAddress(
   const nextSafeValue: Record<string, unknown> = { ...safeValue };
   let changed = false;
   for (const [fieldId, rawValue] of Object.entries(nextSafeValue)) {
+    if (
+      isProtectedAutofillField(
+        SHARED_SAFE_MAILING_ADDRESS_ID,
+        fieldId,
+        protectedKeys
+      )
+    ) {
+      continue;
+    }
     const textValue = toText(rawValue);
     if (!hasText(textValue) || !looksLikeQuestionAnswerDump(textValue)) {
       continue;
@@ -1514,6 +2043,15 @@ function clearDuplicateSafeAddress(
   }
 
   for (const [fieldId, rawValue] of Object.entries(nextSafeValue)) {
+    if (
+      isProtectedAutofillField(
+        SHARED_SAFE_MAILING_ADDRESS_ID,
+        fieldId,
+        protectedKeys
+      )
+    ) {
+      continue;
+    }
     if (!hasText(toText(rawValue))) {
       continue;
     }
@@ -1757,92 +2295,216 @@ function buildClientQuestionDedupResult(
   };
 }
 
-function mergeAutofillAnswers(
-  currentAnswers: QuestionnaireAnswerMap,
-  suggestedAnswers: QuestionnaireAnswerMap
+function buildAttorneyQuestionDedupResult(
+  pages: QuestionnairePage[]
 ): {
-  answers: QuestionnaireAnswerMap;
-  appliedCount: number;
+  pages: QuestionnairePage[];
+  clearedAnswers: Array<Pick<SaveQuestionnaireAnswerPayload, "question_id" | "value">>;
 } {
-  const next: QuestionnaireAnswerMap = { ...currentAnswers };
-  let appliedCount = 0;
+  const clearedAnswers: Array<Pick<SaveQuestionnaireAnswerPayload, "question_id" | "value">> =
+    [];
 
-  for (const [questionId, rawSuggestedValue] of Object.entries(suggestedAnswers)) {
-    if (Array.isArray(rawSuggestedValue)) {
-      const existing = next[questionId];
-      const existingRows = Array.isArray(existing)
-        ? existing.map((row) => (isPlainObject(row) ? { ...row } : {}))
-        : [];
-      const validRows = rawSuggestedValue.filter(hasMeaningfulRepeatableRow);
-      if (validRows.length > 0) {
-        if (existingRows.length === 0) {
-          next[questionId] = validRows.map((row) =>
-            Object.fromEntries(Object.entries(row).map(([fieldId, fieldValue]) => [fieldId, toText(fieldValue)]))
-          );
-          for (const row of validRows) {
-            appliedCount += Object.values(row).filter((v) => hasText(toText(v))).length;
+  const nextPages = pages
+    .map((page) => {
+      const nextItems = page.items.flatMap((item) => {
+        if (!item.fields?.length) {
+          if (getSharedAttorneyAnswerAliases(item).length > 0) {
+            clearedAnswers.push({
+              question_id: item.id,
+              value: getEmptyAnswerValue(item),
+            });
+            return [];
           }
-          continue;
+          return [item];
         }
 
-        let changed = false;
-        const mergedRows = [...existingRows];
-        validRows.forEach((row, rowIndex) => {
-          const targetRow = isPlainObject(mergedRows[rowIndex]) ? { ...mergedRows[rowIndex] } : {};
-          for (const [fieldId, fieldValue] of Object.entries(row)) {
-            const suggestedText = toText(fieldValue);
-            if (!hasText(suggestedText) || hasText(toText(targetRow[fieldId]))) {
-              continue;
-            }
-            targetRow[fieldId] = suggestedText;
-            appliedCount += 1;
-            changed = true;
-          }
-          mergedRows[rowIndex] = targetRow;
-        });
+        const remainingFields = item.fields.filter(
+          (field) => getSharedAttorneyAnswerAliases(item, field).length === 0
+        );
 
-        if (changed) {
-          next[questionId] = mergedRows;
+        if (remainingFields.length === item.fields.length) {
+          return [item];
         }
-      }
-      continue;
-    }
 
-    if (isPlainObject(rawSuggestedValue)) {
-      const existingValue = isPlainObject(next[questionId])
-        ? { ...(next[questionId] as Record<string, unknown>) }
-        : {};
-      let changed = false;
-
-      for (const [fieldId, rawFieldValue] of Object.entries(rawSuggestedValue)) {
-        const suggestedText = toText(rawFieldValue);
-        if (!hasText(suggestedText) || hasText(toText(existingValue[fieldId]))) {
-          continue;
+        if (remainingFields.length === 0) {
+          clearedAnswers.push({
+            question_id: item.id,
+            value: getEmptyAnswerValue(item),
+          });
+          return [];
         }
-        existingValue[fieldId] = suggestedText;
-        appliedCount += 1;
-        changed = true;
-      }
 
-      if (changed) {
-        next[questionId] = existingValue;
-      }
-      continue;
-    }
+        return [
+          {
+            ...item,
+            fields: remainingFields,
+          },
+        ];
+      });
 
-    const suggestedText = toText(rawSuggestedValue);
-    if (!hasText(suggestedText) || hasText(toText(next[questionId]))) {
-      continue;
-    }
-
-    next[questionId] = suggestedText;
-    appliedCount += 1;
-  }
+      return {
+        ...page,
+        items: nextItems,
+      };
+    })
+    .filter((page) => page.items.length > 0);
 
   return {
-    answers: next,
-    appliedCount,
+    pages: nextPages,
+    clearedAnswers,
   };
+}
+
+type SanitizedAutofillValue = {
+  value: string;
+  shouldApply: boolean;
+};
+
+const ADDRESS_LABEL_DUMP_RE =
+  /\b(?:flr\.?\s*number|floor\s*number|city\s+or\s+town|state|zip\s*code|postal\s*code|apt\.?|ste\.?|flr\.?|part\s+\d+\s+item)\b/i;
+
+const EMPTY_FORM_MARKER_RE =
+  /(?:\[\s*\]|\(\s*empty\s*\)|\bempty\b|\bn\/a\b)/gi;
+
+function stripEmptyFormMarkers(value: string): string {
+  return value.replace(EMPTY_FORM_MARKER_RE, " ").replace(/\s+/g, " ").trim();
+}
+
+function extractLabeledSegment(value: string, labelPattern: string, stopPattern: string): string {
+  const regex = new RegExp(`${labelPattern}\\s*:\\s*([\\s\\S]*?)(?=${stopPattern}|$)`, "i");
+  const match = value.match(regex);
+  return stripEmptyFormMarkers(match?.[1] ?? "")
+    .split(/\s+(?:\[[pP]\.\d+\]|Part\s+\d+\s+Item|Street\s+Number\s+and\s+Name|Apt\.|Ste\.|Flr\.|State\s*:|ZIP\s*Code\s*:|Postal\s*Code\s*:)/i)[0]
+    .replace(/[:;,.]+$/g, "")
+    .trim();
+}
+
+function looksLikeAddressStreetField(questionId: string, fieldId?: string): boolean {
+  const key = `${questionId}.${fieldId ?? ""}`.toLowerCase();
+  return (
+    key.includes("street_number_name") ||
+    key.includes("street_name") ||
+    key.includes("street_address")
+  );
+}
+
+function looksLikeAddressCityField(questionId: string, fieldId?: string): boolean {
+  const key = `${questionId}.${fieldId ?? ""}`.toLowerCase();
+  return /\b(city|town)\b/.test(key) || key.includes("_city") || key.endsWith(".city");
+}
+
+function looksLikeAddressStateField(questionId: string, fieldId?: string): boolean {
+  const key = `${questionId}.${fieldId ?? ""}`.toLowerCase();
+  return /\bstate\b/.test(key) || key.includes("_state") || key.endsWith(".state");
+}
+
+function looksLikeAddressZipField(questionId: string, fieldId?: string): boolean {
+  const key = `${questionId}.${fieldId ?? ""}`.toLowerCase();
+  return /\b(zip|postal)\b/.test(key) || key.includes("zip_code") || key.includes("postal_code");
+}
+
+function looksLikeAddressUnitTypeField(questionId: string, fieldId?: string): boolean {
+  const key = `${questionId}.${fieldId ?? ""}`.toLowerCase();
+  return (
+    key.includes("apt_ste_flr") ||
+    key.includes("unit_type") ||
+    key.includes("apartment_suite_floor")
+  );
+}
+
+function looksLikeAddressUnitNumberField(questionId: string, fieldId?: string): boolean {
+  const key = `${questionId}.${fieldId ?? ""}`.toLowerCase();
+  return (
+    key.includes("unit_number") ||
+    key.includes("flr_number") ||
+    key.endsWith(".number") ||
+    key.endsWith("_number")
+  );
+}
+
+function sanitizeAutofillSuggestion(
+  questionId: string,
+  fieldId: string | undefined,
+  rawValue: unknown
+): SanitizedAutofillValue {
+  const original = toText(rawValue).trim();
+  if (!hasText(original)) {
+    return { value: "", shouldApply: false };
+  }
+
+  const hasAddressLabelDump = ADDRESS_LABEL_DUMP_RE.test(original);
+  const compactOriginal = stripEmptyFormMarkers(original);
+
+  if (looksLikeAddressCityField(questionId, fieldId) && hasAddressLabelDump) {
+    const city = extractLabeledSegment(
+      original,
+      "city\\s+or\\s+town",
+      "\\s+(?:state|zip\\s*code|postal\\s*code|province|apt\\.?|ste\\.?|flr\\.?)\\s*:"
+    );
+    return { value: city, shouldApply: true };
+  }
+
+  if (looksLikeAddressStreetField(questionId, fieldId) && hasAddressLabelDump) {
+    const street = extractLabeledSegment(
+      original,
+      "street\\s+number\\s+and\\s+name|street\\s+address|street",
+      "\\s+(?:apt\\.?|ste\\.?|flr\\.?|flr\\.?\\s*number|floor\\s*number|city\\s+or\\s+town|state|zip\\s*code|postal\\s*code|part\\s+\\d+\\s+item|\\[[pP]\\.\\d+\\])\\b"
+    );
+    return { value: street, shouldApply: true };
+  }
+
+  if (looksLikeAddressStateField(questionId, fieldId) && hasAddressLabelDump) {
+    const state = extractLabeledSegment(
+      original,
+      "state",
+      "\\s+(?:zip\\s*code|postal\\s*code|city\\s+or\\s+town|province)\\s*:"
+    );
+    return { value: normalizeStateValue(state), shouldApply: true };
+  }
+
+  if (looksLikeAddressZipField(questionId, fieldId) && hasAddressLabelDump) {
+    const zip = extractLabeledSegment(
+      original,
+      "zip\\s*code|postal\\s*code",
+      "\\s+(?:city\\s+or\\s+town|state|province|apt\\.?|ste\\.?|flr\\.?)\\s*:"
+    );
+    const zipMatch = zip.match(/\b\d{5}(?:-\d{4})?\b/);
+    return { value: zipMatch?.[0] ?? "", shouldApply: true };
+  }
+
+  if (looksLikeAddressUnitTypeField(questionId, fieldId)) {
+    const normalized = compactOriginal.toLowerCase();
+    if (/\bapt\.?\b|apartment/.test(normalized)) {
+      return { value: "Apt.", shouldApply: true };
+    }
+    if (/\bste\.?\b|suite/.test(normalized)) {
+      return { value: "Ste.", shouldApply: true };
+    }
+    if (/\bflr\.?\b|floor/.test(normalized)) {
+      return { value: "Flr.", shouldApply: true };
+    }
+  }
+
+  if (looksLikeAddressUnitNumberField(questionId, fieldId)) {
+    if (hasAddressLabelDump || /^(?:apt\.?|ste\.?|flr\.?)$/i.test(compactOriginal)) {
+      const number = extractLabeledSegment(
+        original,
+        "(?:flr\\.?\\s*number|floor\\s*number|number)",
+        "\\s+(?:city\\s+or\\s+town|state|zip\\s*code|postal\\s*code|apt\\.?|ste\\.?|flr\\.?)\\s*:"
+      );
+      const usefulNumber = number.match(/\b[A-Za-z0-9][A-Za-z0-9-]{0,12}\b/)?.[0] ?? "";
+      if (/^(?:apt|ste|flr|empty)$/i.test(usefulNumber)) {
+        return { value: "", shouldApply: true };
+      }
+      return { value: usefulNumber, shouldApply: true };
+    }
+  }
+
+  if (hasAddressLabelDump) {
+    return { value: compactOriginal, shouldApply: true };
+  }
+
+  return { value: original, shouldApply: true };
 }
 
 function countFilledInputs(
@@ -1854,6 +2516,9 @@ function countFilledInputs(
 
   for (const page of pages) {
     for (const item of page.items) {
+      if (isInstructionOnlyQuestionnaireItem(item)) {
+        continue;
+      }
       if (item.fields?.length) {
         if (isRepeatableItem(item)) {
           const rowCount = getRepeatableRowCount(item, answers);
@@ -1907,213 +2572,6 @@ function countFilledInputs(
   }
 
   return { filled, total };
-}
-
-function normalizeConditionalAnswerValue(value: unknown): string {
-  const normalized = cleanQuestionText(value);
-  if (["true", "yes", "y", "1", "checked", "on"].includes(normalized)) {
-    return "yes";
-  }
-  if (["false", "no", "n", "0", "unchecked", "off"].includes(normalized)) {
-    return "no";
-  }
-  return normalized;
-}
-
-function fieldConditionApplies(
-  item: QuestionnaireItem,
-  condition: string | undefined,
-  answers: QuestionnaireAnswerMap
-): boolean {
-  const normalizedCondition = normalizeValidationText(condition ?? "");
-  if (!normalizedCondition) {
-    return true;
-  }
-
-  const currentAnswer = normalizeConditionalAnswerValue(answers[item.id]);
-  if (normalizedCondition.includes("if yes")) {
-    return currentAnswer === "yes";
-  }
-  if (normalizedCondition.includes("if no")) {
-    return currentAnswer === "no";
-  }
-  return true;
-}
-
-function hasMeaningfulOptionalItemValue(
-  item: QuestionnaireItem,
-  answers: QuestionnaireAnswerMap
-): boolean {
-  if (item.fields?.length) {
-    if (isRepeatableItem(item)) {
-      return normalizeRepeatableGroupValue(answers[item.id], item.fields).some((row) => !isRowEmpty(row));
-    }
-
-    const row = normalizeGroupValue(answers[item.id], item.fields);
-    return item.fields.some((field) => {
-      const canonicalKey = `${item.id}.${field.id}`;
-      return hasText(row[field.id] ?? "") || hasText(toText(answers[canonicalKey]));
-    });
-  }
-
-  if (hasText(toText(answers[item.id]))) {
-    return true;
-  }
-
-  return (item.details_fields ?? []).some((detailField) => {
-    const detailKey = `${item.id}.${detailField.id}`;
-    const value = answers[detailKey];
-    return Array.isArray(value)
-      ? value.some((entry) => hasText(toText(entry)))
-      : hasText(toText(value));
-  });
-}
-
-function optionalItemShouldValidate(
-  item: QuestionnaireItem,
-  answers: QuestionnaireAnswerMap,
-  sharedAnswers: QuestionnaireAnswerMap
-): boolean {
-  if (hasMeaningfulOptionalItemValue(item, answers)) {
-    return true;
-  }
-
-  return false;
-}
-
-function fieldIsRequiredForValidation(
-  item: QuestionnaireItem,
-  field: QuestionnaireField,
-  _row?: RepeatableRow
-): boolean {
-  if (field.optional) {
-    return false;
-  }
-
-  return true;
-}
-
-function shouldSkipRepeatableRowValidation(item: QuestionnaireItem, index: number): boolean {
-  return isAdditionalRepeatableRow(index);
-}
-
-function collectMissingFields(
-  item: QuestionnaireItem,
-  answers: QuestionnaireAnswerMap,
-  sharedAnswers: QuestionnaireAnswerMap = answers
-): MissingRequiredField[] {
-  const missing: MissingRequiredField[] = [];
-  const missingKind: MissingRequiredField["kind"] = item.optional ? "review" : "required";
-  const addMissing = (inputId: string, label: string, rowLabel?: string) => {
-    missing.push({
-      inputId,
-      label,
-      rowLabel,
-      sectionCode: item.code || undefined,
-      kind: missingKind,
-    });
-  };
-
-  if (item.optional && !optionalItemShouldValidate(item, answers, sharedAnswers)) {
-    return missing;
-  }
-
-  if (item.fields?.length) {
-    if (isRepeatableItem(item)) {
-      const rows = normalizeRepeatableGroupValue(answers[item.id], item.fields);
-      const rowIndexes = item.optional
-        ? rows
-            .map((row, index) => (!isRowEmpty(row) ? index : -1))
-            .filter((index) => index >= 0)
-        : Array.from({ length: getRepeatableRowCount(item, answers) }, (_, index) => index);
-      for (const index of rowIndexes) {
-        if (shouldSkipRepeatableRowValidation(item, index)) {
-          continue;
-        }
-        const row = rows[index] ?? createEmptyGroupValue(item.fields);
-        const rowLabel = getRepeatableRowLabel(item, index);
-        for (const field of item.fields) {
-          if (
-            !fieldIsRequiredForValidation(item, field, row) ||
-            !fieldConditionApplies(item, field.condition, answers) ||
-            hasText(row[field.id] ?? "")
-          ) {
-            continue;
-          }
-          addMissing(`${item.id}-${index}-${field.id}`, field.label, rowLabel);
-        }
-      }
-    } else {
-      const row = normalizeGroupValue(answers[item.id], item.fields);
-      for (const field of item.fields) {
-        if (
-          !fieldIsRequiredForValidation(item, field, row) ||
-          !fieldConditionApplies(item, field.condition, answers)
-        ) {
-          continue;
-        }
-
-        const canonicalKey = `${item.id}.${field.id}`;
-        const value = hasText(row[field.id] ?? "")
-          ? row[field.id] ?? ""
-          : canonicalKey in answers
-            ? toText(answers[canonicalKey])
-            : "";
-
-        if (!hasText(value)) {
-          addMissing(`${item.id}-${field.id}`, field.label);
-        }
-      }
-    }
-  } else if (!hasText(toText(answers[item.id]))) {
-    addMissing(item.id, item.form_text);
-  }
-
-  for (const detailField of item.details_fields ?? []) {
-    if (
-      detailField.optional ||
-      !fieldConditionApplies(item, detailField.condition, answers)
-    ) {
-      continue;
-    }
-
-    const detailKey = `${item.id}.${detailField.id}`;
-    if (detailField.repeatable) {
-      const rowCount = getRepeatableRowCount(item, answers);
-      const values = Array.isArray(answers[detailKey])
-        ? answers[detailKey].map((entry) => toText(entry))
-        : [];
-      for (let index = 0; index < rowCount; index += 1) {
-        if (isAdditionalRepeatableRow(index)) {
-          continue;
-        }
-        if (hasText(values[index] ?? "")) {
-          continue;
-        }
-        addMissing(`${detailKey}-${index}`, detailField.label, getRepeatableRowLabel(item, index));
-      }
-    } else if (!hasText(toText(answers[detailKey]))) {
-      addMissing(detailKey, detailField.label);
-    }
-  }
-
-  return missing;
-}
-
-function collectMissingRequiredFields(
-  pages: QuestionnairePage[],
-  answers: QuestionnaireAnswerMap,
-  sharedAnswers: QuestionnaireAnswerMap = answers
-): MissingRequiredField[] {
-  const missing: MissingRequiredField[] = [];
-
-  for (const page of pages) {
-    for (const item of page.items) {
-      missing.push(...collectMissingFields(item, answers, sharedAnswers));
-    }
-  }
-
-  return missing;
 }
 
 function getJobPdfCacheKey(
@@ -2253,7 +2711,7 @@ function DateField({
   const selectClassName = `rounded-xl border px-3 py-2 text-sm transition-colors focus-visible:outline-none focus-visible:ring-2 ${
     hasError
       ? "border-red-300 bg-red-50 text-red-900 focus-visible:border-red-500 focus-visible:ring-red-200"
-      : "border-gray-200 bg-white text-gray-800 focus-visible:border-brand-500 focus-visible:ring-brand-100"
+      : "border-brand-100 bg-nova-snow text-brand-800 focus-visible:border-brand-500 focus-visible:ring-brand-100"
   }`;
 
   return (
@@ -2330,6 +2788,8 @@ export default function FormFillingPanel({
 
   const [sharedPages, setSharedPages] = useState<QuestionnairePage[]>([]);
   const [sharedAnswers, setSharedAnswers] = useState<QuestionnaireAnswerMap>({});
+  const [sharedAttorneyPages, setSharedAttorneyPages] = useState<QuestionnairePage[]>([]);
+  const [sharedAttorneyAnswers, setSharedAttorneyAnswers] = useState<QuestionnaireAnswerMap>({});
   const [loadingShared, setLoadingShared] = useState(true);
   const [savingClientQuestions, setSavingClientQuestions] = useState(false);
   const [autofillingFormQuestions, setAutofillingFormQuestions] = useState(false);
@@ -2346,10 +2806,15 @@ export default function FormFillingPanel({
   const [, setLoadingFormTypes] = useState(true);
 
   const [, setAllFormsClientPages] = useState<Record<string, QuestionnairePage[]>>({});
-  const [allFormsAttorneyPages, setAllFormsAttorneyPages] = useState<Record<string, QuestionnairePage[]>>({});
+  const [allFormsAttorneyPages, setAllFormsAttorneyPages] = useState<
+    Record<string, QuestionnairePage[]>
+  >({});
   const [allFormsClientPlan, setAllFormsClientPlan] = useState<Record<string, ClientQuestionPlan>>(
     {}
   );
+  const [allFormsAttorneyPlan, setAllFormsAttorneyPlan] = useState<
+    Record<string, AttorneyQuestionPlan>
+  >({});
 
   const [formAnswers, setFormAnswers] = useState<QuestionnaireAnswerMap>({});
   const [loadingFormDetails, setLoadingFormDetails] = useState(false);
@@ -2364,7 +2829,8 @@ export default function FormFillingPanel({
   const [job, setJob] = useState<FormFillingJob | null>(null);
   const [loadingJobs, setLoadingJobs] = useState(true);
   const [loadingJobDetails, setLoadingJobDetails] = useState(false);
-  const [, setRefreshingJob] = useState(false);
+  const [refreshingJob, setRefreshingJob] = useState(false);
+  const [deletingJobIds, setDeletingJobIds] = useState<Set<string>>(() => new Set());
   const [regeneratingJob, setRegeneratingJob] = useState(false);
   const [pdfPreviewUrl, setPdfPreviewUrl] = useState<string | null>(null);
   const [loadingPdfPreview, setLoadingPdfPreview] = useState(false);
@@ -2395,12 +2861,16 @@ export default function FormFillingPanel({
   const [activeClientFormType, setActiveClientFormType] = useState<string | null>(null);
   const [activeAttorneyFormType, setActiveAttorneyFormType] = useState<string | null>(null);
   const sharedAnswersRef = useRef<QuestionnaireAnswerMap>({});
+  const fieldOriginsRef = useRef<FieldOriginsMap>({});
+  const sharedAttorneyAnswersRef = useRef<QuestionnaireAnswerMap>({});
   const formAnswersRef = useRef<QuestionnaireAnswerMap>({});
   const autosaveTimerRef = useRef<number | null>(null);
   const autosaveRequestIdRef = useRef(0);
   const hasInitializedConfirmationRef = useRef(false);
   const completedJobsSeenRef = useRef<Set<string>>(new Set());
   const didPrimeCompletedJobsRef = useRef(false);
+  const formAutofillRecoveryAttemptedRef = useRef(false);
+  const formAutofillRecoveryRunningRef = useRef(false);
 
   const [selectedArea, setSelectedArea] = useState<"Todas" | "Visa T" | "SIJS">("Todas");
   const [selectedFormToGenerate, setSelectedFormToGenerate] = useState<string>("");
@@ -2418,22 +2888,30 @@ export default function FormFillingPanel({
   const canRunFormAutofill =
     pages.length > 0 &&
     (formScopeDocuments.length === 0 || selectedFormSourceDocumentIds.length > 0);
-  const showUnifiedAutofillControl =
-    step === "client_questions" || step === "attorney_questions";
   const activeFormAutofillPhaseMessage = autofillingSharedQuestions
-    ? `Client: ${autofillPhaseMessage}`
+    ? formatAutofillProgressMessage(autofillPhaseMessage)
     : autofillingAttorneyQuestions
-      ? `Attorney: ${attorneyAutofillPhaseMessage}`
+      ? formatAutofillProgressMessage(attorneyAutofillPhaseMessage)
       : "";
   const activeFormAutofillProgress = autofillingSharedQuestions
     ? Math.round(autofillProgress)
     : autofillingAttorneyQuestions
       ? Math.round(attorneyAutofillProgress)
       : 0;
+  const isClientAutofillRunning = autofillingSharedQuestions;
+  const isAttorneyAutofillRunning =
+    autofillingAttorneyQuestions || autofillingSharedQuestions;
+  const isAttorneyAutofillPhaseRunning = autofillingAttorneyQuestions;
+  const isClientReadyForReviewWhileAttorneyRuns =
+    isAttorneyAutofillPhaseRunning && !isClientAutofillRunning;
 
   useEffect(() => {
     sharedAnswersRef.current = sharedAnswers;
   }, [sharedAnswers]);
+
+  useEffect(() => {
+    sharedAttorneyAnswersRef.current = sharedAttorneyAnswers;
+  }, [sharedAttorneyAnswers]);
 
   useEffect(() => {
     formAnswersRef.current = formAnswers;
@@ -2466,14 +2944,30 @@ export default function FormFillingPanel({
     [sharedAnswers, sharedPages]
   );
 
+  const sharedAttorneyCounts = useMemo(
+    () => countFilledInputs(sharedAttorneyPages, sharedAttorneyAnswers),
+    [sharedAttorneyAnswers, sharedAttorneyPages]
+  );
+
   const clientQuestionPages = useMemo(
     () => Object.values(allFormsClientPlan).flatMap((plan) => plan?.pages ?? []),
     [allFormsClientPlan]
   );
 
+  const perFormAttorneyQuestionPages = useMemo(
+    () => Object.values(allFormsAttorneyPlan).flatMap((plan) => plan?.pages ?? []),
+    [allFormsAttorneyPlan]
+  );
+
   const attorneyQuestionPages = useMemo(
-    () => Object.values(allFormsAttorneyPages).flat(),
-    [allFormsAttorneyPages]
+    () => [...sharedAttorneyPages, ...perFormAttorneyQuestionPages],
+    [perFormAttorneyQuestionPages, sharedAttorneyPages]
+  );
+
+  const sharedAttorneyAnswersSignature = useMemo(
+    () =>
+      getAnswersSignature(extractRelevantAnswers(sharedAttorneyAnswers, sharedAttorneyPages)),
+    [sharedAttorneyAnswers, sharedAttorneyPages]
   );
 
   const sharedAnswersSignature = useMemo(
@@ -2487,8 +2981,12 @@ export default function FormFillingPanel({
   );
 
   const attorneyAnswersSignature = useMemo(
-    () => getAnswersSignature(extractRelevantAnswers(formAnswers, attorneyQuestionPages)),
-    [attorneyQuestionPages, formAnswers]
+    () =>
+      getAnswersSignature({
+        ...extractRelevantAnswers(sharedAttorneyAnswers, sharedAttorneyPages),
+        ...extractRelevantAnswers(formAnswers, attorneyQuestionPages),
+      }),
+    [attorneyQuestionPages, formAnswers, sharedAttorneyAnswers, sharedAttorneyPages]
   );
 
   const clientCounts = useMemo(() => {
@@ -2505,17 +3003,17 @@ export default function FormFillingPanel({
   }, [allFormsClientPlan, formAnswers]);
 
   const attorneyCounts = useMemo(() => {
-    let filled = 0;
-    let total = 0;
-    for (const pages of Object.values(allFormsAttorneyPages)) {
-      if (pages) {
-        const c = countFilledInputs(pages, formAnswers);
+    let filled = sharedAttorneyCounts.filled;
+    let total = sharedAttorneyCounts.total;
+    for (const plan of Object.values(allFormsAttorneyPlan)) {
+      if (plan) {
+        const c = countFilledInputs(plan.pages, formAnswers);
         filled += c.filled;
         total += c.total;
       }
     }
     return { filled, total };
-  }, [allFormsAttorneyPages, formAnswers]);
+  }, [allFormsAttorneyPlan, formAnswers, sharedAttorneyCounts]);
   const clientSectionCounts = useMemo(
     () => ({
       filled: sharedCounts.filled + clientCounts.filled,
@@ -2554,20 +3052,13 @@ export default function FormFillingPanel({
   const activeClientCounts = activeClientForm
     ? clientFormCounts[activeClientForm.form_type] ?? { filled: 0, total: 0 }
     : null;
-  const missingClientRequiredFields = useMemo<MissingRequiredField[]>(
-    () => collectMissingRequiredFields(sharedPages, sharedAnswers, sharedAnswers),
-    [sharedAnswers, sharedPages]
-  );
-  const firstMissingClientRequiredField =
-    missingClientRequiredFields[0] ?? null;
-
   const attorneyFormsWithQuestions = useMemo(
     () =>
       formTypes.filter((form) => {
-        const pages = allFormsAttorneyPages[form.form_type];
-        return Boolean(pages && pages.length > 0);
+        const plan = allFormsAttorneyPlan[form.form_type];
+        return Boolean(plan && plan.pages.length > 0);
       }),
-    [allFormsAttorneyPages, formTypes]
+    [allFormsAttorneyPlan, formTypes]
   );
 
   const attorneyFormCounts = useMemo<Record<string, { filled: number; total: number }>>(
@@ -2575,10 +3066,10 @@ export default function FormFillingPanel({
       Object.fromEntries(
         attorneyFormsWithQuestions.map((form) => [
           form.form_type,
-          countFilledInputs(allFormsAttorneyPages[form.form_type] ?? [], formAnswers),
+          countFilledInputs(allFormsAttorneyPlan[form.form_type]?.pages ?? [], formAnswers),
         ])
       ),
-    [allFormsAttorneyPages, attorneyFormsWithQuestions, formAnswers]
+    [allFormsAttorneyPlan, attorneyFormsWithQuestions, formAnswers]
   );
 
   const activeAttorneyForm =
@@ -2586,7 +3077,7 @@ export default function FormFillingPanel({
     attorneyFormsWithQuestions[0] ??
     null;
   const activeAttorneyPages = activeAttorneyForm
-    ? allFormsAttorneyPages[activeAttorneyForm.form_type] ?? null
+    ? allFormsAttorneyPlan[activeAttorneyForm.form_type]?.pages ?? null
     : null;
   const activeAttorneyCounts = activeAttorneyForm
     ? attorneyFormCounts[activeAttorneyForm.form_type] ?? { filled: 0, total: 0 }
@@ -2603,10 +3094,7 @@ export default function FormFillingPanel({
     savedAttorneyAnswersSignature !== null &&
     attorneyAnswersSignature === savedAttorneyAnswersSignature;
 
-  const clientPersonalDataRequiredComplete =
-    missingClientRequiredFields.length === 0;
   const clientStepConfirmed =
-    clientPersonalDataRequiredComplete &&
     confirmedSharedAnswersSignature !== null &&
     confirmedClientAnswersSignature !== null &&
     sharedAnswersSignature === confirmedSharedAnswersSignature &&
@@ -2638,27 +3126,39 @@ export default function FormFillingPanel({
   const buildPayloadForAnswers = (
     scope: QuestionnaireSaveScope,
     nextSharedAnswers: QuestionnaireAnswerMap,
+    nextSharedAttorneyAnswers: QuestionnaireAnswerMap,
     nextFormAnswers: QuestionnaireAnswerMap
-  ) =>
-    scope === "client"
+  ) => {
+    const fieldOrigins = fieldOriginsRef.current;
+    return scope === "client"
       ? buildClientSectionPayload(
           sharedPages,
           nextSharedAnswers,
           formTypes,
           allFormsClientPlan,
-          nextFormAnswers
+          nextFormAnswers,
+          fieldOrigins
         )
       : buildFullQuestionnairePayload(
           sharedPages,
           nextSharedAnswers,
           formTypes,
           allFormsClientPlan,
-          allFormsAttorneyPages,
-          nextFormAnswers
+          sharedAttorneyPages,
+          nextSharedAttorneyAnswers,
+          allFormsAttorneyPlan,
+          nextFormAnswers,
+          fieldOrigins
         );
+  };
 
   const buildPayloadForScope = (scope: QuestionnaireSaveScope) =>
-    buildPayloadForAnswers(scope, sharedAnswers, formAnswers);
+    buildPayloadForAnswers(
+      scope,
+      sharedAnswers,
+      sharedAttorneyAnswers,
+      formAnswers
+    );
 
   const markScopeAsSaved = (
     scope: QuestionnaireSaveScope,
@@ -2691,9 +3191,11 @@ export default function FormFillingPanel({
   const preparePersistedAnswerState = useCallback(
     (
       nextSharedAnswers: QuestionnaireAnswerMap,
+      nextSharedAttorneyAnswers: QuestionnaireAnswerMap,
       nextFormAnswers: QuestionnaireAnswerMap
     ): {
       sharedAnswers: QuestionnaireAnswerMap;
+      sharedAttorneyAnswers: QuestionnaireAnswerMap;
       formAnswers: QuestionnaireAnswerMap;
       signatures: QuestionnaireSignatures;
     } => {
@@ -2701,49 +3203,147 @@ export default function FormFillingPanel({
         sharedPages,
         nextSharedAnswers
       );
+      const sanitizedSharedAttorneyAnswers = sanitizeAnswersForPages(
+        sharedAttorneyPages,
+        nextSharedAttorneyAnswers
+      );
       const sanitizedFormAnswers = sanitizeAnswersForPages(
-        [...clientQuestionPages, ...attorneyQuestionPages],
+        [...clientQuestionPages, ...perFormAttorneyQuestionPages],
         nextFormAnswers
       );
 
       return {
         sharedAnswers: sanitizedSharedAnswers,
+        sharedAttorneyAnswers: sanitizedSharedAttorneyAnswers,
         formAnswers: sanitizedFormAnswers,
         signatures: {
           shared: getAnswersSignature(extractRelevantAnswers(sanitizedSharedAnswers, sharedPages)),
           client: getAnswersSignature(
             extractRelevantAnswers(sanitizedFormAnswers, clientQuestionPages)
           ),
-          attorney: getAnswersSignature(
-            extractRelevantAnswers(sanitizedFormAnswers, attorneyQuestionPages)
-          ),
+          attorney: getAnswersSignature({
+            ...extractRelevantAnswers(sanitizedSharedAttorneyAnswers, sharedAttorneyPages),
+            ...extractRelevantAnswers(sanitizedFormAnswers, perFormAttorneyQuestionPages),
+          }),
         },
       };
     },
-    [attorneyQuestionPages, clientQuestionPages, sharedPages]
+    [
+      clientQuestionPages,
+      perFormAttorneyQuestionPages,
+      sharedAttorneyPages,
+      sharedPages,
+    ]
   );
 
   const persistAutofillAnswers = async (
     scope: QuestionnaireSaveScope,
     nextSharedAnswers: QuestionnaireAnswerMap,
+    nextSharedAttorneyAnswers: QuestionnaireAnswerMap,
     nextFormAnswers: QuestionnaireAnswerMap
   ) => {
     clearAutosaveTimer();
     ++autosaveRequestIdRef.current;
-    const prepared = preparePersistedAnswerState(nextSharedAnswers, nextFormAnswers);
+    const prepared = preparePersistedAnswerState(
+      nextSharedAnswers,
+      nextSharedAttorneyAnswers,
+      nextFormAnswers
+    );
     sharedAnswersRef.current = prepared.sharedAnswers;
+    sharedAttorneyAnswersRef.current = prepared.sharedAttorneyAnswers;
     formAnswersRef.current = prepared.formAnswers;
     setSharedAnswers(prepared.sharedAnswers);
+    setSharedAttorneyAnswers(prepared.sharedAttorneyAnswers);
     setFormAnswers(prepared.formAnswers);
 
     setAutosaveStatus("saving");
     await saveQuestionnaireAnswers(
       caseId,
-      buildPayloadForAnswers(scope, prepared.sharedAnswers, prepared.formAnswers)
+      buildPayloadForAnswers(
+        scope,
+        prepared.sharedAnswers,
+        prepared.sharedAttorneyAnswers,
+        prepared.formAnswers
+      )
     );
 
     markScopeAsSaved(scope, prepared.signatures);
     setAutosaveStatus("saved");
+  };
+
+  const refreshDynamicPart9Answers = async (
+    formType: string
+  ): Promise<{ updated: boolean; totalRows: number; addedRows: number }> => {
+    if (formType.toLowerCase() !== "i-914") {
+      return { updated: false, totalRows: 0, addedRows: 0 };
+    }
+
+    const formPages = [
+      ...(allFormsClientPlan[formType]?.pages ?? []),
+      ...(allFormsAttorneyPages[formType] ?? []),
+    ];
+    const part9Item = findQuestionnaireItemById(formPages, "p9_entries");
+    if (!part9Item) {
+      return { updated: false, totalRows: 0, addedRows: 0 };
+    }
+
+    const dynamicBundle = await getQuestionnaireAnswers(caseId, formType, {
+      includeDynamic: true,
+    });
+    const sanitizedDynamicAnswers = sanitizeAnswersForPages(
+      formPages,
+      applyQuestionnaireDefaults(
+        formPages,
+        extractRelevantAnswers(dynamicBundle.answers, formPages)
+      )
+    );
+    const dynamicRows = getRepeatableRowsForItem(part9Item, sanitizedDynamicAnswers);
+    if (dynamicRows.length === 0) {
+      return { updated: false, totalRows: 0, addedRows: 0 };
+    }
+
+    const currentRows = getRepeatableRowsForItem(part9Item, formAnswersRef.current);
+    const currentSignature = getAnswersSignature({ p9_entries: currentRows });
+    const dynamicSignature = getAnswersSignature({ p9_entries: dynamicRows });
+    if (currentSignature === dynamicSignature) {
+      return { updated: false, totalRows: dynamicRows.length, addedRows: 0 };
+    }
+
+    const nextFormAnswers = {
+      ...formAnswersRef.current,
+      p9_entries: dynamicRows,
+    };
+    const prepared = preparePersistedAnswerState(
+      sharedAnswersRef.current,
+      sharedAttorneyAnswersRef.current,
+      nextFormAnswers
+    );
+
+    sharedAnswersRef.current = prepared.sharedAnswers;
+    sharedAttorneyAnswersRef.current = prepared.sharedAttorneyAnswers;
+    formAnswersRef.current = prepared.formAnswers;
+    setSharedAnswers(prepared.sharedAnswers);
+    setSharedAttorneyAnswers(prepared.sharedAttorneyAnswers);
+    setFormAnswers(prepared.formAnswers);
+    setActiveAttorneyFormType(formType);
+    setAutosaveStatus("saving");
+    await saveQuestionnaireAnswers(
+      caseId,
+      buildPayloadForAnswers(
+        "all",
+        prepared.sharedAnswers,
+        prepared.sharedAttorneyAnswers,
+        prepared.formAnswers
+      )
+    );
+    markScopeAsSaved("all", prepared.signatures);
+    setAutosaveStatus("saved");
+
+    return {
+      updated: true,
+      totalRows: dynamicRows.length,
+      addedRows: Math.max(0, dynamicRows.length - currentRows.length),
+    };
   };
 
   const getAutosaveStatusMessage = () => {
@@ -2788,11 +3388,23 @@ export default function FormFillingPanel({
       setSharedPages(pages);
 
       try {
-        const answers = await getQuestionnaireAnswers(caseId);
-        const rawRelevantAnswers = extractRelevantAnswers(answers, pages);
-        const relevantAnswers = clearDuplicateSafeAddress(rawRelevantAnswers);
+        const [bundle, verifications] = await Promise.all([
+          getQuestionnaireAnswers(caseId),
+          getQuestionnaireVerifications(caseId).catch(() => ({})),
+        ]);
+        const rawRelevantAnswers = extractRelevantAnswers(bundle.answers, pages);
+        const relevantAnswers = clearDuplicateSafeAddress(
+          rawRelevantAnswers,
+          buildForceDefaultProtectedKeys(pages)
+        );
         const defaultedAnswers = applyQuestionnaireDefaults(pages, relevantAnswers);
         const sanitizedAnswers = sanitizeAnswersForPages(pages, defaultedAnswers);
+        fieldOriginsRef.current = seedFieldOriginsOnLoad(
+          pages,
+          sanitizedAnswers,
+          bundle.field_origins,
+          verifications
+        );
         setSharedAnswers(sanitizedAnswers);
         setSavedSharedAnswersSignature(
           getAnswersSignature(extractRelevantAnswers(sanitizedAnswers, pages))
@@ -2827,6 +3439,10 @@ export default function FormFillingPanel({
       const clientMap: Record<string, QuestionnairePage[]> = {};
       const attorneyMap: Record<string, QuestionnairePage[]> = {};
       const planMap: Record<string, ClientQuestionPlan> = {};
+      const attorneyPlanMap: Record<string, AttorneyQuestionPlan> = {};
+
+      const sharedAttorney = await getSharedAttorneyQuestions().catch(() => []);
+      setSharedAttorneyPages(sharedAttorney);
 
       const promises = data.map(async (form) => {
         const [client, attorney] = await Promise.all([
@@ -2836,6 +3452,7 @@ export default function FormFillingPanel({
         clientMap[form.form_type] = client;
         attorneyMap[form.form_type] = attorney;
         planMap[form.form_type] = buildClientQuestionDedupResult(client);
+        attorneyPlanMap[form.form_type] = buildAttorneyQuestionDedupResult(attorney);
       });
 
       await Promise.all(promises);
@@ -2843,21 +3460,82 @@ export default function FormFillingPanel({
       setAllFormsClientPages(clientMap);
       setAllFormsAttorneyPages(attorneyMap);
       setAllFormsClientPlan(planMap);
+      setAllFormsAttorneyPlan(attorneyPlanMap);
 
-      const savedAnswers = await getQuestionnaireAnswers(caseId);
+      const savedBundle = await getQuestionnaireAnswers(caseId);
+      const savedAnswers = savedBundle.answers;
+      let formLoadAnswers = savedAnswers;
+      if (data.some((form) => form.form_type.toLowerCase() === "i-914")) {
+        try {
+          const dynamicI914Bundle = await getQuestionnaireAnswers(
+            caseId,
+            "i-914",
+            { includeDynamic: true }
+          );
+          if (Array.isArray(dynamicI914Bundle.answers.p9_entries)) {
+            formLoadAnswers = {
+              ...savedAnswers,
+              p9_entries: dynamicI914Bundle.answers.p9_entries,
+            };
+          }
+        } catch {
+          // Non-blocking: saved answers still load if dynamic Part 9 derivation fails.
+        }
+      }
+      let sharedPagesForSeed = sharedPages;
+      if (sharedPagesForSeed.length === 0) {
+        sharedPagesForSeed = await getSharedQuestions().catch(() => []);
+      }
+      const sanitizedSharedForSeed = sanitizeAnswersForPages(
+        sharedPagesForSeed,
+        applyQuestionnaireDefaults(
+          sharedPagesForSeed,
+          clearDuplicateSafeAddress(
+            extractRelevantAnswers(savedAnswers, sharedPagesForSeed),
+            buildForceDefaultProtectedKeys(sharedPagesForSeed)
+          )
+        )
+      );
       const allPages = [
+        ...sharedPagesForSeed,
         ...Object.values(planMap).flatMap((p) => p.pages),
-        ...Object.values(attorneyMap).flat(),
+        ...sharedAttorney,
+        ...Object.values(attorneyPlanMap).flatMap((p) => p.pages),
       ];
       const defaultedFormAnswers = applyQuestionnaireDefaults(
         allPages,
-        extractRelevantAnswers(savedAnswers, allPages)
+        extractRelevantAnswers(formLoadAnswers, allPages)
       );
       const sanitizedFormAnswers = sanitizeAnswersForPages(
         allPages,
         defaultedFormAnswers
       );
       setFormAnswers(sanitizedFormAnswers);
+
+      const relevantSharedAttorneyAnswers = extractRelevantAnswers(savedAnswers, sharedAttorney);
+      const defaultedSharedAttorneyAnswers = applyQuestionnaireDefaults(
+        sharedAttorney,
+        relevantSharedAttorneyAnswers
+      );
+      const sanitizedSharedAttorneyAnswers = sanitizeAnswersForPages(
+        sharedAttorney,
+        defaultedSharedAttorneyAnswers
+      );
+      setSharedAttorneyAnswers(sanitizedSharedAttorneyAnswers);
+      sharedAttorneyAnswersRef.current = sanitizedSharedAttorneyAnswers;
+
+      const verifications = await getQuestionnaireVerifications(caseId).catch(() => ({}));
+      fieldOriginsRef.current = seedFieldOriginsOnLoad(
+        allPages,
+        {
+          ...sanitizedSharedForSeed,
+          ...sanitizedFormAnswers,
+          ...sanitizedSharedAttorneyAnswers,
+        },
+        savedBundle.field_origins,
+        verifications
+      );
+
       setSavedClientAnswersSignature(
         getAnswersSignature(
           extractRelevantAnswers(
@@ -2867,9 +3545,13 @@ export default function FormFillingPanel({
         )
       );
       setSavedAttorneyAnswersSignature(
-        getAnswersSignature(
-          extractRelevantAnswers(sanitizedFormAnswers, Object.values(attorneyMap).flat())
-        )
+        getAnswersSignature({
+          ...extractRelevantAnswers(sanitizedSharedAttorneyAnswers, sharedAttorney),
+          ...extractRelevantAnswers(
+            sanitizedFormAnswers,
+            Object.values(attorneyPlanMap).flatMap((plan) => plan.pages)
+          ),
+        })
       );
     } catch {
       setSavedClientAnswersSignature(null);
@@ -2927,6 +3609,9 @@ export default function FormFillingPanel({
     setAllFormsClientPages({});
     setAllFormsAttorneyPages({});
     setAllFormsClientPlan({});
+    setAllFormsAttorneyPlan({});
+    setSharedAttorneyPages([]);
+    setSharedAttorneyAnswers({});
     setFormAnswers({});
     setJobs([]);
     setActiveJobId(null);
@@ -2954,6 +3639,8 @@ export default function FormFillingPanel({
     hasInitializedConfirmationRef.current = false;
     completedJobsSeenRef.current = new Set();
     didPrimeCompletedJobsRef.current = false;
+    formAutofillRecoveryAttemptedRef.current = false;
+    formAutofillRecoveryRunningRef.current = false;
 
     void loadSharedStep();
     void loadFormTypesAndQuestions();
@@ -3072,7 +3759,7 @@ export default function FormFillingPanel({
       clearAutosaveTimer();
     };
   }, [
-    allFormsAttorneyPages,
+    allFormsAttorneyPlan,
     allFormsClientPlan,
     attorneyAnswersSignature,
     caseId,
@@ -3087,6 +3774,9 @@ export default function FormFillingPanel({
     savedSharedAnswersSignature,
     sharedAnswers,
     sharedAnswersSignature,
+    sharedAttorneyAnswers,
+    sharedAttorneyAnswersSignature,
+    sharedAttorneyPages,
     sharedLoadError,
     sharedPages,
     step,
@@ -3220,11 +3910,22 @@ export default function FormFillingPanel({
     questionId: string,
     value: string
   ) => {
+    markFieldManual(fieldOriginsRef.current, questionId);
+    clearVerificationForManualField(setVerificationMap, questionId);
     setter((prev) => ({
       ...prev,
       [questionId]: value,
     }));
   };
+
+  const getManualFieldTitle = (
+    questionId: string,
+    fieldId?: string,
+    rowIndex?: number
+  ): string | undefined =>
+    getFieldOrigin(fieldOriginsRef.current, questionId, fieldId, rowIndex) === "manual"
+      ? MANUAL_FIELD_TITLE
+      : undefined;
 
   const updateGroupAnswer = (
     setter: AnswerSetter,
@@ -3233,6 +3934,8 @@ export default function FormFillingPanel({
     fieldId: string,
     value: string
   ) => {
+    markFieldManual(fieldOriginsRef.current, questionId, fieldId);
+    clearVerificationForManualField(setVerificationMap, questionId, fieldId);
     setter((prev) => {
       const next = normalizeGroupValue(prev[questionId], fields);
       next[fieldId] = value;
@@ -3250,6 +3953,8 @@ export default function FormFillingPanel({
     fieldId: string,
     value: string
   ) => {
+    markFieldManual(fieldOriginsRef.current, item.id, fieldId, rowIndex);
+    clearVerificationForManualField(setVerificationMap, item.id, fieldId);
     setter((prev) => {
       const fields = item.fields ?? [];
       const rows = normalizeRepeatableGroupValue(prev[item.id], fields);
@@ -3270,6 +3975,7 @@ export default function FormFillingPanel({
     rowIndex: number,
     value: string
   ) => {
+    markFieldManual(fieldOriginsRef.current, detailKey, String(rowIndex));
     setter((prev) => {
       const nextValues = Array.isArray(prev[detailKey])
         ? prev[detailKey].map((entry) => toText(entry))
@@ -3290,16 +3996,21 @@ export default function FormFillingPanel({
     answers: QuestionnaireAnswerMap,
     item: QuestionnaireItem
   ) => {
-    if (item.visible_slots?.length) {
+    if (!canEditRepeatableRows(item)) {
       return;
     }
 
     setter((prev) => {
       if (item.fields?.length && isRepeatableItem(item)) {
+        const fixedSlotCount = getNativeSlotCount(item);
         const rows = normalizeRepeatableGroupValue(prev[item.id], item.fields);
+        const padded = [...rows];
+        while (padded.length < fixedSlotCount) {
+          padded.push(createEmptyGroupValue(item.fields));
+        }
         return {
           ...prev,
-          [item.id]: [...rows, createEmptyGroupValue(item.fields)],
+          [item.id]: [...padded, createEmptyGroupValue(item.fields)],
         };
       }
 
@@ -3330,7 +4041,11 @@ export default function FormFillingPanel({
     answers: QuestionnaireAnswerMap,
     item: QuestionnaireItem
   ) => {
-    if (item.visible_slots?.length || getRepeatableRowCount(item, answers) <= 1) {
+    if (!canEditRepeatableRows(item)) {
+      return;
+    }
+    const minRows = Math.max(getNativeSlotCount(item), 1);
+    if (getRepeatableRowCount(item, answers) <= minRows) {
       return;
     }
 
@@ -3361,22 +4076,6 @@ export default function FormFillingPanel({
   };
 
   const handleSaveClientQuestions = async () => {
-    if (missingClientRequiredFields.length > 0) {
-      toast.error(
-        firstMissingClientRequiredField
-          ? `${getClientPendingFieldsLead(missingClientRequiredFields)} ${formatPendingFieldLabel(firstMissingClientRequiredField)}`
-          : getClientPendingFieldsLead(missingClientRequiredFields)
-      );
-      if (firstMissingClientRequiredField?.inputId) {
-        const el = document.getElementById(firstMissingClientRequiredField.inputId);
-        if (el) {
-          el.focus();
-          el.scrollIntoView({ behavior: "smooth", block: "center" });
-        }
-      }
-      return;
-    }
-
     setSavingClientQuestions(true);
     clearAutosaveTimer();
     autosaveRequestIdRef.current += 1;
@@ -3385,21 +4084,31 @@ export default function FormFillingPanel({
     try {
       const prepared = preparePersistedAnswerState(
         sharedAnswersRef.current,
+        sharedAttorneyAnswersRef.current,
         formAnswersRef.current
       );
       sharedAnswersRef.current = prepared.sharedAnswers;
+      sharedAttorneyAnswersRef.current = prepared.sharedAttorneyAnswers;
       formAnswersRef.current = prepared.formAnswers;
       setSharedAnswers(prepared.sharedAnswers);
+      setSharedAttorneyAnswers(prepared.sharedAttorneyAnswers);
       setFormAnswers(prepared.formAnswers);
       await saveQuestionnaireAnswers(
         caseId,
-        buildPayloadForAnswers("client", prepared.sharedAnswers, prepared.formAnswers)
+        buildPayloadForAnswers(
+          "client",
+          prepared.sharedAnswers,
+          prepared.sharedAttorneyAnswers,
+          prepared.formAnswers
+        )
       );
       markScopeAsSaved("client", prepared.signatures);
       markScopeAsConfirmed("client", prepared.signatures);
       setAutosaveStatus("saved");
-      toast.success("Client answers confirmed", { id: toastId });
-      setStep("attorney_questions");
+      toast.success(
+        "Client answers confirmed. Continue to Attorney when you are ready.",
+        { id: toastId }
+      );
     } catch {
       setAutosaveStatus("error");
       toast.error("Client answers could not be confirmed", { id: toastId });
@@ -3408,61 +4117,28 @@ export default function FormFillingPanel({
     }
   };
 
-  const handleAutofillSharedQuestions = async (): Promise<boolean> => {
-    setAutofillingSharedQuestions(true);
-    setAutofillProgress(0);
-    setAutofillPhaseMessage("Preparando documentos...");
-    const currentSharedAnswers = sharedAnswersRef.current;
-    let nextFormAnswers = formAnswersRef.current;
+  const applySharedAutofillResult = useCallback(
+    async (result: QuestionnaireAutofillResponse): Promise<boolean> => {
+      const currentSharedAnswers = sharedAnswersRef.current;
+      let nextFormAnswers = formAnswersRef.current;
 
-    const postOcrPhases = [
-      { delay: 0,      pct: 52, msg: "Preparando busqueda en documentos..." },
-      { delay: 8000,   pct: 58, msg: "Buscando informacion relevante..." },
-      { delay: 20000,  pct: 65, msg: "Completando respuestas..." },
-      { delay: 50000,  pct: 78, msg: "Procesando formularios..." },
-      { delay: 120000, pct: 90, msg: "Revisando respuestas sugeridas..." },
-      { delay: 180000, pct: 95, msg: "Finalizando analisis..." },
-    ];
-    const defaultPhases = [
-      { delay: 0,      pct: 5,  msg: "Preparando documentos..." },
-      { delay: 3000,   pct: 15, msg: "Leyendo documentos..." },
-      { delay: 8000,   pct: 30, msg: "Preparando busqueda en documentos..." },
-      { delay: 20000,  pct: 50, msg: "Buscando informacion relevante..." },
-      { delay: 40000,  pct: 65, msg: "Completando respuestas..." },
-      { delay: 70000,  pct: 78, msg: "Procesando formularios..." },
-      { delay: 120000, pct: 90, msg: "Revisando respuestas sugeridas..." },
-      { delay: 180000, pct: 95, msg: "Finalizando analisis..." },
-    ];
-    let timers = defaultPhases.map(({ delay, pct, msg }) =>
-      setTimeout(() => {
-        setAutofillPhaseMessage(msg);
-        setAutofillProgress(pct);
-      }, delay)
-    );
+      setVerificationMap(
+        mergeVerificationMaps(result.verification_map, result.form_verification_map)
+      );
 
-    try {
-      const result = await autofillSharedQuestionnaireAnswers(caseId, {
-        onOcrProgress: (msg, pct) => {
-          timers.forEach(clearTimeout);
-          setAutofillPhaseMessage(msg);
-          setAutofillProgress(Math.round(pct));
-        },
-        onOcrComplete: () => {
-          timers.forEach(clearTimeout);
-          timers = postOcrPhases.map(({ delay, pct, msg }) =>
-            setTimeout(() => {
-              setAutofillPhaseMessage(msg);
-              setAutofillProgress(pct);
-            }, delay)
-          );
-        },
+      const autofillProtectedKeys = buildForceDefaultProtectedKeys([
+        ...sharedPages,
+        ...clientQuestionPages,
+      ]);
+      const sharedMerge = mergeAutofillAnswers(currentSharedAnswers, result.answers, {
+        protectedKeys: autofillProtectedKeys,
+        fieldOrigins: fieldOriginsRef.current,
+        sanitizeSuggestion: sanitizeAutofillSuggestion,
       });
-      setAutofillProgress(100);
-      setAutofillPhaseMessage("Completado");
-      setVerificationMap(mergeVerificationMaps(result.verification_map, result.form_verification_map));
-
-      const sharedMerge = mergeAutofillAnswers(currentSharedAnswers, result.answers);
-      const nextSharedAnswers = clearDuplicateSafeAddress(sharedMerge.answers);
+      const nextSharedAnswers = clearDuplicateSafeAddress(
+        sharedMerge.answers,
+        autofillProtectedKeys
+      );
 
       const forcedShared = result.forced_answers || {};
       for (const [key, value] of Object.entries(forcedShared)) {
@@ -3473,14 +4149,22 @@ export default function FormFillingPanel({
       setSharedAnswers(nextSharedAnswers);
 
       let formApplied = 0;
+      let formMergeSkippedManual = 0;
+      let formMergeSkippedProtected = 0;
       const formAnswersMap = result.form_answers || {};
       if (Object.keys(formAnswersMap).length > 0) {
         const allFormSuggested: QuestionnaireAnswerMap = {};
         for (const ftAnswers of Object.values(formAnswersMap)) {
           Object.assign(allFormSuggested, ftAnswers);
         }
-        const formMerge = mergeAutofillAnswers(nextFormAnswers, allFormSuggested);
+        const formMerge = mergeAutofillAnswers(nextFormAnswers, allFormSuggested, {
+          protectedKeys: autofillProtectedKeys,
+          fieldOrigins: fieldOriginsRef.current,
+          sanitizeSuggestion: sanitizeAutofillSuggestion,
+        });
         formApplied = formMerge.appliedCount;
+        formMergeSkippedManual = formMerge.skippedManualCount;
+        formMergeSkippedProtected = formMerge.skippedProtectedCount;
         nextFormAnswers = formMerge.answers;
       }
 
@@ -3492,6 +4176,9 @@ export default function FormFillingPanel({
       }
       const leaUnitNumberCleanup = clearLeaUnitAutofill(nextFormAnswers);
       nextFormAnswers = leaUnitNumberCleanup.answers;
+      const skippedManualCount = sharedMerge.skippedManualCount + formMergeSkippedManual;
+      const skippedProtectedCount =
+        sharedMerge.skippedProtectedCount + formMergeSkippedProtected;
 
       const hasForcedAnswers =
         Object.keys(forcedShared).length > 0 ||
@@ -3505,7 +4192,12 @@ export default function FormFillingPanel({
       const appliedCount = sharedMerge.appliedCount + formApplied;
       if (appliedCount > 0 || leaUnitNumberCleanup.cleared || hasForcedAnswers) {
         try {
-          await persistAutofillAnswers("client", nextSharedAnswers, nextFormAnswers);
+          await persistAutofillAnswers(
+            "client",
+            nextSharedAnswers,
+            sharedAttorneyAnswersRef.current,
+            nextFormAnswers
+          );
         } catch {
           setAutosaveStatus("error");
           toast.error(
@@ -3513,37 +4205,231 @@ export default function FormFillingPanel({
           );
         }
       }
-      const skipped = result.skipped_low_confidence || 0;
 
-      if (appliedCount > 0) {
-        const parts = [`${appliedCount} fields were completed with OCR (medium/high confidence).`];
-        if (leaUnitNumberCleanup.cleared) {
-          parts.push("Part 3.5 Number was cleared because it must be entered manually.");
-        }
-        if (skipped > 0) {
-          parts.push(`${skipped} were skipped due to low confidence.`);
-        }
-        parts.push("Review the information before confirming it.");
-        toast.success(parts.join(" "));
-      } else if (leaUnitNumberCleanup.cleared) {
-        const parts = [
-          "Part 3.5 Number was cleared because it must be entered manually.",
-        ];
-        if (skipped > 0) {
-          parts.push(`${skipped} were skipped due to low confidence.`);
-        }
-        toast.success(parts.join(" "));
+      const skipped = result.skipped_low_confidence || 0;
+      const autofillFeedback = buildAutofillResultMessage({
+        appliedCount,
+        skippedManualCount,
+        skippedProtectedCount,
+        skippedLowConfidence: skipped,
+        leaUnitCleared: leaUnitNumberCleanup.cleared,
+      });
+
+      if (
+        appliedCount > 0 ||
+        leaUnitNumberCleanup.cleared ||
+        skippedManualCount > 0 ||
+        skippedProtectedCount > 0
+      ) {
+        toast.success(
+          [...autofillFeedback, "Revisa la informacion antes de confirmarla."].join(" ")
+        );
       } else if (result.suggested_count > 0) {
         toast.success("The OCR-suggested fields were already complete.");
       } else {
-        const msg = skipped > 0
-          ? `No data with sufficient confidence was found (${skipped} skipped).`
-          : "No clear data was found for automatic completion.";
-        toast(msg);
+        const errCount = result.extraction_error_count || 0;
+        const breakdown = result.extraction_error_breakdown || {};
+        const topError = Object.entries(breakdown).sort((a, b) => b[1] - a[1])[0];
+        if (errCount > 0 && topError) {
+          toast.error(
+            `No suggestions were generated: ${errCount} fields failed (${topError[1]} as ${topError[0]}). The AI provider may be down or rate-limited. Please retry in a few minutes.`
+          );
+        } else {
+          const msg =
+            skipped > 0
+              ? `No data with sufficient confidence was found (${skipped} skipped).`
+              : "No clear data was found for automatic completion.";
+          toast(msg);
+        }
       }
+
+      return true;
+    },
+    [clientQuestionPages, sharedPages]
+  );
+
+  const applyAttorneyAutofillResult = useCallback(
+    async (result: QuestionnaireAutofillResponse): Promise<boolean> => {
+      let nextFormAnswers = formAnswersRef.current;
+      let nextSharedAttorneyAnswers = sharedAttorneyAnswersRef.current;
+
+      const nextVerificationMap = mergeVerificationMaps(
+        result.verification_map,
+        result.form_verification_map
+      );
+      setVerificationMap((prev) => ({ ...prev, ...nextVerificationMap }));
+
+      const attorneyAutofillProtectedKeys = buildForceDefaultProtectedKeys(attorneyQuestionPages);
+      const forcedSharedAttorney = result.forced_answers || {};
+
+      const formAnswersMap = result.form_answers || {};
+      let formApplied = 0;
+      let formMergeSkippedManual = 0;
+      let formMergeSkippedProtected = 0;
+      if (Object.keys(formAnswersMap).length > 0) {
+        const allFormSuggested: QuestionnaireAnswerMap = {};
+        for (const ftAnswers of Object.values(formAnswersMap)) {
+          Object.assign(allFormSuggested, ftAnswers);
+        }
+        const formMerge = mergeAutofillAnswers(nextFormAnswers, allFormSuggested, {
+          protectedKeys: attorneyAutofillProtectedKeys,
+          fieldOrigins: fieldOriginsRef.current,
+          sanitizeSuggestion: sanitizeAutofillSuggestion,
+        });
+        formApplied = formMerge.appliedCount;
+        formMergeSkippedManual = formMerge.skippedManualCount;
+        formMergeSkippedProtected = formMerge.skippedProtectedCount;
+        nextFormAnswers = formMerge.answers;
+      }
+
+      const forcedFormMap = result.forced_form_answers || {};
+      for (const ftForced of Object.values(forcedFormMap)) {
+        for (const [key, value] of Object.entries(ftForced)) {
+          nextFormAnswers[key] = value;
+        }
+      }
+
+      const directAnswers = result.answers || {};
+      let sharedApplied = 0;
+      let sharedMergeSkippedManual = 0;
+      let sharedMergeSkippedProtected = 0;
+      if (Object.keys(directAnswers).length > 0) {
+        const sharedMerge = mergeAutofillAnswers(nextSharedAttorneyAnswers, directAnswers, {
+          protectedKeys: attorneyAutofillProtectedKeys,
+          fieldOrigins: fieldOriginsRef.current,
+          sanitizeSuggestion: sanitizeAutofillSuggestion,
+        });
+        sharedApplied = sharedMerge.appliedCount;
+        sharedMergeSkippedManual = sharedMerge.skippedManualCount;
+        sharedMergeSkippedProtected = sharedMerge.skippedProtectedCount;
+        nextSharedAttorneyAnswers = sharedMerge.answers;
+      }
+
+      for (const [key, value] of Object.entries(forcedSharedAttorney)) {
+        nextSharedAttorneyAnswers[key] = value;
+      }
+
+      const appliedCount = formApplied + sharedApplied;
+      if (appliedCount > 0) {
+        formAnswersRef.current = nextFormAnswers;
+        sharedAttorneyAnswersRef.current = nextSharedAttorneyAnswers;
+        setFormAnswers(nextFormAnswers);
+        let persisted = false;
+        try {
+          await persistAutofillAnswers(
+            "all",
+            sharedAnswersRef.current,
+            nextSharedAttorneyAnswers,
+            nextFormAnswers
+          );
+          persisted = true;
+        } catch {
+          setAutosaveStatus("error");
+          toast.error(
+            "The OCR results were applied, but they could not be saved automatically. Review and confirm them before reloading."
+          );
+        }
+        if (persisted) {
+          try {
+            await refreshDynamicPart9Answers("i-914");
+          } catch {
+            toast.error("Part 9 dynamic entries could not be refreshed automatically.");
+          }
+        }
+      }
+
+      const skipped = result.skipped_low_confidence || 0;
+      const skippedManualCount = sharedMergeSkippedManual + formMergeSkippedManual;
+      const skippedProtectedCount = sharedMergeSkippedProtected + formMergeSkippedProtected;
+      const autofillFeedback = buildAutofillResultMessage({
+        appliedCount,
+        skippedManualCount,
+        skippedProtectedCount,
+        skippedLowConfidence: skipped,
+      });
+
+      if (appliedCount > 0 || skippedManualCount > 0 || skippedProtectedCount > 0) {
+        toast.success(
+          [...autofillFeedback, "Revisa la informacion antes de confirmarla."].join(" ")
+        );
+      } else if (result.suggested_count > 0) {
+        toast.success("The OCR-suggested attorney fields were already complete.");
+      } else {
+        const errCount = result.extraction_error_count || 0;
+        const breakdown = result.extraction_error_breakdown || {};
+        const topError = Object.entries(breakdown).sort((a, b) => b[1] - a[1])[0];
+        if (errCount > 0 && topError) {
+          toast.error(
+            `No attorney suggestions were generated: ${errCount} fields failed (${topError[1]} as ${topError[0]}). The AI provider may be down or rate-limited. Please retry in a few minutes.`
+          );
+        } else {
+          const msg =
+            skipped > 0
+              ? `No attorney data with sufficient confidence was found (${skipped} skipped).`
+              : "No clear data was found for automatic attorney completion.";
+          toast(msg);
+        }
+      }
+
+      return true;
+    },
+    [attorneyQuestionPages]
+  );
+
+  const clearAutofillSessionIfJobLost = useCallback(
+    (error: unknown, kind: FormAutofillKind) => {
+      const message = getApiErrorMessage(error, "");
+      if (
+        message.includes("no longer available") ||
+        message.includes("Autofill failed") ||
+        message.includes("Autofill cancelled")
+      ) {
+        clearFormAutofillSession(caseId, kind);
+      }
+    },
+    [caseId]
+  );
+
+  const handleAutofillSharedQuestions = async (): Promise<boolean> => {
+    setAutofillingSharedQuestions(true);
+    setAutofillProgress(0);
+    setAutofillPhaseMessage("Preparing documents...");
+
+    const postOcrPhases = CLIENT_AUTOFILL_POST_OCR_PHASES;
+    const defaultPhases = CLIENT_AUTOFILL_DEFAULT_PHASES;
+    let timers = defaultPhases.map(({ delay, pct, msg }) =>
+      setTimeout(() => {
+        setAutofillPhaseMessage(msg);
+        setAutofillProgress(pct);
+      }, delay)
+    );
+
+    try {
+      const result = await autofillSharedQuestionnaireAnswers(caseId, {
+        onJobStarted: (jobId) => saveFormAutofillSession(caseId, "shared", jobId),
+        onOcrProgress: (msg, pct) => {
+          timers.forEach(clearTimeout);
+          setAutofillPhaseMessage(formatAutofillProgressMessage(msg));
+          setAutofillProgress(Math.round(pct));
+        },
+        onOcrComplete: () => {
+          timers.forEach(clearTimeout);
+          timers = postOcrPhases.map(({ delay, pct, msg }) =>
+            setTimeout(() => {
+              setAutofillPhaseMessage(msg);
+              setAutofillProgress(pct);
+            }, delay)
+          );
+        },
+      });
+      setAutofillProgress(100);
+      setAutofillPhaseMessage("Completed");
+      clearFormAutofillSession(caseId, "shared");
+      await applySharedAutofillResult(result);
       return true;
     } catch (error: unknown) {
       timers.forEach(clearTimeout);
+      clearAutofillSessionIfJobLost(error, "shared");
       toast.error(
         getApiErrorMessage(error, "Client data could not be extracted with OCR")
       );
@@ -3558,27 +4444,10 @@ export default function FormFillingPanel({
   const handleAutofillAttorneyQuestions = async (): Promise<boolean> => {
     setAutofillingAttorneyQuestions(true);
     setAttorneyAutofillProgress(0);
-    setAttorneyAutofillPhaseMessage("Preparando documentos...");
-    let nextFormAnswers = formAnswersRef.current;
+    setAttorneyAutofillPhaseMessage("Preparing documents...");
 
-    const attPostOcrPhases = [
-      { delay: 0,      pct: 52, msg: "Preparando busqueda en documentos..." },
-      { delay: 8000,   pct: 58, msg: "Buscando informacion relevante..." },
-      { delay: 20000,  pct: 65, msg: "Completando respuestas..." },
-      { delay: 50000,  pct: 78, msg: "Procesando preguntas del abogado..." },
-      { delay: 120000, pct: 90, msg: "Revisando respuestas sugeridas..." },
-      { delay: 180000, pct: 95, msg: "Finalizando analisis..." },
-    ];
-    const attDefaultPhases = [
-      { delay: 0,      pct: 5,  msg: "Preparando documentos..." },
-      { delay: 3000,   pct: 15, msg: "Leyendo documentos..." },
-      { delay: 8000,   pct: 30, msg: "Preparando busqueda en documentos..." },
-      { delay: 20000,  pct: 50, msg: "Buscando informacion relevante..." },
-      { delay: 40000,  pct: 65, msg: "Completando respuestas..." },
-      { delay: 70000,  pct: 78, msg: "Procesando preguntas del abogado..." },
-      { delay: 120000, pct: 90, msg: "Revisando respuestas sugeridas..." },
-      { delay: 180000, pct: 95, msg: "Finalizando analisis..." },
-    ];
+    const attPostOcrPhases = ATTORNEY_AUTOFILL_POST_OCR_PHASES;
+    const attDefaultPhases = ATTORNEY_AUTOFILL_DEFAULT_PHASES;
     let timers = attDefaultPhases.map(({ delay, pct, msg }) =>
       setTimeout(() => {
         setAttorneyAutofillPhaseMessage(msg);
@@ -3588,9 +4457,10 @@ export default function FormFillingPanel({
 
     try {
       const result = await autofillAttorneyAnswers(caseId, {
+        onJobStarted: (jobId) => saveFormAutofillSession(caseId, "attorney", jobId),
         onOcrProgress: (msg, pct) => {
           timers.forEach(clearTimeout);
-          setAttorneyAutofillPhaseMessage(msg);
+          setAttorneyAutofillPhaseMessage(formatAutofillProgressMessage(msg));
           setAttorneyAutofillProgress(Math.round(pct));
         },
         onOcrComplete: () => {
@@ -3604,68 +4474,13 @@ export default function FormFillingPanel({
         },
       });
       setAttorneyAutofillProgress(100);
-      setAttorneyAutofillPhaseMessage("Completado");
-      const nextVerificationMap = mergeVerificationMaps(
-        result.verification_map,
-        result.form_verification_map
-      );
-      setVerificationMap((prev) => ({ ...prev, ...nextVerificationMap }));
-
-      const formAnswersMap = result.form_answers || {};
-      let formApplied = 0;
-      if (Object.keys(formAnswersMap).length > 0) {
-        const allFormSuggested: QuestionnaireAnswerMap = {};
-        for (const ftAnswers of Object.values(formAnswersMap)) {
-          Object.assign(allFormSuggested, ftAnswers);
-        }
-        const formMerge = mergeAutofillAnswers(nextFormAnswers, allFormSuggested);
-        formApplied = formMerge.appliedCount;
-        nextFormAnswers = formMerge.answers;
-      }
-
-      const directAnswers = result.answers || {};
-      let directApplied = 0;
-      if (Object.keys(directAnswers).length > 0) {
-        const directMerge = mergeAutofillAnswers(nextFormAnswers, directAnswers);
-        directApplied = directMerge.appliedCount;
-        if (directApplied > 0 || formApplied > 0) {
-          nextFormAnswers = directMerge.answers;
-        }
-      }
-
-      const appliedCount = formApplied + directApplied;
-      if (appliedCount > 0) {
-        formAnswersRef.current = nextFormAnswers;
-        setFormAnswers(nextFormAnswers);
-        try {
-          await persistAutofillAnswers("all", sharedAnswersRef.current, nextFormAnswers);
-        } catch {
-          setAutosaveStatus("error");
-          toast.error(
-            "The OCR results were applied, but they could not be saved automatically. Review and confirm them before reloading."
-          );
-        }
-      }
-      const skipped = result.skipped_low_confidence || 0;
-
-      if (appliedCount > 0) {
-        const parts = [`${appliedCount} attorney fields were completed with OCR (medium/high confidence).`];
-        if (skipped > 0) {
-          parts.push(`${skipped} were skipped due to low confidence.`);
-        }
-        parts.push("Review the information before confirming it.");
-        toast.success(parts.join(" "));
-      } else if (result.suggested_count > 0) {
-        toast.success("The OCR-suggested attorney fields were already complete.");
-      } else {
-        const msg = skipped > 0
-          ? `No attorney data with sufficient confidence was found (${skipped} skipped).`
-          : "No clear data was found for automatic attorney completion.";
-        toast(msg);
-      }
+      setAttorneyAutofillPhaseMessage("Completed");
+      clearFormAutofillSession(caseId, "attorney");
+      await applyAttorneyAutofillResult(result);
       return true;
     } catch (error: unknown) {
       timers.forEach(clearTimeout);
+      clearAutofillSessionIfJobLost(error, "attorney");
       toast.error(
         getApiErrorMessage(error, "Attorney data could not be extracted with OCR")
       );
@@ -3676,6 +4491,203 @@ export default function FormFillingPanel({
       setAttorneyAutofillPhaseMessage("");
     }
   };
+
+  useEffect(() => {
+    if (
+      formAutofillRecoveryAttemptedRef.current ||
+      formAutofillRecoveryRunningRef.current ||
+      loadingShared ||
+      loadingFormDetails ||
+      sharedLoadError ||
+      formLoadError ||
+      autofillingSharedQuestions ||
+      autofillingAttorneyQuestions
+    ) {
+      return;
+    }
+
+    formAutofillRecoveryAttemptedRef.current = true;
+
+    const resolveRecoverableJob = async (kind: FormAutofillKind) => {
+      let jobId = readFormAutofillSession(caseId, kind);
+
+      if (jobId) {
+        try {
+          const savedJob = await getAutofillJob(jobId);
+          if (savedJob.status === "completed") {
+            return savedJob;
+          }
+          if (isActiveAutofillStatus(savedJob.status)) {
+            return savedJob;
+          }
+          if (savedJob.status === "failed" || savedJob.status === "cancelled") {
+            clearFormAutofillSession(caseId, kind);
+          }
+        } catch {
+          // Keep the saved job id on transient network errors and try the active lookup below.
+        }
+      }
+
+      try {
+        const activeJob = await getActiveAutofillJob(caseId, kind);
+        if (!activeJob) {
+          return null;
+        }
+        saveFormAutofillSession(caseId, kind, activeJob.id);
+        return activeJob;
+      } catch {
+        return null;
+      }
+    };
+
+    const resumeSharedAutofill = async (jobId: string) => {
+      setAutofillingSharedQuestions(true);
+      setAutofillProgress(0);
+      setAutofillPhaseMessage("Resuming AI Autofill...");
+
+      const postOcrPhases = CLIENT_AUTOFILL_POST_OCR_PHASES;
+      let timers = CLIENT_AUTOFILL_DEFAULT_PHASES.map(({ delay, pct, msg }) =>
+        setTimeout(() => {
+          setAutofillPhaseMessage(msg);
+          setAutofillProgress(pct);
+        }, delay)
+      );
+
+      try {
+        toast.success("Resuming AI Autofill from where it left off.");
+        const result = await pollAutofillJobById(jobId, {
+          onOcrProgress: (msg, pct) => {
+            timers.forEach(clearTimeout);
+            setAutofillPhaseMessage(formatAutofillProgressMessage(msg));
+            setAutofillProgress(Math.round(pct));
+          },
+          onOcrComplete: () => {
+            timers.forEach(clearTimeout);
+            timers = postOcrPhases.map(({ delay, pct, msg }) =>
+              setTimeout(() => {
+                setAutofillPhaseMessage(msg);
+                setAutofillProgress(pct);
+              }, delay)
+            );
+          },
+        });
+        setAutofillProgress(100);
+        setAutofillPhaseMessage("Completed");
+        clearFormAutofillSession(caseId, "shared");
+        await applySharedAutofillResult(result);
+      } catch (error: unknown) {
+        timers.forEach(clearTimeout);
+        clearAutofillSessionIfJobLost(error, "shared");
+        toast.error(getApiErrorMessage(error, "Could not resume client AI Autofill"));
+      } finally {
+        timers.forEach(clearTimeout);
+        setAutofillingSharedQuestions(false);
+        setAutofillProgress(0);
+        setAutofillPhaseMessage("");
+      }
+    };
+
+    const resumeAttorneyAutofill = async (jobId: string) => {
+      setAutofillingAttorneyQuestions(true);
+      setAttorneyAutofillProgress(0);
+      setAttorneyAutofillPhaseMessage("Resuming AI Autofill...");
+
+      const attPostOcrPhases = ATTORNEY_AUTOFILL_POST_OCR_PHASES;
+      let timers = ATTORNEY_AUTOFILL_DEFAULT_PHASES.map(({ delay, pct, msg }) =>
+        setTimeout(() => {
+          setAttorneyAutofillPhaseMessage(msg);
+          setAttorneyAutofillProgress(pct);
+        }, delay)
+      );
+
+      try {
+        toast.success("Resuming attorney AI Autofill from where it left off.");
+        const result = await pollAutofillJobById(jobId, {
+          onOcrProgress: (msg, pct) => {
+            timers.forEach(clearTimeout);
+            setAttorneyAutofillPhaseMessage(formatAutofillProgressMessage(msg));
+            setAttorneyAutofillProgress(Math.round(pct));
+          },
+          onOcrComplete: () => {
+            timers.forEach(clearTimeout);
+            timers = attPostOcrPhases.map(({ delay, pct, msg }) =>
+              setTimeout(() => {
+                setAttorneyAutofillPhaseMessage(msg);
+                setAttorneyAutofillProgress(pct);
+              }, delay)
+            );
+          },
+        });
+        setAttorneyAutofillProgress(100);
+        setAttorneyAutofillPhaseMessage("Completed");
+        clearFormAutofillSession(caseId, "attorney");
+        await applyAttorneyAutofillResult(result);
+      } catch (error: unknown) {
+        timers.forEach(clearTimeout);
+        clearAutofillSessionIfJobLost(error, "attorney");
+        toast.error(getApiErrorMessage(error, "Could not resume attorney AI Autofill"));
+      } finally {
+        timers.forEach(clearTimeout);
+        setAutofillingAttorneyQuestions(false);
+        setAttorneyAutofillProgress(0);
+        setAttorneyAutofillPhaseMessage("");
+      }
+    };
+
+    const restoreFormAutofillSessions = async () => {
+      formAutofillRecoveryRunningRef.current = true;
+      try {
+        const sharedJob = await resolveRecoverableJob("shared");
+        if (sharedJob) {
+          if (sharedJob.status === "completed") {
+            if (sharedJob.result) {
+              clearFormAutofillSession(caseId, "shared");
+              toast.success("Client AI Autofill completed while you were away. Applying results.");
+              await applySharedAutofillResult(sharedJob.result);
+            } else {
+              clearFormAutofillSession(caseId, "shared");
+            }
+          } else if (isActiveAutofillStatus(sharedJob.status)) {
+            await resumeSharedAutofill(sharedJob.id);
+            return;
+          }
+        }
+
+        const attorneyJob = await resolveRecoverableJob("attorney");
+        if (!attorneyJob) {
+          return;
+        }
+        if (attorneyJob.status === "completed") {
+          if (attorneyJob.result) {
+            clearFormAutofillSession(caseId, "attorney");
+            toast.success("Attorney AI Autofill completed while you were away. Applying results.");
+            await applyAttorneyAutofillResult(attorneyJob.result);
+          } else {
+            clearFormAutofillSession(caseId, "attorney");
+          }
+          return;
+        }
+        if (isActiveAutofillStatus(attorneyJob.status)) {
+          await resumeAttorneyAutofill(attorneyJob.id);
+        }
+      } finally {
+        formAutofillRecoveryRunningRef.current = false;
+      }
+    };
+
+    void restoreFormAutofillSessions();
+  }, [
+    applyAttorneyAutofillResult,
+    applySharedAutofillResult,
+    autofillingAttorneyQuestions,
+    autofillingSharedQuestions,
+    caseId,
+    clearAutofillSessionIfJobLost,
+    formLoadError,
+    loadingFormDetails,
+    loadingShared,
+    sharedLoadError,
+  ]);
 
   const handleAutofillAllQuestions = async () => {
     if (autofillingFormQuestions) {
@@ -3703,28 +4715,38 @@ export default function FormFillingPanel({
     try {
       const prepared = preparePersistedAnswerState(
         sharedAnswersRef.current,
+        sharedAttorneyAnswersRef.current,
         formAnswersRef.current
       );
       sharedAnswersRef.current = prepared.sharedAnswers;
+      sharedAttorneyAnswersRef.current = prepared.sharedAttorneyAnswers;
       formAnswersRef.current = prepared.formAnswers;
       setSharedAnswers(prepared.sharedAnswers);
+      setSharedAttorneyAnswers(prepared.sharedAttorneyAnswers);
       setFormAnswers(prepared.formAnswers);
       await saveQuestionnaireAnswers(
         caseId,
-        buildPayloadForAnswers("all", prepared.sharedAnswers, prepared.formAnswers)
+        buildPayloadForAnswers(
+          "all",
+          prepared.sharedAnswers,
+          prepared.sharedAttorneyAnswers,
+          prepared.formAnswers
+        )
       );
       markScopeAsSaved("all", prepared.signatures);
-      markScopeAsConfirmed("all", prepared.signatures);
-      setAutosaveStatus("saved");
-      if (clientPersonalDataRequiredComplete || hasPreviewHistory) {
-        toast.success("Answers confirmed successfully", { id: toastId });
-        setStep("preview");
-      } else {
+      const dynamicPart9 = await refreshDynamicPart9Answers("i-914");
+      if (dynamicPart9.updated) {
+        setStep("attorney_questions");
         toast.success(
-          "Attorney answers were confirmed. Complete and confirm the required client answers to generate a new PDF.",
+          `Se agregaron ${dynamicPart9.addedRows || dynamicPart9.totalRows} entrada(s) dinamicas en Part 9. Revisalas antes de continuar.`,
           { id: toastId }
         );
+        return;
       }
+      markScopeAsConfirmed("all", prepared.signatures);
+      setAutosaveStatus("saved");
+      toast.success("Answers confirmed successfully", { id: toastId });
+      setStep("preview");
     } catch {
       setAutosaveStatus("error");
       toast.error("Answers could not be confirmed", { id: toastId });
@@ -3734,11 +4756,6 @@ export default function FormFillingPanel({
   };
 
   const handleGenerate = async (formType: string) => {
-    if (!clientStepConfirmed) {
-      toast.error(getClientConfirmationBlockMessage(missingClientRequiredFields));
-      return;
-    }
-
     setGeneratingFormType(formType);
     clearAutosaveTimer();
     autosaveRequestIdRef.current += 1;
@@ -3747,17 +4764,34 @@ export default function FormFillingPanel({
     try {
       const prepared = preparePersistedAnswerState(
         sharedAnswersRef.current,
+        sharedAttorneyAnswersRef.current,
         formAnswersRef.current
       );
       sharedAnswersRef.current = prepared.sharedAnswers;
+      sharedAttorneyAnswersRef.current = prepared.sharedAttorneyAnswers;
       formAnswersRef.current = prepared.formAnswers;
       setSharedAnswers(prepared.sharedAnswers);
+      setSharedAttorneyAnswers(prepared.sharedAttorneyAnswers);
       setFormAnswers(prepared.formAnswers);
       await saveQuestionnaireAnswers(
         caseId,
-        buildPayloadForAnswers("all", prepared.sharedAnswers, prepared.formAnswers)
+        buildPayloadForAnswers(
+          "all",
+          prepared.sharedAnswers,
+          prepared.sharedAttorneyAnswers,
+          prepared.formAnswers
+        )
       );
       markScopeAsSaved("all", prepared.signatures);
+      const dynamicPart9 = await refreshDynamicPart9Answers(formType);
+      if (dynamicPart9.updated) {
+        setStep("attorney_questions");
+        toast.success(
+          `Se agregaron ${dynamicPart9.addedRows || dynamicPart9.totalRows} entrada(s) dinamicas en Part 9. Revisalas antes de generar el PDF.`,
+          { id: toastId }
+        );
+        return;
+      }
       markScopeAsConfirmed("all", prepared.signatures);
       setAutosaveStatus("saved");
       const createdJob = await generateFormFromAnswers(caseId, formType);
@@ -3807,11 +4841,6 @@ export default function FormFillingPanel({
       return;
     }
 
-    if (!clientStepConfirmed) {
-      toast.error(getClientRegenerationBlockMessage(missingClientRequiredFields));
-      return;
-    }
-
     setRegeneratingJob(true);
     const toastId = toast.loading("Regenerating PDF...");
 
@@ -3832,10 +4861,12 @@ export default function FormFillingPanel({
 
   const handleDeleteJob = async (jobId: string, event: MouseEvent) => {
     event.stopPropagation();
+    if (deletingJobIds.has(jobId)) return;
     if (!window.confirm("Do you want to remove this form from the history?")) {
       return;
     }
 
+    setDeletingJobIds((prev) => new Set(prev).add(jobId));
     try {
       await deleteFormFillingJob(jobId);
       const nextJobs = jobs.filter((item) => item.id !== jobId);
@@ -3846,6 +4877,12 @@ export default function FormFillingPanel({
       toast.success("Form removed from history");
     } catch {
       toast.error("The form could not be removed");
+    } finally {
+      setDeletingJobIds((prev) => {
+        const next = new Set(prev);
+        next.delete(jobId);
+        return next;
+      });
     }
   };
 
@@ -3867,6 +4904,7 @@ export default function FormFillingPanel({
     describedBy,
     hasError,
     errorId,
+    inputTitle,
   }: {
     id: string;
     type: string;
@@ -3881,6 +4919,7 @@ export default function FormFillingPanel({
     describedBy?: string;
     hasError?: boolean;
     errorId?: string;
+    inputTitle?: string;
   }) => {
     const combinedDescribedBy = [describedBy, errorId].filter(Boolean).join(" ") || undefined;
     const normalizedType = type.toLowerCase();
@@ -3920,10 +4959,10 @@ export default function FormFillingPanel({
                 <label
                   key={optionId}
                   htmlFor={optionId}
-                  className={`inline-flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition has-[:focus-visible]:border-brand-500 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand-100 ${
+                  className={`inline-flex cursor-pointer items-center gap-2 rounded-full border px-4 py-2 text-sm font-medium transition has-[:focus-visible]:border-brand-500 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand-100 ${
                     selected
                       ? "border-brand-500 bg-brand-50 text-brand-800"
-                      : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+                      : "border-brand-100 bg-nova-snow text-brand-700 hover:border-brand-200 hover:bg-brand-50"
                   }`}
                 >
                   <input
@@ -3932,7 +4971,7 @@ export default function FormFillingPanel({
                     type="radio"
                     checked={selected}
                     onChange={() => onChange(option.value)}
-                    className="h-4 w-4 border-gray-300 text-brand-600 focus-visible:ring-brand-500"
+                    className="h-4 w-4 border-brand-200 text-brand-600 focus-visible:ring-brand-500"
                   />
                   <span>{option.label}</span>
                 </label>
@@ -3942,7 +4981,7 @@ export default function FormFillingPanel({
           <button
             type="button"
             onClick={() => onChange("")}
-            className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600 hover:border-gray-300"
+            className="rounded-full border border-brand-100 bg-nova-snow px-4 py-2 text-sm text-brand-600 hover:border-brand-200 hover:bg-brand-50"
           >
             Clear
           </button>
@@ -3955,7 +4994,7 @@ export default function FormFillingPanel({
         value.trim().toLowerCase()
       );
       return (
-        <label className="inline-flex items-center gap-3 rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700">
+        <label className="inline-flex items-center gap-3 rounded-full border border-brand-100 bg-nova-snow px-4 py-2 text-sm text-brand-700">
           <input
             id={id}
             name={id}
@@ -3966,7 +5005,7 @@ export default function FormFillingPanel({
             aria-describedby={combinedDescribedBy}
           aria-invalid={hasError ? "true" : undefined}
             onChange={(event) => onChange(event.target.checked ? "yes" : "")}
-            className="h-4 w-4 rounded border-gray-300 text-brand-600 focus-visible:ring-brand-500"
+            className="h-4 w-4 rounded border-brand-200 text-brand-600 focus-visible:ring-brand-500"
           />
           <span>Mark answer</span>
         </label>
@@ -3990,7 +5029,7 @@ export default function FormFillingPanel({
         >
           {normalizedOptions.map((option) => {
             const optionId = `${id}-${option.value}`;
-            const selected = value === option.value;
+            const selected = isSingleChoiceOptionSelected(option, value);
             return (
               <label
                 key={optionId}
@@ -3998,7 +5037,7 @@ export default function FormFillingPanel({
                 className={`flex cursor-pointer items-start gap-3 rounded-xl border px-3 py-3 text-left text-sm transition has-[:focus-visible]:border-brand-500 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand-100 ${
                   selected
                     ? "border-brand-500 bg-brand-50 text-brand-800"
-                    : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+                    : "border-brand-100 bg-nova-snow text-brand-700 hover:border-brand-200 hover:bg-brand-50"
                 }`}
               >
                 <input
@@ -4007,7 +5046,7 @@ export default function FormFillingPanel({
                   type="radio"
                   checked={selected}
                   onChange={() => onChange(option.value)}
-                  className="mt-0.5 h-4 w-4 shrink-0 border-gray-300 text-brand-600 focus-visible:ring-brand-500"
+                  className="mt-0.5 h-4 w-4 shrink-0 border-brand-200 text-brand-600 focus-visible:ring-brand-500"
                 />
                 <span className="font-medium">{option.label}</span>
               </label>
@@ -4016,7 +5055,7 @@ export default function FormFillingPanel({
           <button
             type="button"
             onClick={() => onChange("")}
-            className="justify-self-start rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600 hover:border-gray-300"
+            className="justify-self-start rounded-full border border-brand-100 bg-nova-snow px-4 py-2 text-sm text-brand-600 hover:border-brand-200 hover:bg-brand-50"
           >
             Clear selection
           </button>
@@ -4031,12 +5070,13 @@ export default function FormFillingPanel({
           name={id}
           value={resolvedSelectValue}
           autoComplete="off"
+          title={inputTitle}
           aria-label={labelledBy ? undefined : ariaLabel}
           aria-labelledby={labelledBy}
           aria-describedby={combinedDescribedBy}
           aria-invalid={hasError ? "true" : undefined}
           onChange={(event) => onChange(event.target.value)}
-          className={`w-full rounded-xl border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 ${hasError ? "border-red-300 bg-red-50 text-red-900 focus-visible:border-red-500 focus-visible:ring-red-200" : "border-gray-200 bg-white text-gray-800 focus-visible:border-brand-500 focus-visible:ring-brand-100"}`}
+          className={`w-full rounded-xl border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 ${hasError ? "border-red-300 bg-red-50 text-red-900 focus-visible:border-red-500 focus-visible:ring-red-200" : "border-brand-100 bg-nova-snow text-brand-800 focus-visible:border-brand-500 focus-visible:ring-brand-100"}`}
         >
           <option value="">Select an option</option>
           {selectOptions.map((option) => (
@@ -4084,10 +5124,10 @@ export default function FormFillingPanel({
                   key={`${id}-${literalOption}`}
                   type="button"
                   onClick={() => onChange(literalOption)}
-                  className={`rounded-xl border px-3 py-2 text-sm font-medium transition ${
+                  className={`rounded-full border px-4 py-2 text-sm font-medium transition ${
                     selected
                       ? "border-brand-500 bg-brand-50 text-brand-800"
-                      : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+                      : "border-brand-100 bg-nova-snow text-brand-700 hover:border-brand-200 hover:bg-brand-50"
                   }`}
                 >
                   {literalOption}
@@ -4097,7 +5137,7 @@ export default function FormFillingPanel({
             <button
               type="button"
               onClick={() => onChange("")}
-              className="rounded-xl border border-gray-200 bg-white px-3 py-2 text-sm text-gray-600 hover:border-gray-300"
+              className="rounded-full border border-brand-100 bg-nova-snow px-4 py-2 text-sm text-brand-600 hover:border-brand-200 hover:bg-brand-50"
             >
               Clear
             </button>
@@ -4113,6 +5153,7 @@ export default function FormFillingPanel({
           name={id}
           value={value}
           autoComplete="off"
+          title={inputTitle}
           aria-label={labelledBy ? undefined : ariaLabel}
           aria-labelledby={labelledBy}
           aria-describedby={combinedDescribedBy}
@@ -4120,7 +5161,7 @@ export default function FormFillingPanel({
           onChange={(event) => onChange(event.target.value)}
           rows={normalizedType === "note" ? 2 : 4}
           placeholder={format || undefined}
-          className={`w-full rounded-xl border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 ${hasError ? "border-red-300 bg-red-50 text-red-900 focus-visible:border-red-500 focus-visible:ring-red-200" : "border-gray-200 bg-white text-gray-800 focus-visible:border-brand-500 focus-visible:ring-brand-100"}`}
+          className={`w-full rounded-xl border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 ${hasError ? "border-red-300 bg-red-50 text-red-900 focus-visible:border-red-500 focus-visible:ring-red-200" : "border-brand-100 bg-nova-snow text-brand-800 focus-visible:border-brand-500 focus-visible:ring-brand-100"}`}
         />
       );
     }
@@ -4141,8 +5182,8 @@ export default function FormFillingPanel({
 
     if (prefix) {
       return (
-        <div className={`flex overflow-hidden rounded-xl border ${hasError ? "border-red-300 bg-red-50 has-[:focus-visible]:border-red-500 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-red-200" : "border-gray-200 bg-white has-[:focus-visible]:border-brand-500 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand-100"}`}>
-          <span className="flex items-center border-r border-gray-200 bg-gray-50 px-3 text-sm font-medium text-gray-600">
+        <div className={`flex overflow-hidden rounded-xl border ${hasError ? "border-red-300 bg-red-50 has-[:focus-visible]:border-red-500 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-red-200" : "border-brand-100 bg-nova-snow has-[:focus-visible]:border-brand-500 has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-brand-100"}`}>
+          <span className="flex items-center border-r border-brand-100 bg-brand-50 px-3 text-sm font-medium text-brand-600">
             {prefix}
           </span>
           <input
@@ -4151,13 +5192,14 @@ export default function FormFillingPanel({
             type={inputType}
             value={value}
             autoComplete="off"
+            title={inputTitle}
             aria-label={labelledBy ? undefined : ariaLabel}
             aria-labelledby={labelledBy}
             aria-describedby={combinedDescribedBy}
           aria-invalid={hasError ? "true" : undefined}
             onChange={(event) => onChange(event.target.value)}
             placeholder={placeholder}
-            className={`w-full px-3 py-2 text-sm outline-none bg-transparent ${hasError ? "text-red-900" : "text-gray-800"}`}
+            className={`w-full px-3 py-2 text-sm outline-none bg-transparent ${hasError ? "text-red-900" : "text-brand-800"}`}
           />
         </div>
       );
@@ -4170,13 +5212,14 @@ export default function FormFillingPanel({
         type={inputType}
         value={value}
         autoComplete="off"
+        title={inputTitle}
         aria-label={labelledBy ? undefined : ariaLabel}
         aria-labelledby={labelledBy}
         aria-describedby={combinedDescribedBy}
           aria-invalid={hasError ? "true" : undefined}
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
-        className={`w-full rounded-xl border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 ${hasError ? "border-red-300 bg-red-50 text-red-900 focus-visible:border-red-500 focus-visible:ring-red-200" : "border-gray-200 bg-white text-gray-800 focus-visible:border-brand-500 focus-visible:ring-brand-100"}`}
+        className={`w-full rounded-xl border px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 ${hasError ? "border-red-300 bg-red-50 text-red-900 focus-visible:border-red-500 focus-visible:ring-red-200" : "border-brand-100 bg-nova-snow text-brand-800 focus-visible:border-brand-500 focus-visible:ring-brand-100"}`}
       />
     );
   };
@@ -4205,27 +5248,29 @@ export default function FormFillingPanel({
     grouped?: boolean;
     control: ReactNode;
     error?: string;
-  }) => (
+  }) => {
+    const showLabel = !shouldHideQuestionnaireFieldLabel(label);
+    const labelClassName = showLabel
+      ? "text-sm font-medium text-brand-800"
+      : "sr-only";
+
+    return (
     <div key={id} className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
         {grouped ? (
-          <p id={labelId} className="text-sm font-medium text-gray-800">
-            {label}
+          <p id={labelId} className={labelClassName}>
+            {showLabel ? label : ""}
           </p>
         ) : (
-          <label htmlFor={id} id={labelId} className="text-sm font-medium text-gray-800">
-            {label}
+          <label htmlFor={id} id={labelId} className={labelClassName}>
+            {showLabel ? label : ""}
           </label>
         )}
         {badge}
-        {optional && (
-          <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] font-medium text-gray-600">
-            Optional
-          </span>
-        )}
+        {optional && <OptionalBadge />}
       </div>
       {(instruction || condition) && (
-        <div id={descriptionId} className="space-y-1 text-xs text-gray-500">
+        <div id={descriptionId} className="space-y-1 text-xs text-brand-500">
           {instruction && <p>{instruction}</p>}
           {condition && <p>{condition}</p>}
         </div>
@@ -4237,76 +5282,65 @@ export default function FormFillingPanel({
         </p>
       )}
     </div>
-  );
+    );
+  };
 
   const renderQuestionnaireItem = (
     item: QuestionnaireItem,
     answers: QuestionnaireAnswerMap,
-    setter: AnswerSetter
+    setter: AnswerSetter,
+    contextAnswers: QuestionnaireAnswerMap = sharedAnswers,
+    sectionAllOptional = false,
   ) => {
-    const missingRequiredFields = collectMissingFields(item, answers, sharedAnswers);
-    const hasPendingFields = missingRequiredFields.length > 0;
-    const hasOnlyReviewFields =
-      hasPendingFields && missingRequiredFields.every((field) => field.kind === "review");
     const repeatableRows = getRepeatableRowCount(item, answers);
     const repeatableDetails = (item.details_fields ?? []).filter((field) => field.repeatable);
     const singleDetails = (item.details_fields ?? []).filter((field) => !field.repeatable);
     const itemHeadingId = `${item.id}-heading`;
     const itemDescriptionId =
       item.section || item.instruction || item.condition ? `${item.id}-description` : undefined;
-    const itemVerification = getDefaultAwareVerificationEntry(
-      verificationMap,
-      answers[item.id],
-      item.default_value,
-      item.id
+    const itemActionableVerification = getItemActionableVerification(
+      item,
+      answers,
+      verificationMap
     );
+    const showQuestionOptionalBadge = shouldShowQuestionOptionalBadge(
+      item,
+      answers,
+      sectionAllOptional,
+    );
+    const humanizedCode = item.code ? humanizeQuestionnaireCode(item.code) : "";
 
     return (
       <div
         key={item.id}
-        className={`rounded-2xl border bg-white p-4 shadow-sm ${
-          hasPendingFields ? "border-amber-300 ring-1 ring-amber-100" : "border-gray-200"
-        }`}
+        className="rounded-2xl border border-brand-100 bg-white p-4 shadow-sm"
       >
         <div className="space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            {item.code && (
+            {item.code && humanizedCode && (
               <span
-                className={`rounded-full px-2.5 py-1 text-[10px] font-semibold uppercase tracking-wide ${
-                  hasPendingFields
-                    ? "bg-amber-100 text-amber-900 ring-1 ring-amber-200"
-                    : "bg-brand-50 text-brand-800"
-                }`}
-                title={
-                  hasPendingFields
-                    ? `Section ${item.code} has pending fields`
-                    : undefined
-                }
+                className="whitespace-nowrap rounded-full bg-brand-50 px-2.5 py-1 text-[11px] font-medium normal-case tracking-normal text-brand-800"
+                title={`USCIS reference: ${item.code}`}
               >
-                {item.code}
+                {humanizedCode}
               </span>
             )}
-            {hasPendingFields && (
-              <span className="rounded-full bg-amber-50 px-2.5 py-1 text-[10px] font-medium text-amber-800">
-                {hasOnlyReviewFields ? "Needs review" : "Pending section"}
-              </span>
-            )}
-            {shouldShowOptionalBadge(item.optional, answers[item.id], item.default_value) && (
-              <span className="rounded-full bg-gray-100 px-2.5 py-1 text-[10px] font-medium text-gray-600">
-                Optional
-              </span>
-            )}
-            {itemVerification && <VerificationBadge verification={itemVerification} />}
             {item.also_validate_with?.length ? (
-              <span className="rounded-full bg-purple-50 px-2.5 py-1 text-[10px] font-medium text-purple-800">
+              <span className="rounded-full bg-accent-50 px-2.5 py-1 text-[10px] font-medium text-accent-800">
                 Validate with {item.also_validate_with.join(", ")}
               </span>
             ) : null}
           </div>
-          <h4 id={itemHeadingId} className="text-base font-semibold text-gray-900">
-            {item.form_text}
-          </h4>
-          <div id={itemDescriptionId} className="space-y-1 text-sm text-gray-500">
+          <div className="flex flex-wrap items-start gap-2">
+            <h4 id={itemHeadingId} className="text-base font-semibold text-brand-900">
+              {item.form_text}
+            </h4>
+            {showQuestionOptionalBadge && <OptionalBadge />}
+            {itemActionableVerification && (
+              <VerificationBadge verification={itemActionableVerification} />
+            )}
+          </div>
+          <div id={itemDescriptionId} className="space-y-1 text-sm text-brand-500">
             {item.section && <p>{item.section}</p>}
             {item.instruction && <p>{item.instruction}</p>}
             {item.condition && <p>{item.condition}</p>}
@@ -4314,37 +5348,26 @@ export default function FormFillingPanel({
         </div>
 
         <div className="mt-4 space-y-4">
-          {item.fields?.length && !isRepeatableItem(item) && (
+          {(item.fields?.length ?? 0) > 0 && !isRepeatableItem(item) && (
             <div className="grid gap-4 md:grid-cols-2">
-              {item.fields.map((field) => {
+              {(item.fields ?? []).map((field) => {
                 const groupValue = normalizeGroupValue(answers[item.id], item.fields ?? []);
                 const inputId = `${item.id}-${field.id}`;
-                const fieldVerification = getDefaultAwareVerificationEntry(
-                  verificationMap,
-                  groupValue[field.id],
-                  field.default_value,
-                  `${item.id}.${field.id}`
-                );
                 const labelId = `${inputId}-label`;
                 const descriptionId =
                   field.instruction || field.condition ? `${inputId}-description` : undefined;
                 const grouped = isChoiceGroupType(field.type, field.options);
-                const hasError = missingRequiredFields.some(m => m.label === field.label && !m.rowLabel);
-                const errorId = hasError ? `${inputId}-error` : undefined;
                 return renderFieldBlock({
-                  error: hasError ? "This field is required" : undefined,
                   id: inputId,
                   label: field.label,
                   labelId,
                   descriptionId,
-                  badge: fieldVerification ? (
-                    <VerificationBadge verification={fieldVerification} />
-                  ) : undefined,
-                  optional: shouldShowOptionalBadge(
-                    field.optional,
+                  optional: shouldShowFieldOptionalBadge(
+                    item,
+                    field,
                     groupValue[field.id],
-                    field.default_value,
-                    field.force_default
+                    sectionAllOptional,
+                    showQuestionOptionalBadge,
                   ),
                   instruction: field.instruction,
                   condition: field.condition,
@@ -4368,39 +5391,82 @@ export default function FormFillingPanel({
                     ariaLabel: field.label,
                     labelledBy: labelId,
                     describedBy: descriptionId,
-                    hasError,
-                    errorId,
+                    inputTitle: getManualFieldTitle(item.id, field.id),
                   }),
                 });
               })}
             </div>
           )}
 
-          {item.fields?.length && isRepeatableItem(item) && (
+          {(item.fields?.length ?? 0) > 0 && isRepeatableItem(item) && (
             <div className="space-y-4">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                {!item.visible_slots?.length && (
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => addRepeatableRow(setter, answers, item)}
-                      className="inline-flex items-center gap-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:border-gray-300"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      Add row
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => removeRepeatableRow(setter, answers, item)}
-                      disabled={repeatableRows <= 1}
-                      title={repeatableRows <= 1 ? "Cannot remove the last row" : undefined}
-                      className="inline-flex items-center gap-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:border-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <Minus className="h-3.5 w-3.5" />
-                      Remove row
-                    </button>
+              {(() => {
+                const overflowInfo = getContinuationOverflowInfo(item, repeatableRows);
+                if (!overflowInfo) {
+                  return null;
+                }
+                return (
+                  <div
+                    className="flex items-start gap-2 rounded-2xl border border-indigo-200 bg-indigo-50 px-3 py-2 text-xs text-indigo-900"
+                    role="note"
+                  >
+                    <Info className="mt-0.5 h-4 w-4 shrink-0" />
+                    <p>
+                      Las entradas 5+ se imprimiran en hojas de continuacion (
+                      {PART9_CONTINUATION_ENTRIES_PER_SHEET} por pagina). Se generaran
+                      {" "}
+                      <strong>
+                        {overflowInfo.extraSheets} hoja
+                        {overflowInfo.extraSheets === 1 ? "" : "s"} adicional
+                        {overflowInfo.extraSheets === 1 ? "" : "es"}
+                      </strong>
+                      {" "}
+                      para {" "}
+                      <strong>
+                        {overflowInfo.overflowCount} entrada
+                        {overflowInfo.overflowCount === 1 ? "" : "s"} adicional
+                        {overflowInfo.overflowCount === 1 ? "" : "es"}
+                      </strong>
+                      .
+                    </p>
                   </div>
-                )}
+                );
+              })()}
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                {canEditRepeatableRows(item) && (() => {
+                  const fixedSlots = getNativeSlotCount(item);
+                  const minRows = Math.max(fixedSlots, 1);
+                  const removeDisabled = repeatableRows <= minRows;
+                  const addLabel = fixedSlots > 0 ? "Add additional entry" : "Add row";
+                  const removeLabel = fixedSlots > 0 ? "Remove last entry" : "Remove row";
+                  const removeTitle = removeDisabled
+                    ? fixedSlots > 0
+                      ? `Cannot remove below the ${fixedSlots} native slots`
+                      : "Cannot remove the last row"
+                    : undefined;
+                  return (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => addRepeatableRow(setter, answers, item)}
+                        className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-4 py-2 text-xs font-medium text-gray-700 hover:border-gray-300"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        {addLabel}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeRepeatableRow(setter, answers, item)}
+                        disabled={removeDisabled}
+                        title={removeTitle}
+                        className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-4 py-2 text-xs font-medium text-gray-700 hover:border-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Minus className="h-3.5 w-3.5" />
+                        {removeLabel}
+                      </button>
+                    </div>
+                  );
+                })()}
               </div>
 
               <div className="space-y-3">
@@ -4412,44 +5478,31 @@ export default function FormFillingPanel({
                   return (
                     <div
                       key={`${item.id}-row-${rowIndex}`}
-                      className="rounded-2xl border border-dashed border-gray-200 bg-gray-50 p-4"
+                      className="rounded-2xl border border-dashed border-brand-100 bg-white/60 p-4"
                     >
-                      <p className="mb-3 text-sm font-semibold text-gray-700">
+                      <p className="mb-3 text-sm font-semibold text-brand-700">
                         {getRepeatableRowLabel(item, rowIndex)}
                       </p>
                       <div className="grid gap-4 md:grid-cols-2">
                         {fields.map((field) => {
                           const inputId = `${item.id}-${rowIndex}-${field.id}`;
-                          const fieldVerification = getDefaultAwareVerificationEntry(
-                            verificationMap,
-                            row[field.id],
-                            field.default_value,
-                            ...getRepeatableVerificationKeys(item, rowIndex, field.id)
-                          );
                           const labelId = `${inputId}-label`;
                           const descriptionId =
                             field.instruction || field.condition
                               ? `${inputId}-description`
                               : undefined;
                           const grouped = isChoiceGroupType(field.type, field.options);
-                          const rowLabel = getRepeatableRowLabel(item, rowIndex);
-                          const hasError = missingRequiredFields.some(m => m.label === field.label && m.rowLabel === rowLabel);
-                          const errorId = hasError ? `${inputId}-error` : undefined;
-
                           return renderFieldBlock({
-                            error: hasError ? "This field is required" : undefined,
                             id: inputId,
                             label: field.label,
                             labelId,
                             descriptionId,
-                            badge: fieldVerification ? (
-                              <VerificationBadge verification={fieldVerification} />
-                            ) : undefined,
-                            optional: shouldShowOptionalBadge(
-                              field.optional,
+                            optional: shouldShowFieldOptionalBadge(
+                              item,
+                              field,
                               row[field.id],
-                              field.default_value,
-                              field.force_default
+                              sectionAllOptional,
+                              showQuestionOptionalBadge,
                             ),
                             instruction: field.instruction,
                             condition: field.condition,
@@ -4473,8 +5526,7 @@ export default function FormFillingPanel({
                               ariaLabel: `${field.label} ${rowIndex + 1}`,
                               labelledBy: labelId,
                               describedBy: descriptionId,
-                              hasError,
-                              errorId,
+                              inputTitle: getManualFieldTitle(item.id, field.id, rowIndex),
                             }),
                           });
                         })}
@@ -4486,97 +5538,87 @@ export default function FormFillingPanel({
             </div>
           )}
 
-          {!item.fields?.length && (() => {
-            const hasError = missingRequiredFields.some(m => m.label === item.form_text && !m.rowLabel);
-            const errorId = hasError ? `${item.id}-error` : undefined;
-            return (
-              <div className="space-y-2">
-                {renderAnswerControl({
-                  id: item.id,
-                  type: item.type,
-                  value: toText(answers[item.id]),
-                  onChange: (value) => updateScalarAnswer(setter, item.id, value),
-                  options: item.options,
-                  prefix: item.prefix,
-                  format: item.format,
-                  ariaLabel: item.form_text,
-                  labelledBy: itemHeadingId,
-                  describedBy: itemDescriptionId,
-                  hasError,
-                  errorId,
-                })}
-                {hasError && (
-                  <p className="text-xs font-medium text-red-600" id={`${item.id}-error`}>
-                    This field is required
-                  </p>
-                )}
-              </div>
-            );
-          })()}
+          {(item.fields?.length ?? 0) === 0 && (
+            <div className="space-y-2">
+              {renderAnswerControl({
+                id: item.id,
+                type: item.type,
+                value: toText(answers[item.id]),
+                onChange: (value) => updateScalarAnswer(setter, item.id, value),
+                options: item.options,
+                prefix: item.prefix,
+                format: item.format,
+                ariaLabel: item.form_text,
+                describedBy: itemDescriptionId,
+                inputTitle: getManualFieldTitle(item.id),
+              })}
+            </div>
+          )}
 
           {(singleDetails.length > 0 || repeatableDetails.length > 0) && (
-            <div className="rounded-2xl border border-gray-100 bg-gray-50 p-4">
+            <div className="rounded-2xl border border-brand-100 bg-white/60 p-4">
               <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <p className="text-sm font-semibold text-gray-800">Additional details</p>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-sm font-semibold text-brand-800">Additional details</p>
+                  <p className="text-xs text-brand-500">
                     Complete the supplementary fields that apply to this answer.
                   </p>
                 </div>
-                {repeatableDetails.length > 0 && !item.visible_slots?.length && (
-                  <div className="flex items-center gap-2">
-                    <button
-                      type="button"
-                      onClick={() => addRepeatableRow(setter, answers, item)}
-                      className="inline-flex items-center gap-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:border-gray-300"
-                    >
-                      <Plus className="h-3.5 w-3.5" />
-                      Add row
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => removeRepeatableRow(setter, answers, item)}
-                      disabled={repeatableRows <= 1}
-                      title={repeatableRows <= 1 ? "Cannot remove the last row" : undefined}
-                      className="inline-flex items-center gap-1 rounded-xl border border-gray-200 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:border-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <Minus className="h-3.5 w-3.5" />
-                      Remove row
-                    </button>
-                  </div>
-                )}
+                {repeatableDetails.length > 0 && canEditRepeatableRows(item) && (() => {
+                  const fixedSlots = getNativeSlotCount(item);
+                  const minRows = Math.max(fixedSlots, 1);
+                  const removeDisabled = repeatableRows <= minRows;
+                  const addLabel = fixedSlots > 0 ? "Add additional entry" : "Add row";
+                  const removeLabel = fixedSlots > 0 ? "Remove last entry" : "Remove row";
+                  const removeTitle = removeDisabled
+                    ? fixedSlots > 0
+                      ? `Cannot remove below the ${fixedSlots} native slots`
+                      : "Cannot remove the last row"
+                    : undefined;
+                  return (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => addRepeatableRow(setter, answers, item)}
+                        className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-4 py-2 text-xs font-medium text-gray-700 hover:border-gray-300"
+                      >
+                        <Plus className="h-3.5 w-3.5" />
+                        {addLabel}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => removeRepeatableRow(setter, answers, item)}
+                        disabled={removeDisabled}
+                        title={removeTitle}
+                        className="inline-flex items-center gap-1 rounded-full border border-gray-200 bg-white px-4 py-2 text-xs font-medium text-gray-700 hover:border-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
+                      >
+                        <Minus className="h-3.5 w-3.5" />
+                        {removeLabel}
+                      </button>
+                    </div>
+                  );
+                })()}
               </div>
 
               {singleDetails.length > 0 && (
                 <div className="grid gap-4 md:grid-cols-2">
                   {singleDetails.map((field) => {
                     const detailKey = `${item.id}.${field.id}`;
-                    const detailVerification = getDefaultAwareVerificationEntry(
-                      verificationMap,
-                      answers[detailKey],
-                      field.default_value,
-                      detailKey
-                    );
                     const labelId = `${detailKey}-label`;
                     const descriptionId =
                       field.instruction || field.condition ? `${detailKey}-description` : undefined;
                     const grouped = isChoiceGroupType(field.type, field.options);
-                    const hasError = missingRequiredFields.some(m => m.label === field.label && !m.rowLabel);
-                    const errorId = hasError ? `${detailKey}-error` : undefined;
                     return renderFieldBlock({
-                      error: hasError ? "This field is required" : undefined,
                       id: detailKey,
                       label: field.label,
                       labelId,
                       descriptionId,
-                      badge: detailVerification ? (
-                        <VerificationBadge verification={detailVerification} />
-                      ) : undefined,
-                      optional: shouldShowOptionalBadge(
-                        field.optional,
+                      optional: shouldShowFieldOptionalBadge(
+                        item,
+                        field,
                         answers[detailKey],
-                        field.default_value,
-                        field.force_default
+                        sectionAllOptional,
+                        showQuestionOptionalBadge,
                       ),
                       instruction: field.instruction,
                       condition: field.condition,
@@ -4593,8 +5635,7 @@ export default function FormFillingPanel({
                         ariaLabel: field.label,
                         labelledBy: labelId,
                         describedBy: descriptionId,
-                        hasError,
-                        errorId,
+                        inputTitle: getManualFieldTitle(detailKey),
                       }),
                     });
                   })}
@@ -4606,9 +5647,9 @@ export default function FormFillingPanel({
                   {Array.from({ length: repeatableRows }).map((_, rowIndex) => (
                     <div
                       key={`${item.id}-details-${rowIndex}`}
-                      className="rounded-2xl border border-dashed border-gray-200 bg-white p-4"
+                      className="rounded-2xl border border-dashed border-brand-100 bg-white/60 p-4"
                     >
-                      <p className="mb-3 text-sm font-semibold text-gray-700">
+                      <p className="mb-3 text-sm font-semibold text-brand-700">
                         {getRepeatableRowLabel(item, rowIndex)}
                       </p>
                       <div className="grid gap-4 md:grid-cols-2">
@@ -4617,12 +5658,6 @@ export default function FormFillingPanel({
                           const detailValues = Array.isArray(answers[detailKey])
                             ? answers[detailKey].map((entry) => toText(entry))
                             : [];
-                          const detailVerification = getDefaultAwareVerificationEntry(
-                            verificationMap,
-                            detailValues[rowIndex] ?? "",
-                            field.default_value,
-                            detailKey
-                          );
                           const inputId = `${detailKey}-${rowIndex}`;
                           const labelId = `${inputId}-label`;
                           const descriptionId =
@@ -4630,23 +5665,17 @@ export default function FormFillingPanel({
                               ? `${inputId}-description`
                               : undefined;
                           const grouped = isChoiceGroupType(field.type, field.options);
-                          const rowLabel = getRepeatableRowLabel(item, rowIndex);
-                          const hasError = missingRequiredFields.some(m => m.label === field.label && m.rowLabel === rowLabel);
-                          const errorId = hasError ? `${inputId}-error` : undefined;
                           return renderFieldBlock({
-                            error: hasError ? "This field is required" : undefined,
                             id: inputId,
                             label: field.label,
                             labelId,
                             descriptionId,
-                            badge: detailVerification ? (
-                              <VerificationBadge verification={detailVerification} />
-                            ) : undefined,
-                            optional: shouldShowOptionalBadge(
-                              field.optional,
+                            optional: shouldShowFieldOptionalBadge(
+                              item,
+                              field,
                               detailValues[rowIndex] ?? "",
-                              field.default_value,
-                              field.force_default
+                              sectionAllOptional,
+                              showQuestionOptionalBadge,
                             ),
                             instruction: field.instruction,
                             condition: field.condition,
@@ -4669,8 +5698,7 @@ export default function FormFillingPanel({
                               ariaLabel: `${field.label} ${rowIndex + 1}`,
                               labelledBy: labelId,
                               describedBy: descriptionId,
-                              hasError,
-                              errorId,
+                              inputTitle: getManualFieldTitle(detailKey, String(rowIndex)),
                             }),
                           });
                         })}
@@ -4690,9 +5718,13 @@ export default function FormFillingPanel({
     pages: QuestionnairePage[],
     answers: QuestionnaireAnswerMap,
     setter: AnswerSetter,
-    emptyMessage: string
+    emptyMessage: string,
+    contextAnswers: QuestionnaireAnswerMap = sharedAnswers
   ) => {
-    if (pages.length === 0) {
+    const renderablePages = getRenderableQuestionnairePages(pages);
+    const pageHandlingSummary = buildPageHandlingInstructionSummary(pages);
+
+    if (renderablePages.length === 0) {
       return (
         <EmptyState
           description={emptyMessage}
@@ -4703,10 +5735,25 @@ export default function FormFillingPanel({
 
     return (
       <div className="space-y-6">
-        {pages.map((page) => (
+        {pageHandlingSummary && (
+          <div
+            role="note"
+            className="rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-800"
+          >
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-600">
+              {pageHandlingSummary.section}
+            </p>
+            <p className="mt-2 font-medium text-slate-900">{pageHandlingSummary.instruction}</p>
+            <p className="mt-2 text-xs text-slate-600">
+              Applies to pages {formatPageNumberList(pageHandlingSummary.pageNumbers)}.
+            </p>
+          </div>
+        )}
+
+        {renderablePages.map((page) => (
           <section
             key={`page-${page.page}`}
-            className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm"
+            className="rounded-3xl border border-brand-100/80 bg-white/75 p-5 shadow-sm"
           >
             <div className="mb-5 flex flex-wrap items-center justify-between gap-3">
               <div>
@@ -4717,18 +5764,31 @@ export default function FormFillingPanel({
             </div>
 
             <div className="space-y-6">
-              {groupItemsBySection(page.items).map(([sectionName, items]) => (
+              {groupItemsBySection(page.items).map(([sectionName, items]) => {
+                const sectionAllOptional = isSectionEntirelyOptional(items);
+
+                return (
                 <div key={`${page.page}-${sectionName}`} className="space-y-4">
-                  <div>
-                    <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-600">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h3 className="text-sm font-semibold uppercase tracking-wide text-brand-600">
                       {sectionName}
                     </h3>
+                    {sectionAllOptional && <OptionalBadge />}
                   </div>
                   <div className="space-y-4">
-                    {items.map((item) => renderQuestionnaireItem(item, answers, setter))}
+                    {items.map((item) =>
+                      renderQuestionnaireItem(
+                        item,
+                        answers,
+                        setter,
+                        contextAnswers,
+                        sectionAllOptional,
+                      )
+                    )}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           </section>
         ))}
@@ -4753,6 +5813,8 @@ export default function FormFillingPanel({
           ? "Check error"
           : loadingShared || loadingFormDetails
             ? "Loading..."
+            : isClientReadyForReviewWhileAttorneyRuns
+              ? "Ready for review"
             : clientStepConfirmed
               ? clientStepStarted
                 ? "Saved"
@@ -4763,7 +5825,9 @@ export default function FormFillingPanel({
                   ? "Save error"
                   : clientStepAutosaved
                     ? "Unconfirmed"
-                    : "Pending",
+                    : isClientAutofillRunning
+                      ? "Analyzing..."
+                      : "Pending",
       enabled: true,
       tone:
         sharedLoadError || formLoadError
@@ -4791,6 +5855,8 @@ export default function FormFillingPanel({
         ? "Check error"
         : loadingShared || loadingFormDetails
           ? "Loading..."
+          : isAttorneyAutofillPhaseRunning
+            ? "Analyzing..."
           : attorneyStepConfirmed
             ? attorneyStepStarted
               ? "Saved"
@@ -4827,7 +5893,7 @@ export default function FormFillingPanel({
             ? `${jobs.length} forms in history`
             : canOpenPreviewStep
               ? "Ready to generate"
-                : getPreviewStepBlockedMessage(missingClientRequiredFields),
+              : "Complete client and attorney steps",
       statusText:
         jobsLoadError || jobDetailsError || previewLoadError
           ? "Check error"
@@ -4858,25 +5924,56 @@ export default function FormFillingPanel({
     },
   ];
 
+  const unifiedAutofillButton = (
+    <button
+      type="button"
+      onClick={handleAutofillAllQuestions}
+      disabled={
+        loadingShared ||
+        loadingFormDetails ||
+        autofillingFormQuestions ||
+        !canRunFormAutofill
+      }
+      title={
+        autofillingFormQuestions
+          ? "Autofill in progress"
+          : !canRunFormAutofill
+            ? "Cannot run autofill at this time"
+            : undefined
+      }
+      aria-busy={autofillingFormQuestions}
+      className="group/ai ai-cta-button shrink-0"
+    >
+      {autofillingFormQuestions ? (
+        <Loader2 aria-hidden="true" className="relative z-10 h-4 w-4 animate-spin text-accent-300" />
+      ) : (
+        <AnimatedAIBot className="relative z-10 h-4 w-4 text-nova-snow" />
+      )}
+      <span className="relative z-10 tracking-wide">
+        {autofillingFormQuestions ? "Analyzing..." : "AI AUTOFILL"}
+      </span>
+    </button>
+  );
+
   return (
     <div
       className={`flex h-[calc(100vh-40px)] flex-col gap-5 ${
         step === "preview" ? "min-h-[1280px]" : "min-h-[1080px]"
       }`}
     >
-      <GlassSurface filterId="forms-wizard-header" className="rounded-3xl p-5">
+      <SolidCard className="rounded-3xl p-5">
         <div className="flex flex-col gap-4">
           <div>
-            <h2 className="text-lg font-semibold text-gray-900">
+            <h2 className="text-xl font-extrabold text-brand-900">
               Form generation
             </h2>
-            <p className="mt-1 text-sm text-gray-600">
+            <p className="mt-1 text-sm text-brand-600">
               Complete shared data, review one form at a time, and generate the PDF from saved answers.
             </p>
           </div>
 
           <nav aria-label="Wizard progress" className="relative">
-            <div className="absolute left-0 top-1/2 hidden h-0.5 w-full -translate-y-1/2 bg-gray-200 md:block" />
+            <div className="absolute left-0 top-1/2 hidden h-0.5 w-full -translate-y-1/2 bg-brand-100 md:block" />
             <ol className="relative grid gap-3 md:grid-cols-3">
               {stepItems.map((item, index) => {
                 const isCurrent = item.id === step;
@@ -4896,7 +5993,7 @@ export default function FormFillingPanel({
                       ? "border-amber-200 bg-amber-50"
                       : item.tone === "danger"
                         ? "border-red-200 bg-red-50"
-                        : "border-gray-200 bg-white hover:border-gray-300";
+                        : "border-brand-100 bg-white/75 hover:border-brand-200 hover:bg-brand-50/70";
                 const badgeClass = isCurrent
                   ? "bg-brand-600 text-white shadow-md shadow-brand-200"
                   : item.tone === "success"
@@ -4905,7 +6002,7 @@ export default function FormFillingPanel({
                       ? "bg-amber-500 text-white shadow-md shadow-amber-200"
                       : item.tone === "danger"
                         ? "bg-red-600 text-white shadow-md shadow-red-200"
-                        : "bg-gray-100 text-gray-500";
+                        : "bg-brand-50 text-brand-500";
                 const statusClass = isCurrent
                   ? "bg-brand-100 text-brand-800"
                   : item.tone === "success"
@@ -4914,14 +6011,14 @@ export default function FormFillingPanel({
                       ? "bg-amber-100 text-amber-900"
                       : item.tone === "danger"
                         ? "bg-red-100 text-red-800"
-                        : "bg-gray-100 text-gray-700";
+                        : "bg-brand-50 text-brand-700";
                 const textClass = isCurrent
                   ? "text-brand-900"
                   : item.tone === "success"
                     ? "text-green-900"
                     : item.tone === "danger"
                       ? "text-red-900"
-                      : "text-gray-900";
+                      : "text-brand-900";
 
                 return (
                   <li key={item.id}>
@@ -4959,7 +6056,7 @@ export default function FormFillingPanel({
                                 ? "text-green-700"
                                 : item.tone === "danger"
                                   ? "text-red-700"
-                                  : "text-gray-500"
+                                  : "text-brand-500"
                           }`}
                         >
                           {item.description}
@@ -4972,7 +6069,7 @@ export default function FormFillingPanel({
             </ol>
           </nav>
         </div>
-      </GlassSurface>
+      </SolidCard>
 
       <CaseDocumentScopePicker
         title="Form Documents"
@@ -4986,104 +6083,63 @@ export default function FormFillingPanel({
         onChange={handleFormScopeChange}
       />
 
-      <GlassSurface
-        filterId="forms-wizard-content"
+      <SolidCard
+        reading
         className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-3xl"
-        contentClassName="relative z-10 flex flex-col h-full min-h-0"
       >
-        {showUnifiedAutofillControl && (
-          <div className="shrink-0 border-b border-gray-100 bg-white/80 px-5 py-4">
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div role="status" aria-live="polite" className="min-w-0">
-                {autofillingFormQuestions ? (
-                  <div className="flex flex-col gap-1">
-                    <span className="text-sm font-medium text-purple-600">
-                      {activeFormAutofillPhaseMessage || "Procesando preguntas..."}
-                    </span>
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-400">{activeFormAutofillProgress}%</span>
-                      <div className="h-1.5 w-28 overflow-hidden rounded-full bg-purple-100">
-                        <div
-                          className="h-full rounded-full bg-gradient-to-r from-purple-500 to-blue-500 transition-[width]"
-                          style={{ width: `${activeFormAutofillProgress}%` }}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                ) : (
-                  <>
-                    <p className="text-sm font-medium text-gray-900">
-                      AI Autofill
-                    </p>
-                    <p className="text-xs text-gray-500">
-                      Completa ambas secciones con una sola ejecución usando los
-                      documentos seleccionados.
-                    </p>
-                  </>
-                )}
-              </div>
-              <button
-                type="button"
-                onClick={handleAutofillAllQuestions}
-                disabled={
-                  loadingShared ||
-                  loadingFormDetails ||
-                  autofillingFormQuestions ||
-                  !canRunFormAutofill
-                }
-                title={autofillingFormQuestions ? "Autofill in progress" : !canRunFormAutofill ? "Cannot run autofill at this time" : undefined}
-                aria-busy={autofillingFormQuestions}
-                className="group/ai relative inline-flex shrink-0 items-center gap-2 overflow-hidden rounded-xl border border-gray-700 bg-[#0B0F19] px-3 py-1.5 text-xs font-bold text-white shadow-lg transition-[background-color,border-color,color,box-shadow,opacity] hover:border-purple-500/50 hover:shadow-purple-500/25 disabled:opacity-50"
-              >
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-purple-500/20 to-transparent translate-x-[-100%] group-hover/ai:animate-[shimmer_1.5s_infinite]" />
-                {autofillingFormQuestions ? (
-                  <Loader2 className="relative z-10 h-4 w-4 animate-spin text-purple-400" />
-                ) : (
-                  <AnimatedAIBot className="relative z-10 h-4 w-4 text-purple-400" />
-                )}
-                <span className="relative z-10 tracking-wide text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-blue-400">
-                  {autofillingFormQuestions ? "ANALIZANDO..." : "AI AUTOFILL"}
-                </span>
-              </button>
-            </div>
-          </div>
-        )}
-
         {step === "client_questions" && (
           <>
             <div
               id="wizard-panel-client_questions"
-              className="shrink-0 border-b border-gray-100 bg-white/70 px-5 py-4"
+              className="shrink-0 border-b border-brand-100/80 bg-white/75 px-5 py-4"
             >
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-base font-semibold text-gray-900">
+                  <h3 className="panel-section-title">
                     Client details
                   </h3>
+                  <p className="text-sm text-brand-500">
+                    Complete shared details first, then review form-specific questions.
+                  </p>
                 </div>
-                <div className="shrink-0 min-w-[150px]">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs text-gray-400">
-                      {clientSectionCounts.filled}/{clientSectionCounts.total || 0} fields
-                    </span>
-                    <div className="w-20 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-green-500 rounded-full transition-[width]"
-                        style={{
-                          width: `${clientSectionCounts.total > 0 ? Math.round((clientSectionCounts.filled / clientSectionCounts.total) * 100) : 0}%`
-                        }}
-                      />
+                <div className="flex flex-wrap items-end gap-3">
+                  {isClientAutofillRunning ? (
+                    <AutofillProgressStatus
+                      message={activeFormAutofillPhaseMessage}
+                      progress={activeFormAutofillProgress}
+                      progressAriaLabel="Client question autofill progress"
+                    />
+                  ) : (
+                    <div className="shrink-0 min-w-[150px]">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-brand-500">
+                          {clientSectionCounts.filled}/{clientSectionCounts.total || 0} fields
+                        </span>
+                        <div className="w-20 h-1.5 bg-brand-100 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-brand-500 rounded-full transition-[width]"
+                            style={{
+                              width: `${clientSectionCounts.total > 0 ? Math.round((clientSectionCounts.filled / clientSectionCounts.total) * 100) : 0}%`
+                            }}
+                          />
+                        </div>
+                      </div>
                     </div>
-                  </div>
+                  )}
+                  {!autofillingFormQuestions && unifiedAutofillButton}
                 </div>
               </div>
             </div>
 
-            <div className={`min-h-0 flex-1 overflow-y-auto bg-gray-50 p-5 custom-scroll relative${autofillingFormQuestions ? " select-none" : ""}`}>
-              {autofillingFormQuestions && (
-                <div className="pointer-events-auto absolute inset-0 z-20 bg-white/40" aria-hidden="true" />
-              )}
-              <div className={`space-y-8${autofillingFormQuestions ? " pointer-events-none opacity-60" : ""}`}>
+            <div className="min-h-0 flex-1 overflow-y-auto bg-white/55 p-5 custom-scroll">
+              <div className="relative">
+                {isClientAutofillRunning && (
+                  <div
+                    className="pointer-events-auto absolute inset-0 z-20 min-h-full bg-brand-900/[0.06]"
+                    aria-hidden="true"
+                  />
+                )}
+                <div className={isClientAutofillRunning ? "form-fields-locked space-y-8" : "space-y-8"}>
                 <section className="space-y-4">
                   
 
@@ -5099,7 +6155,7 @@ export default function FormFillingPanel({
                         <button
                           type="button"
                           onClick={() => void loadSharedStep()}
-                          className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:border-red-300 hover:bg-red-50"
+                          className="inline-flex items-center gap-2 rounded-full border border-red-200 bg-white px-5 py-2.5 text-sm font-medium text-red-700 hover:border-red-300 hover:bg-red-50"
                         >
                           <RefreshCw aria-hidden="true" className="h-4 w-4" />
                           Retry
@@ -5108,17 +6164,17 @@ export default function FormFillingPanel({
                     />
                   ) : loadingShared ? (
                     <div
-                      className="animate-pulse space-y-4 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm"
+                      className="animate-pulse space-y-4 rounded-3xl border border-brand-100/80 bg-white/75 p-5 shadow-sm"
                       role="status"
                       aria-live="polite"
                       aria-busy="true"
                     >
                       <span className="sr-only">Loading shared questions...</span>
-                      <div className="h-4 w-1/4 rounded bg-gray-200"></div>
+                      <div className="h-4 w-1/4 rounded bg-brand-100"></div>
                       <div className="space-y-3">
-                        <div className="h-10 rounded-2xl bg-gray-100"></div>
-                        <div className="h-10 rounded-2xl bg-gray-100"></div>
-                        <div className="h-10 rounded-2xl bg-gray-100"></div>
+                        <div className="h-10 rounded-2xl bg-brand-50"></div>
+                        <div className="h-10 rounded-2xl bg-brand-50"></div>
+                        <div className="h-10 rounded-2xl bg-brand-50"></div>
                       </div>
                     </div>
                   ) : (
@@ -5132,18 +6188,18 @@ export default function FormFillingPanel({
                 </section>
 
                 <section className="space-y-4">
-                  <div className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
+                  <div className="rounded-3xl border border-brand-100/80 bg-white/75 p-5 shadow-sm">
                     <div className="flex flex-wrap items-center justify-between gap-3">
                       <div>
-                        <h4 className="mt-1 text-base font-semibold text-gray-900">
+                        <h4 className="mt-1 text-base font-semibold text-brand-900">
                           Questions by form
                         </h4>
-                        <p className="mt-1 text-sm text-gray-500">
+                        <p className="mt-1 text-sm text-brand-500">
                           Switch between forms to review only the relevant information at each moment.
                         </p>
                       </div>
                       {activeClientCounts && (
-                        <div className="rounded-2xl bg-gray-50 px-3 py-2 text-sm text-gray-600">
+                        <div className="rounded-2xl border border-brand-100 bg-brand-50/70 px-3 py-2 text-sm text-brand-700">
                           {activeClientCounts.filled}/{activeClientCounts.total || 0} fields
                         </div>
                       )}
@@ -5171,10 +6227,10 @@ export default function FormFillingPanel({
                               aria-selected={isSelected}
                               aria-controls={`client-form-panel-${form.form_type}`}
                               onClick={() => setActiveClientFormType(form.form_type)}
-                              className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2 text-sm font-medium transition ${
+                              className={`inline-flex items-center gap-2 rounded-full border px-5 py-2.5 text-sm font-medium transition ${
                                 isSelected
                                   ? "border-brand-500 bg-brand-50 text-brand-800"
-                                  : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+                                  : "border-brand-100 bg-white/75 text-brand-700 hover:border-brand-200 hover:bg-brand-50"
                               }`}
                             >
                               <span>{form.label}</span>
@@ -5182,7 +6238,7 @@ export default function FormFillingPanel({
                                 className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                                   isSelected
                                     ? "bg-brand-100 text-brand-800"
-                                    : "bg-gray-100 text-gray-700"
+                                    : "bg-brand-50 text-brand-700"
                                 }`}
                               >
                                 {counts.filled}/{counts.total || 0}
@@ -5192,7 +6248,7 @@ export default function FormFillingPanel({
                         })}
                       </div>
                     ) : (
-                      <p className="mt-4 text-sm text-gray-500">
+                      <p className="mt-4 text-sm text-brand-500">
                         There are no client questions for the available forms.
                       </p>
                     )}
@@ -5210,7 +6266,7 @@ export default function FormFillingPanel({
                         <button
                           type="button"
                           onClick={() => void loadFormTypesAndQuestions()}
-                          className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:border-red-300 hover:bg-red-50"
+                          className="inline-flex items-center gap-2 rounded-full border border-red-200 bg-white px-5 py-2.5 text-sm font-medium text-red-700 hover:border-red-300 hover:bg-red-50"
                         >
                           <RefreshCw aria-hidden="true" className="h-4 w-4" />
                           Retry
@@ -5219,17 +6275,17 @@ export default function FormFillingPanel({
                     />
                   ) : loadingFormDetails ? (
                     <div
-                      className="animate-pulse space-y-4 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm"
+                      className="animate-pulse space-y-4 rounded-3xl border border-brand-100/80 bg-white/75 p-5 shadow-sm"
                       role="status"
                       aria-live="polite"
                       aria-busy="true"
                     >
                       <span className="sr-only">Loading form questions...</span>
-                      <div className="h-3 w-1/6 rounded bg-gray-200"></div>
-                      <div className="h-5 w-1/3 rounded bg-gray-200"></div>
+                      <div className="h-3 w-1/6 rounded bg-brand-100"></div>
+                      <div className="h-5 w-1/3 rounded bg-brand-100"></div>
                       <div className="mt-4 space-y-3">
-                        <div className="h-12 rounded-2xl bg-gray-100"></div>
-                        <div className="h-12 rounded-2xl bg-gray-100"></div>
+                        <div className="h-12 rounded-2xl bg-brand-50"></div>
+                        <div className="h-12 rounded-2xl bg-brand-50"></div>
                       </div>
                     </div>
                   ) : activeClientPlan && activeClientForm ? (
@@ -5253,38 +6309,37 @@ export default function FormFillingPanel({
                   )}
                 </section>
               </div>
+              </div>
             </div>
 
-            <div className="shrink-0 border-t border-gray-100 bg-white/80 px-5 py-4">
+            <div className="shrink-0 border-t border-brand-100/80 bg-white/80 px-5 py-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div role="status" aria-live="polite" className="min-w-0 space-y-1">
                   <p
                     className={`text-sm ${
-                      autosaveStatus === "error" ? "text-red-600" : "text-gray-600"
+                      autosaveStatus === "error" ? "text-red-600" : "text-brand-600"
                     }`}
                   >
                     {getAutosaveStatusMessage()}
                   </p>
-                  {missingClientRequiredFields.length > 0 && (
-                    <p id="client-required-fields-warning" className="text-xs text-amber-700">
-                      {getClientPendingFieldsLead(missingClientRequiredFields)}
-                      {firstMissingClientRequiredField
-                        ? ` ${formatPendingFieldLabel(firstMissingClientRequiredField)}`
-                        : ""}
-                    </p>
-                  )}
                 </div>
                 <button
                   type="button"
                   onClick={handleSaveClientQuestions}
-                  aria-describedby={
-                    missingClientRequiredFields.length > 0
-                      ? "client-required-fields-warning"
-                      : undefined
+                  disabled={
+                    loadingShared ||
+                    loadingFormDetails ||
+                    savingClientQuestions ||
+                    isClientAutofillRunning
                   }
-                  disabled={loadingShared || loadingFormDetails || savingClientQuestions || autofillingFormQuestions}
-                  title={autofillingFormQuestions ? "Wait for AI autofill to finish" : loadingShared || loadingFormDetails || savingClientQuestions ? "Please wait while processing" : undefined}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-brand-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  title={
+                    isClientAutofillRunning
+                      ? "Wait for client AI autofill to finish"
+                      : loadingShared || loadingFormDetails || savingClientQuestions
+                        ? "Please wait while processing"
+                        : undefined
+                  }
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-brand-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {savingClientQuestions ? (
                     <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
@@ -5302,37 +6357,45 @@ export default function FormFillingPanel({
           <>
             <div
               id="wizard-panel-attorney_questions"
-              className="shrink-0 border-b border-gray-100 bg-white/70 px-5 py-4"
+              className="shrink-0 border-b border-brand-100/80 bg-white/75 px-5 py-4"
             >
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-base font-semibold text-gray-900">
+                  <h3 className="panel-section-title">
                     Attorney questions
                   </h3>
-                  <p className="text-sm text-gray-500">
-                    Review attorney preparation one form at a time to keep the context.
+                  <p className="text-sm text-brand-500">
+                    Complete shared preparation first, then review form-specific questions.
                   </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <div className="shrink-0 min-w-[150px]">
-                    <div className="flex items-center gap-2">
-                      <span className="text-xs text-gray-400">
-                        {attorneyCounts.filled}/{attorneyCounts.total || 0} fields
-                      </span>
-                      <div className="w-20 h-1.5 bg-gray-200 rounded-full overflow-hidden">
-                        <div
-                          className="h-full bg-green-500 rounded-full transition-[width]"
-                          style={{
-                            width: `${attorneyCounts.total > 0 ? Math.round((attorneyCounts.filled / attorneyCounts.total) * 100) : 0}%`
-                          }}
-                        />
+                <div className="flex flex-wrap items-end gap-3">
+                  {isAttorneyAutofillPhaseRunning ? (
+                    <AutofillProgressStatus
+                      message={activeFormAutofillPhaseMessage}
+                      progress={activeFormAutofillProgress}
+                      progressAriaLabel="Attorney question autofill progress"
+                    />
+                  ) : (
+                    <div className="shrink-0 min-w-[150px]">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs text-brand-500">
+                          {attorneyCounts.filled}/{attorneyCounts.total || 0} fields
+                        </span>
+                        <div className="w-20 h-1.5 bg-brand-100 rounded-full overflow-hidden">
+                          <div
+                            className="h-full bg-brand-500 rounded-full transition-[width]"
+                            style={{
+                              width: `${attorneyCounts.total > 0 ? Math.round((attorneyCounts.filled / attorneyCounts.total) * 100) : 0}%`
+                            }}
+                          />
+                        </div>
                       </div>
                     </div>
-                  </div>
+                  )}
                   <button
                     type="button"
                     onClick={() => setStep("client_questions")}
-                    className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:border-gray-300"
+                    className="inline-flex items-center gap-2 rounded-full border border-brand-100 bg-nova-snow px-5 py-2.5 text-sm font-medium text-brand-700 hover:border-brand-200 hover:bg-brand-50"
                   >
                     <ArrowLeft aria-hidden="true" className="h-4 w-4" />
                     Back to client
@@ -5341,11 +6404,19 @@ export default function FormFillingPanel({
               </div>
             </div>
 
-            <div className={`min-h-0 flex-1 overflow-y-auto bg-gray-50 p-5 custom-scroll relative${autofillingFormQuestions ? " select-none" : ""}`}>
-              {autofillingFormQuestions && (
-                <div className="pointer-events-auto absolute inset-0 z-20 bg-white/40" aria-hidden="true" />
-              )}
-              <div className={`space-y-8${autofillingFormQuestions ? " pointer-events-none opacity-60" : ""}`}>
+            <div className="min-h-0 flex-1 overflow-y-auto bg-white/55 p-5 custom-scroll">
+              <div className="relative">
+                {isAttorneyAutofillRunning && (
+                  <div
+                    className="pointer-events-auto absolute inset-0 z-20 min-h-full bg-brand-900/[0.06]"
+                    aria-hidden="true"
+                  />
+                )}
+                <div
+                  className={
+                    isAttorneyAutofillRunning ? "form-fields-locked space-y-8" : "space-y-8"
+                  }
+                >
                 {formLoadError ? (
                   <EmptyState
                     icon={AlertCircle}
@@ -5358,7 +6429,7 @@ export default function FormFillingPanel({
                       <button
                         type="button"
                         onClick={() => void loadFormTypesAndQuestions()}
-                        className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:border-red-300 hover:bg-red-50"
+                        className="inline-flex items-center gap-2 rounded-full border border-red-200 bg-white px-5 py-2.5 text-sm font-medium text-red-700 hover:border-red-300 hover:bg-red-50"
                       >
                         <RefreshCw aria-hidden="true" className="h-4 w-4" />
                         Retry
@@ -5367,32 +6438,57 @@ export default function FormFillingPanel({
                   />
                 ) : loadingFormDetails ? (
                   <div
-                    className="animate-pulse space-y-4 rounded-3xl border border-gray-200 bg-white p-5 shadow-sm"
+                    className="animate-pulse space-y-4 rounded-3xl border border-brand-100/80 bg-white/75 p-5 shadow-sm"
                     role="status"
                     aria-live="polite"
                     aria-busy="true"
                   >
                     <span className="sr-only">Loading attorney questions...</span>
-                    <div className="h-5 w-1/3 rounded bg-gray-200"></div>
+                    <div className="h-5 w-1/3 rounded bg-brand-100"></div>
                     <div className="mt-4 space-y-3">
-                      <div className="h-12 rounded-2xl bg-gray-100"></div>
-                      <div className="h-12 rounded-2xl bg-gray-100"></div>
+                      <div className="h-12 rounded-2xl bg-brand-50"></div>
+                      <div className="h-12 rounded-2xl bg-brand-50"></div>
                     </div>
                   </div>
                 ) : (
-                  <section className="space-y-4">
-                    <div className="rounded-3xl border border-gray-200 bg-white p-5 shadow-sm">
+                  <>
+                    {sharedAttorneyPages.length > 0 && (
+                      <section className="space-y-4">
+                        <div className="rounded-3xl border border-brand-100/80 bg-white/75 p-5 shadow-sm">
+                          <div>
+                            <h4 className="text-base font-semibold text-brand-900">
+                              Shared attorney questions
+                            </h4>
+                            <p className="mt-1 text-sm text-brand-500">
+                              Information that applies to multiple forms. It is reused when generating each PDF.
+                            </p>
+                          </div>
+                          <div className="mt-4">
+                            {renderQuestionnairePages(
+                              sharedAttorneyPages,
+                              sharedAttorneyAnswers,
+                              setSharedAttorneyAnswers,
+                              "No shared attorney questions are configured.",
+                              sharedAttorneyAnswers
+                            )}
+                          </div>
+                        </div>
+                      </section>
+                    )}
+
+                    <section className="space-y-4">
+                    <div className="rounded-3xl border border-brand-100/80 bg-white/75 p-5 shadow-sm">
                       <div className="flex flex-wrap items-center justify-between gap-3">
                         <div>
-                          <h4 className="mt-1 text-base font-semibold text-gray-900">
+                          <h4 className="mt-1 text-base font-semibold text-brand-900">
                             Questions by form
                           </h4>
-                          <p className="mt-1 text-sm text-gray-500">
+                          <p className="mt-1 text-sm text-brand-500">
                             Switch between forms to complete only the preparation that belongs to each one.
                           </p>
                         </div>
                         {activeAttorneyCounts && (
-                          <div className="rounded-2xl bg-gray-50 px-3 py-2 text-sm text-gray-600">
+                          <div className="rounded-2xl border border-brand-100 bg-brand-50/70 px-3 py-2 text-sm text-brand-700">
                             {activeAttorneyCounts.filled}/{activeAttorneyCounts.total || 0} fields
                           </div>
                         )}
@@ -5420,10 +6516,10 @@ export default function FormFillingPanel({
                                 aria-selected={isSelected}
                                 aria-controls={`attorney-form-panel-${form.form_type}`}
                                 onClick={() => setActiveAttorneyFormType(form.form_type)}
-                                className={`inline-flex items-center gap-2 rounded-2xl border px-4 py-2 text-sm font-medium transition ${
+                                className={`inline-flex items-center gap-2 rounded-full border px-5 py-2.5 text-sm font-medium transition ${
                                   isSelected
                                     ? "border-brand-500 bg-brand-50 text-brand-800"
-                                    : "border-gray-200 bg-white text-gray-700 hover:border-gray-300"
+                                    : "border-brand-100 bg-white/75 text-brand-700 hover:border-brand-200 hover:bg-brand-50"
                                 }`}
                               >
                                 <span>{form.label}</span>
@@ -5431,7 +6527,7 @@ export default function FormFillingPanel({
                                   className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${
                                     isSelected
                                       ? "bg-brand-100 text-brand-800"
-                                      : "bg-gray-100 text-gray-700"
+                                      : "bg-brand-50 text-brand-700"
                                   }`}
                                 >
                                   {counts.filled}/{counts.total || 0}
@@ -5441,7 +6537,7 @@ export default function FormFillingPanel({
                           })}
                         </div>
                       ) : (
-                        <p className="mt-4 text-sm text-gray-500">
+                        <p className="mt-4 text-sm text-brand-500">
                           There are no attorney questions for the available forms.
                         </p>
                       )}
@@ -5457,7 +6553,8 @@ export default function FormFillingPanel({
                           activeAttorneyPages,
                           formAnswers,
                           setFormAnswers,
-                          "There are no attorney questions for this form."
+                          "There are no attorney questions for this form.",
+                          sharedAttorneyAnswers
                         )}
                       </div>
                     ) : (
@@ -5467,30 +6564,42 @@ export default function FormFillingPanel({
                       />
                     )}
                   </section>
+                  </>
                 )}
+              </div>
               </div>
             </div>
 
-            <div className="shrink-0 border-t border-gray-100 bg-white/80 px-5 py-4">
+            <div className="shrink-0 border-t border-brand-100/80 bg-white/80 px-5 py-4">
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
                 <div role="status" aria-live="polite" className="min-w-0 space-y-1">
                   <p
                     className={`text-sm ${
-                      autosaveStatus === "error" ? "text-red-600" : "text-gray-600"
+                      autosaveStatus === "error" ? "text-red-600" : "text-brand-600"
                     }`}
                   >
                     {getAutosaveStatusMessage()}
                   </p>
-                  <p className="text-xs text-gray-500">
+                  <p className="text-xs text-brand-500">
                     Confirm when you want to move to generation and preview.
                   </p>
                 </div>
                 <button
                   type="button"
                   onClick={handleSaveAttorneyQuestions}
-                      disabled={loadingFormDetails || savingAttorneyQuestions || autofillingFormQuestions}
-                      title={autofillingFormQuestions ? "Wait for AI autofill to finish" : loadingFormDetails || savingAttorneyQuestions ? "Please wait while processing" : undefined}
-                  className="inline-flex items-center justify-center gap-2 rounded-2xl bg-brand-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+                  disabled={
+                    loadingFormDetails ||
+                    savingAttorneyQuestions ||
+                    isAttorneyAutofillRunning
+                  }
+                  title={
+                    isAttorneyAutofillRunning
+                      ? "Wait for attorney AI autofill to finish"
+                      : loadingFormDetails || savingAttorneyQuestions
+                        ? "Please wait while processing"
+                        : undefined
+                  }
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-brand-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   {savingAttorneyQuestions ? (
                     <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
@@ -5509,14 +6618,14 @@ export default function FormFillingPanel({
             id="wizard-panel-preview"
             className="grid min-h-0 flex-1 gap-0 lg:grid-cols-[minmax(0,1fr)_340px]"
           >
-            <div className="flex min-h-0 flex-col border-b border-gray-100 lg:border-b-0 lg:border-r">
-              <div className="border-b border-gray-100 bg-white/70 px-5 py-4">
+            <div className="flex min-h-0 flex-col border-b border-brand-100/80 lg:border-b-0 lg:border-r lg:border-brand-100/80">
+              <div className="border-b border-brand-100/80 bg-white/75 px-5 py-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
-                    <h3 className="text-base font-semibold text-gray-900">
+                    <h3 className="panel-section-title">
                       Generate & Preview
                     </h3>
-                    <p className="text-sm text-gray-500">
+                    <p className="text-sm text-brand-500">
                       Generate new PDFs or review the status in the history.
                     </p>
                   </div>
@@ -5525,7 +6634,7 @@ export default function FormFillingPanel({
                     <button
                       type="button"
                       onClick={handleEditCurrentForm}
-                      className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:border-gray-300"
+                      className="inline-flex items-center gap-2 rounded-full border border-brand-100 bg-nova-snow px-5 py-2.5 text-sm font-medium text-brand-700 hover:border-brand-200 hover:bg-brand-50"
                     >
                       <ArrowLeft aria-hidden="true" className="h-4 w-4" />
                       Edit answers
@@ -5535,7 +6644,7 @@ export default function FormFillingPanel({
                       onClick={handleRegenerate}
                       disabled={!job || job.status === "queued" || job.status === "running" || regeneratingJob}
                       title={!job || job.status === "queued" || job.status === "running" || regeneratingJob ? "Wait for the current process to finish" : undefined}
-                      className="inline-flex items-center gap-2 rounded-2xl border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:border-gray-300 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="inline-flex items-center gap-2 rounded-full border border-brand-100 bg-nova-snow px-5 py-2.5 text-sm font-medium text-brand-700 hover:border-brand-200 hover:bg-brand-50 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       {regeneratingJob ? (
                         <Loader2 aria-hidden="true" className="h-4 w-4 animate-spin" />
@@ -5556,7 +6665,7 @@ export default function FormFillingPanel({
                       }
                       disabled={!job || job.status !== "completed" || !job.filled_pdf_path}
                       title={!job || job.status !== "completed" || !job.filled_pdf_path ? "PDF is not ready for download" : undefined}
-                      className="inline-flex items-center gap-2 rounded-2xl bg-brand-600 px-4 py-2 text-sm font-medium text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
+                      className="inline-flex items-center gap-2 rounded-full bg-brand-600 px-5 py-2.5 text-sm font-medium text-white transition hover:bg-brand-700 disabled:cursor-not-allowed disabled:opacity-50"
                     >
                       <FileDown aria-hidden="true" className="h-4 w-4" />
                       Download
@@ -5565,9 +6674,9 @@ export default function FormFillingPanel({
                 </div>
 
                 <div className="mt-4 flex flex-wrap items-center gap-2">
-                  <span className="text-sm font-medium text-gray-700">Generate new form:</span>
+                  <span className="text-sm font-medium text-brand-700">Generate new form:</span>
                   <select
-                    className="rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500"
+                    className="rounded-lg border-brand-100 bg-nova-snow text-sm text-brand-800 focus:border-brand-500 focus:ring-brand-500"
                     value={selectedArea}
                     onChange={(e) => {
                       setSelectedArea(e.target.value as "Todas" | "Visa T" | "SIJS");
@@ -5581,7 +6690,7 @@ export default function FormFillingPanel({
                   
                   <div className="flex items-center gap-2">
                     <select
-                      className="rounded-lg border-gray-300 text-sm focus:border-brand-500 focus:ring-brand-500 min-w-[200px]"
+                      className="rounded-lg border-brand-100 bg-nova-snow text-sm text-brand-800 focus:border-brand-500 focus:ring-brand-500 min-w-[200px]"
                       value={selectedFormToGenerate}
                       onChange={(e) => setSelectedFormToGenerate(e.target.value)}
                     >
@@ -5606,7 +6715,7 @@ export default function FormFillingPanel({
                       onClick={() => handleGenerate(selectedFormToGenerate)}
                       disabled={!selectedFormToGenerate || Boolean(generatingFormType)}
                       title={generatingFormType ? "A form is currently being generated" : undefined}
-                      className="inline-flex items-center gap-2 rounded-xl bg-brand-50 px-3 py-1.5 text-sm font-medium text-brand-800 border border-brand-200 hover:bg-brand-100 disabled:opacity-50 transition"
+                      className="inline-flex items-center gap-2 rounded-full bg-brand-50 px-4 py-2 text-sm font-medium text-brand-800 border border-brand-200 hover:bg-brand-100 disabled:opacity-50 transition"
                     >
                       {generatingFormType ? (
                         <Loader2 aria-hidden="true" className="h-3.5 w-3.5 animate-spin" />
@@ -5619,11 +6728,11 @@ export default function FormFillingPanel({
                 </div>
 
                 {job && (
-                  <div className="mt-4 rounded-2xl border border-gray-200 bg-white p-4">
+                  <div className="mt-4 rounded-2xl border border-brand-100/80 bg-white/75 p-4">
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <p className="text-lg font-semibold text-gray-900">
+                          <p className="text-lg font-semibold text-brand-900">
                             {job.form_type ? job.form_type.toUpperCase() : "Form"}
                           </p>
                           <span
@@ -5640,12 +6749,12 @@ export default function FormFillingPanel({
                             {job.status}
                           </span>
                         </div>
-                        <p className="text-sm text-gray-600">{getJobPhaseLabel(job)}</p>
-                        <p className="text-xs text-gray-500">
+                        <p className="text-sm text-brand-600">{getJobPhaseLabel(job)}</p>
+                        <p className="text-xs text-brand-500">
                           {getJobTimestampLabel(job)}: {formatDateLabel(getJobDisplayTimestamp(job))}
                         </p>
                       </div>
-                      <div className="rounded-2xl bg-gray-50 px-3 py-2 text-sm text-gray-600">
+                      <div className="rounded-2xl border border-brand-100 bg-brand-50/70 px-3 py-2 text-sm text-brand-700">
                         {job.progress_pct.toFixed(0)}% complete
                       </div>
                     </div>
@@ -5653,7 +6762,7 @@ export default function FormFillingPanel({
                     {(job.status === "queued" || job.status === "running") && (
                       <div className="mt-4">
                         <div
-                          className="h-2 overflow-hidden rounded-full bg-gray-100"
+                          className="h-2 overflow-hidden rounded-full bg-brand-100"
                           role="progressbar"
                           aria-label="Active form progress"
                           aria-valuemin={0}
@@ -5674,13 +6783,33 @@ export default function FormFillingPanel({
                         <p className="whitespace-pre-wrap">{job.error_message}</p>
                       </div>
                     )}
+
+                    {(() => {
+                      const warning = getGenerationValidationWarningSummary(job);
+                      if (!warning) {
+                        return null;
+                      }
+                      return (
+                        <div className="mt-4 flex items-start gap-2 rounded-2xl border border-amber-100 bg-amber-50 p-3 text-sm text-amber-900">
+                          <AlertCircle aria-hidden="true" className="mt-0.5 h-4 w-4 shrink-0" />
+                          <div>
+                            <p className="font-medium">
+                              {warning.missingRequiredCount > 0
+                                ? `${warning.missingRequiredCount} required field${warning.missingRequiredCount === 1 ? "" : "s"} missing`
+                                : `${warning.validationIssueCount} validation issue${warning.validationIssueCount === 1 ? "" : "s"} found`}
+                            </p>
+                            <p className="mt-1">{warning.message}</p>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                 )}
               </div>
 
               <div
                 id="form-preview-panel"
-                className="min-h-[720px] flex-1 bg-gray-50 p-5 lg:min-h-[780px]"
+                className="min-h-[720px] flex-1 bg-white/55 p-5 lg:min-h-[780px]"
               >
                 {!activeJobId && !loadingJobs && jobsLoadError && (
                   <EmptyState
@@ -5694,7 +6823,7 @@ export default function FormFillingPanel({
                       <button
                         type="button"
                         onClick={() => void loadJobs(true, false)}
-                        className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:border-red-300 hover:bg-red-50"
+                        className="inline-flex items-center gap-2 rounded-full border border-red-200 bg-white px-5 py-2.5 text-sm font-medium text-red-700 hover:border-red-300 hover:bg-red-50"
                       >
                         <RefreshCw aria-hidden="true" className="h-4 w-4" />
                         Retry history
@@ -5714,7 +6843,7 @@ export default function FormFillingPanel({
 
                 {activeJobId && loadingJobDetails && !job && (
                   <div
-                    className="h-full min-h-[320px] animate-pulse overflow-hidden rounded-3xl border border-gray-200 bg-gray-50 p-8"
+                    className="h-full min-h-[320px] animate-pulse overflow-hidden rounded-3xl border border-brand-100/80 bg-white/60 p-8"
                     role="status"
                     aria-live="polite"
                     aria-busy="true"
@@ -5733,20 +6862,22 @@ export default function FormFillingPanel({
                     role="alert"
                     className="min-h-[320px] bg-white"
                     action={
-                      <button
+                      <LoadingButton
                         type="button"
                         onClick={() => void handleRefreshActiveJob()}
-                        className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:border-red-300 hover:bg-red-50"
+                        loading={refreshingJob}
+                        loadingLabel="Retrying…"
+                        className="inline-flex items-center justify-center gap-2 rounded-full border border-red-200 bg-white px-5 py-2.5 text-sm font-medium text-red-700 hover:border-red-300 hover:bg-red-50 disabled:opacity-50"
                       >
                         <RefreshCw aria-hidden="true" className="h-4 w-4" />
                         Retry details
-                      </button>
+                      </LoadingButton>
                     }
                   />
                 )}
 
                 {job && (
-                  <div className="h-full min-h-[680px] overflow-hidden rounded-3xl border border-gray-200 bg-white lg:min-h-[740px]">
+                  <div className="h-full min-h-[680px] overflow-hidden rounded-3xl border border-brand-100/80 bg-white/75 lg:min-h-[740px]">
                     {pdfPreviewUrl ? (
                       <iframe
                         src={pdfPreviewUrl}
@@ -5759,12 +6890,12 @@ export default function FormFillingPanel({
                         role="status"
                         aria-live="polite"
                       >
-                        <div className="space-y-3 text-gray-500">
+                        <div className="space-y-3 text-brand-500">
                           <Loader2
                             aria-hidden="true"
                             className="mx-auto h-8 w-8 animate-spin text-brand-600"
                           />
-                          <p className="text-sm">Loading PDF preview...</p>
+                          <p className="text-sm text-brand-500">Loading PDF preview...</p>
                         </div>
                       </div>
                     ) : job.status === "completed" && previewLoadError ? (
@@ -5780,7 +6911,7 @@ export default function FormFillingPanel({
                           <button
                             type="button"
                             onClick={() => setPreviewRetryCount((count) => count + 1)}
-                            className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:border-red-300 hover:bg-red-50"
+                            className="inline-flex items-center gap-2 rounded-full border border-red-200 bg-white px-5 py-2.5 text-sm font-medium text-red-700 hover:border-red-300 hover:bg-red-50"
                           >
                             <RefreshCw aria-hidden="true" className="h-4 w-4" />
                             Retry preview
@@ -5817,12 +6948,12 @@ export default function FormFillingPanel({
               </div>
             </div>
 
-            <aside className="flex min-h-0 flex-col bg-white/70">
-              <div className="border-b border-gray-100 px-5 py-4">
-                <h3 className="text-sm font-semibold uppercase tracking-wide text-gray-700">
+            <aside className="flex min-h-0 flex-col bg-white/75">
+              <div className="border-b border-brand-100/80 px-5 py-4">
+                <h3 className="text-sm font-semibold uppercase tracking-wide text-brand-700">
                   Form history
                 </h3>
-                <p className="mt-1 text-sm text-gray-500">
+                <p className="mt-1 text-sm text-brand-500">
                   Select any previous generation to review its status or download it.
                 </p>
               </div>
@@ -5837,7 +6968,7 @@ export default function FormFillingPanel({
                   >
                     <span className="sr-only">Loading form history...</span>
                     {[1, 2, 3].map((i) => (
-                      <div key={i} className="h-24 w-full animate-pulse rounded-2xl border border-gray-200 bg-gray-50"></div>
+                      <div key={i} className="h-24 w-full animate-pulse rounded-2xl border border-brand-100/80 bg-white/60"></div>
                     ))}
                   </div>
                 ) : jobsLoadError ? (
@@ -5851,7 +6982,7 @@ export default function FormFillingPanel({
                       <button
                         type="button"
                         onClick={() => void loadJobs(true, false)}
-                        className="inline-flex items-center gap-2 rounded-xl border border-red-200 bg-white px-4 py-2 text-sm font-medium text-red-700 hover:border-red-300 hover:bg-red-50"
+                        className="inline-flex items-center gap-2 rounded-full border border-red-200 bg-white px-5 py-2.5 text-sm font-medium text-red-700 hover:border-red-300 hover:bg-red-50"
                       >
                         <RefreshCw aria-hidden="true" className="h-4 w-4" />
                         Retry
@@ -5868,7 +6999,7 @@ export default function FormFillingPanel({
                         className={`rounded-2xl border p-2 transition ${
                           historyJob.id === activeJobId
                             ? "border-brand-500 bg-brand-50"
-                            : "border-gray-200 bg-white hover:border-gray-300"
+                            : "border-brand-100 bg-white/75 hover:border-brand-200 hover:bg-brand-50"
                         }`}
                       >
                         <div className="flex items-start gap-2">
@@ -5884,12 +7015,12 @@ export default function FormFillingPanel({
                           >
                             <div className="flex items-start justify-between gap-3">
                               <div className="min-w-0">
-                                <p className="truncate text-sm font-semibold text-gray-900">
+                                <p className="truncate text-sm font-semibold text-brand-900">
                                   {historyJob.form_type
                                     ? historyJob.form_type.toUpperCase()
                                     : "Form"}
                                 </p>
-                                <p className="mt-1 text-xs text-gray-500">
+                                <p className="mt-1 text-xs text-brand-500">
                                   {getJobTimestampLabel(historyJob)}: {formatDateLabel(getJobDisplayTimestamp(historyJob))}
                                 </p>
                               </div>
@@ -5922,7 +7053,7 @@ export default function FormFillingPanel({
                               </div>
                             </div>
 
-                            <div className="mt-3 flex items-center justify-between text-xs text-gray-500">
+                            <div className="mt-3 flex items-center justify-between text-xs text-brand-500">
                               <span>{getJobPhaseLabel(historyJob)}</span>
                               <span>{historyJob.progress_pct.toFixed(0)}%</span>
                             </div>
@@ -5930,7 +7061,7 @@ export default function FormFillingPanel({
                             {(historyJob.status === "queued" ||
                               historyJob.status === "running") && (
                               <div
-                                className="mt-2 h-1.5 overflow-hidden rounded-full bg-gray-100"
+                                className="mt-2 h-1.5 overflow-hidden rounded-full bg-brand-100"
                                 role="progressbar"
                                 aria-label={`Progress for ${
                                   historyJob.form_type || "form"
@@ -5945,12 +7076,73 @@ export default function FormFillingPanel({
                                 />
                               </div>
                             )}
+
+                            {(() => {
+                              const warning = getGenerationValidationWarningSummary(historyJob);
+                              if (!warning) {
+                                return null;
+                              }
+                              const count =
+                                warning.missingRequiredCount || warning.validationIssueCount;
+                              return (
+                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                  <span
+                                    className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-800"
+                                    title={warning.message}
+                                  >
+                                    {count} pending field{count === 1 ? "" : "s"}
+                                  </span>
+                                </div>
+                              );
+                            })()}
+
+                            {(() => {
+                              const summary = getPart9ContinuationSummary(historyJob);
+                              if (!summary) {
+                                return null;
+                              }
+                              const sheetSuffix = summary.pagesAdded === 1 ? "" : "s";
+                              const truncatedTitle = summary.truncatedEntries.length
+                                ? summary.truncatedEntries
+                                    .map((entry) => {
+                                      const part = entry.part_number || "?";
+                                      const item = entry.item_number || "?";
+                                      const num = entry.entry_number ? ` (entrada ${entry.entry_number})` : "";
+                                      return `Part ${part} Item ${item}${num}`;
+                                    })
+                                    .join("\n")
+                                : undefined;
+                              return (
+                                <div className="mt-2 flex flex-wrap gap-1.5">
+                                  <span
+                                    className="inline-flex items-center rounded-full border border-indigo-200 bg-indigo-50 px-2 py-0.5 text-[10px] font-medium text-indigo-700"
+                                    title={`${summary.entriesCount} entradas de Part 9 escritas en hojas de continuacion`}
+                                  >
+                                    +{summary.pagesAdded} hoja{sheetSuffix} Part 9
+                                  </span>
+                                  {summary.truncatedCount > 0 && (
+                                    <span
+                                      className="inline-flex items-center rounded-full border border-red-200 bg-red-50 px-2 py-0.5 text-[10px] font-medium text-red-700"
+                                      title={truncatedTitle}
+                                    >
+                                      {summary.truncatedCount} narrativa
+                                      {summary.truncatedCount === 1 ? "" : "s"} truncada
+                                      {summary.truncatedCount === 1 ? "" : "s"}
+                                    </span>
+                                  )}
+                                </div>
+                              );
+                            })()}
                           </button>
 
-                          <button
+                          <LoadingButton
                             type="button"
                             onClick={(event) => handleDeleteJob(historyJob.id, event)}
-                            className="mt-2 rounded-lg p-2 text-gray-400 hover:bg-red-50 hover:text-red-500"
+                            disabled={deletingJobIds.has(historyJob.id)}
+                            loading={deletingJobIds.has(historyJob.id)}
+                            spinnerClassName="h-4 w-4"
+                            hideContentWhenLoading
+                            className="mt-2 inline-flex h-8 w-8 items-center justify-center rounded-full text-brand-400 hover:bg-red-50 hover:text-red-500 disabled:opacity-50 disabled:cursor-not-allowed"
                             title="Delete form"
                             aria-label={`Delete ${
                               historyJob.form_type
@@ -5959,7 +7151,7 @@ export default function FormFillingPanel({
                             } from history`}
                           >
                             <X aria-hidden="true" className="h-4 w-4" />
-                          </button>
+                          </LoadingButton>
                         </div>
                       </li>
                     ))}
@@ -5969,7 +7161,7 @@ export default function FormFillingPanel({
             </aside>
           </div>
         )}
-      </GlassSurface>
+      </SolidCard>
     </div>
   );
 }

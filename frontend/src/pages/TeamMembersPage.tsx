@@ -10,6 +10,7 @@ import {
   type RoleDetail,
 } from "../api/client";
 import { useAuth } from "../contexts/AuthContext";
+import { LoadingButton } from "../components/ui/LoadingButton";
 
 export default function TeamMembersPage() {
   const { user: currentUser } = useAuth();
@@ -243,21 +244,23 @@ export default function TeamMembersPage() {
               </label>
 
               <div className="pt-2 flex items-center justify-end gap-2">
-                <button
+                <LoadingButton
                   type="button"
                   onClick={closeModal}
                   disabled={saving}
-                  className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  className="inline-flex items-center justify-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
                 >
                   Cancelar
-                </button>
-                <button
+                </LoadingButton>
+                <LoadingButton
                   type="submit"
                   disabled={saving || selectedRoleId == null}
-                  className="rounded-lg bg-brand-600 px-3 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
+                  loading={saving}
+                  loadingLabel="Guardando…"
+                  className="inline-flex items-center justify-center gap-2 rounded-full bg-brand-600 px-4 py-2 text-sm font-medium text-white hover:bg-brand-700 disabled:opacity-50"
                 >
-                  {saving ? "Guardando…" : "Guardar cambios"}
-                </button>
+                  Guardar cambios
+                </LoadingButton>
               </div>
             </form>
           </div>
@@ -282,22 +285,24 @@ export default function TeamMembersPage() {
               </p>
             </div>
             <div className="px-5 py-4 flex items-center justify-end gap-2 border-t border-gray-100">
-              <button
+              <LoadingButton
                 type="button"
                 onClick={closeDeleteConfirm}
                 disabled={deleting}
-                className="rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50"
+                className="inline-flex items-center justify-center gap-2 rounded-full border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 disabled:opacity-50"
               >
                 Cancelar
-              </button>
-              <button
+              </LoadingButton>
+              <LoadingButton
                 type="button"
                 onClick={handleConfirmDelete}
                 disabled={deleting}
-                className="rounded-lg px-3 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
+                loading={deleting}
+                loadingLabel="Eliminando…"
+                className="inline-flex items-center justify-center gap-2 rounded-full px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 disabled:opacity-50"
               >
-                {deleting ? "Eliminando…" : "Eliminar"}
-              </button>
+                Eliminar
+              </LoadingButton>
             </div>
           </div>
         </div>

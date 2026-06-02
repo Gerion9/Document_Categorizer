@@ -15,13 +15,13 @@ export function AnimatedReport({ className = "w-10 h-10" }: Props) {
       whileHover="hover"
     >
       <defs>
-        <linearGradient id="report-green" x1="0%" y1="0%" x2="100%" y2="100%">
+        <linearGradient id="report-green" x1="100%" y1="0%" x2="0%" y2="100%">
           <stop offset="0%" stopColor="#10b981" /> {/* emerald-500 */}
           <stop offset="100%" stopColor="#059669" /> {/* emerald-600 */}
         </linearGradient>
-        <linearGradient id="report-purple" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#a855f7" /> {/* purple-500 */}
-          <stop offset="100%" stopColor="#7c3aed" /> {/* purple-600 */}
+        <linearGradient id="report-purple" x1="100%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#bd9655" />
+          <stop offset="100%" stopColor="#143457" />
         </linearGradient>
       </defs>
 
@@ -88,7 +88,9 @@ export function AnimatedReport({ className = "w-10 h-10" }: Props) {
           hover: { scale: 1.1, y: -2 }
         }}
       />
-      <motion.line x1="55" y1="45" x2="70" y2="45" stroke="#d1d5db" strokeWidth="4" strokeLinecap="round" variants={{ animate: { y: [0, -2, 0], transition: { duration: 4, repeat: Infinity, ease: "easeInOut" } } }} />
+      <motion.g variants={{ animate: { y: [0, -2, 0], transition: { duration: 4, repeat: Infinity, ease: "easeInOut" } } }}>
+        <line x1="55" y1="45" x2="70" y2="45" stroke="#d1d5db" strokeWidth="4" strokeLinecap="round" />
+      </motion.g>
 
       <motion.path
         d="M 30 65 L 35 70 L 45 60"
@@ -107,7 +109,9 @@ export function AnimatedReport({ className = "w-10 h-10" }: Props) {
           hover: { scale: 1.1, y: -2 }
         }}
       />
-      <motion.line x1="55" y1="65" x2="70" y2="65" stroke="#d1d5db" strokeWidth="4" strokeLinecap="round" variants={{ animate: { y: [0, -2, 0], transition: { duration: 4, repeat: Infinity, ease: "easeInOut" } } }} />
+      <motion.g variants={{ animate: { y: [0, -2, 0], transition: { duration: 4, repeat: Infinity, ease: "easeInOut" } } }}>
+        <line x1="55" y1="65" x2="70" y2="65" stroke="#d1d5db" strokeWidth="4" strokeLinecap="round" />
+      </motion.g>
 
       {/* AI Bot eye / stamp */}
       <motion.circle

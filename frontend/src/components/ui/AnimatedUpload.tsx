@@ -16,13 +16,13 @@ export function AnimatedUpload({ className = "w-12 h-12", isDragging = false }: 
       whileHover="hover"
     >
       <defs>
-        <linearGradient id="upload-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
-          <stop offset="0%" stopColor="#60a5fa" /> {/* blue-400 */}
-          <stop offset="100%" stopColor="#3b82f6" /> {/* blue-500 */}
+        <linearGradient id="upload-gradient" x1="100%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#5a8ab8" /> {/* brand-400 */}
+          <stop offset="100%" stopColor="#143457" /> {/* brand-600 */}
         </linearGradient>
-        <linearGradient id="cloud-gradient" x1="0%" y1="0%" x2="0%" y2="100%">
-          <stop offset="0%" stopColor="#bfdbfe" /> {/* blue-200 */}
-          <stop offset="100%" stopColor="#eff6ff" /> {/* blue-50 */}
+        <linearGradient id="cloud-gradient" x1="100%" y1="0%" x2="0%" y2="100%">
+          <stop offset="0%" stopColor="#d4e4f0" /> {/* brand-100 */}
+          <stop offset="100%" stopColor="#e8f1f8" /> {/* nova-ice */}
         </linearGradient>
       </defs>
 
@@ -51,6 +51,7 @@ export function AnimatedUpload({ className = "w-12 h-12", isDragging = false }: 
         strokeWidth="6"
         strokeLinecap="round"
         variants={{
+          initial: { y1: 75, y2: 45 },
           animate: { y1: 75, y2: 45, transition: { duration: 2, repeat: Infinity, ease: "easeInOut" } },
           hover: { y1: 70, y2: 40, transition: { duration: 0.3 } },
           dragging: { y1: 65, y2: 35, strokeDasharray: "10 5", transition: { duration: 0.5, repeat: Infinity, ease: "linear" } }
@@ -79,7 +80,7 @@ export function AnimatedUpload({ className = "w-12 h-12", isDragging = false }: 
         width="6"
         height="8"
         rx="1"
-        fill="#93c5fd"
+        fill="#8fb3d0"
         variants={{
           animate: { y: [0, -40], opacity: [0, 1, 0], scale: [0.5, 1, 0.5], transition: { duration: 2.5, repeat: Infinity, ease: "easeOut", delay: 0 } },
           dragging: { y: [0, -50], opacity: [0, 1, 0], scale: [0.8, 1.2, 0.8], transition: { duration: 1.5, repeat: Infinity, ease: "easeOut", delay: 0 } }
@@ -91,7 +92,7 @@ export function AnimatedUpload({ className = "w-12 h-12", isDragging = false }: 
         width="8"
         height="10"
         rx="2"
-        fill="#bfdbfe"
+        fill="#d4e4f0"
         variants={{
           animate: { y: [0, -45], opacity: [0, 1, 0], scale: [0.5, 1, 0.5], transition: { duration: 3, repeat: Infinity, ease: "easeOut", delay: 1 } },
           dragging: { y: [0, -55], opacity: [0, 1, 0], scale: [0.8, 1.2, 0.8], transition: { duration: 1.8, repeat: Infinity, ease: "easeOut", delay: 0.5 } }

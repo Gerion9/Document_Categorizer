@@ -15,7 +15,7 @@ export function AnimatedBriefcase({ className = "w-10 h-10" }: Props) {
       whileHover="hover"
     >
       <defs>
-        <linearGradient id="briefcase-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+        <linearGradient id="briefcase-gradient" x1="100%" y1="0%" x2="0%" y2="100%">
           <stop offset="0%" stopColor="#4f46e5" /> {/* indigo-600 */}
           <stop offset="100%" stopColor="#818cf8" /> {/* blue-400 */}
         </linearGradient>
@@ -65,18 +65,21 @@ export function AnimatedBriefcase({ className = "w-10 h-10" }: Props) {
       />
 
       {/* Horizontal line */}
-      <motion.line
-        x1="15"
-        y1="40"
-        x2="85"
-        y2="40"
-        stroke="url(#briefcase-gradient)"
-        strokeWidth="3"
+      <motion.g
         variants={{
           animate: { y: [0, -3, 0], rotate: [0, 1, -1, 0], transition: { duration: 4, repeat: Infinity, ease: "easeInOut" } },
           hover: { scale: 1.05, y: -2, transition: { duration: 0.3 } }
         }}
-      />
+      >
+        <line
+          x1="15"
+          y1="40"
+          x2="85"
+          y2="40"
+          stroke="url(#briefcase-gradient)"
+          strokeWidth="3"
+        />
+      </motion.g>
       
       {/* Sparkles around the briefcase */}
       <motion.circle

@@ -68,6 +68,8 @@ interface Props {
   onToggleSelectAll?: (pageIds: string[], selected: boolean) => void;
   /** If true, renders a simpler style (used for special zones like "extra", "unclassified") */
   isSpecialZone?: boolean;
+  /** Stretch to fill the parent height (e.g. unclassified sidebar). */
+  fillHeight?: boolean;
 }
 
 function SectionDropZone({
@@ -83,6 +85,7 @@ function SectionDropZone({
   onToggleSelectPage,
   onToggleSelectAll,
   isSpecialZone = false,
+  fillHeight = false,
 }: Props) {
   const { setNodeRef, isOver } = useDroppable({ id: sectionId });
 
@@ -108,7 +111,9 @@ function SectionDropZone({
           backgroundColor: isOver ? "rgba(255, 251, 235, 0.4)" : "rgba(255, 255, 255, 0.2)",
         }}
         transition={{ duration: 0.2 }}
-        className="rounded-xl border border-dashed p-3 shadow-sm glass-fallback h-full min-h-[160px] overflow-hidden flex flex-col"
+        className={`rounded-xl border border-dashed p-3 shadow-sm solid-panel min-h-[140px] overflow-hidden flex flex-col ${
+          fillHeight ? "h-full" : ""
+        }`}
       >
         {label && label !== "" && (
           <div className="flex items-center justify-between mb-2 shrink-0">
@@ -172,7 +177,7 @@ function SectionDropZone({
         backgroundColor: isOver ? dc.bg : "rgba(255, 255, 255, 0.3)",
       }}
       transition={{ duration: 0.2 }}
-      className="rounded-xl border p-3 shadow-sm transition-shadow hover:shadow-glass glass-fallback"
+      className="rounded-xl border p-3 shadow-sm transition-shadow hover:shadow-md solid-panel"
       style={{
         marginLeft: depth > 0 ? `${depth * 16}px` : undefined,
         borderStyle: pages.length === 0 ? "dashed" : "solid",
@@ -225,7 +230,7 @@ function SectionDropZone({
             ? `${pages.length} pág${pages.length !== 1 ? "s" : ""}`
             : "vacío"}
           {pages.length > 0 && extractedCount > 0 && (
-            <span className="ml-1 text-purple-500">
+            <span className="ml-1 text-brand-600">
               ({extractedCount} ext.)
             </span>
           )}

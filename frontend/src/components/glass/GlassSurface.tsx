@@ -37,7 +37,8 @@ export const GlassSurface = React.forwardRef<HTMLElement, GlassSurfaceProps>(
         className={`${baseClass} shadow-glass border border-glass-border overflow-hidden relative ${className}`}
         {...props}
       >
-        <div className="absolute inset-0 rounded-inherit border-t border-l border-white/40 pointer-events-none mix-blend-overlay"></div>
+        <div className="absolute inset-0 rounded-inherit glass-edge-top pointer-events-none"></div>
+        <div className="absolute inset-0 rounded-inherit border-t border-l border-white/30 pointer-events-none mix-blend-overlay"></div>
         <div className={contentClassName}>{children}</div>
       </Component>
     );

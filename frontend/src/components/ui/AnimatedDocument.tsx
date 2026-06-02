@@ -15,7 +15,7 @@ export function AnimatedDocument({ className = "w-10 h-10" }: Props) {
       whileHover="hover"
     >
       <defs>
-        <linearGradient id="doc-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+        <linearGradient id="doc-gradient" x1="100%" y1="0%" x2="0%" y2="100%">
           <stop offset="0%" stopColor="#3b82f6" /> {/* blue-500 */}
           <stop offset="100%" stopColor="#60a5fa" /> {/* blue-400 */}
         </linearGradient>
@@ -48,42 +48,63 @@ export function AnimatedDocument({ className = "w-10 h-10" }: Props) {
       />
 
       {/* Text Lines */}
-      <motion.line
-        x1="35"
-        y1="45"
-        x2="65"
-        y2="45"
-        stroke="#9ca3af"
-        strokeWidth="4"
-        strokeLinecap="round"
+      <motion.g
         variants={{
-          animate: { x2: [65, 55, 65], y: [0, -3, 0], transition: { duration: 4, repeat: Infinity, ease: "easeInOut" } },
+          animate: { y: [0, -3, 0], transition: { duration: 4, repeat: Infinity, ease: "easeInOut" } },
         }}
-      />
-      <motion.line
-        x1="35"
-        y1="57"
-        x2="55"
-        y2="57"
-        stroke="#9ca3af"
-        strokeWidth="4"
-        strokeLinecap="round"
+      >
+        <motion.line
+          x1="35"
+          y1="45"
+          x2="65"
+          y2="45"
+          stroke="#9ca3af"
+          strokeWidth="4"
+          strokeLinecap="round"
+          variants={{
+            initial: { x2: 65 },
+            animate: { x2: [65, 55, 65], transition: { duration: 4, repeat: Infinity, ease: "easeInOut" } },
+          }}
+        />
+      </motion.g>
+      <motion.g
         variants={{
-          animate: { x2: [55, 65, 55], y: [0, -3, 0], transition: { duration: 4, repeat: Infinity, ease: "easeInOut", delay: 1 } },
+          animate: { y: [0, -3, 0], transition: { duration: 4, repeat: Infinity, ease: "easeInOut", delay: 1 } },
         }}
-      />
-      <motion.line
-        x1="35"
-        y1="69"
-        x2="60"
-        y2="69"
-        stroke="#9ca3af"
-        strokeWidth="4"
-        strokeLinecap="round"
+      >
+        <motion.line
+          x1="35"
+          y1="57"
+          x2="55"
+          y2="57"
+          stroke="#9ca3af"
+          strokeWidth="4"
+          strokeLinecap="round"
+          variants={{
+            initial: { x2: 55 },
+            animate: { x2: [55, 65, 55], transition: { duration: 4, repeat: Infinity, ease: "easeInOut", delay: 1 } },
+          }}
+        />
+      </motion.g>
+      <motion.g
         variants={{
-          animate: { x2: [60, 50, 60], y: [0, -3, 0], transition: { duration: 4, repeat: Infinity, ease: "easeInOut", delay: 2 } },
+          animate: { y: [0, -3, 0], transition: { duration: 4, repeat: Infinity, ease: "easeInOut", delay: 2 } },
         }}
-      />
+      >
+        <motion.line
+          x1="35"
+          y1="69"
+          x2="60"
+          y2="69"
+          stroke="#9ca3af"
+          strokeWidth="4"
+          strokeLinecap="round"
+          variants={{
+            initial: { x2: 60 },
+            animate: { x2: [60, 50, 60], transition: { duration: 4, repeat: Infinity, ease: "easeInOut", delay: 2 } },
+          }}
+        />
+      </motion.g>
     </motion.svg>
   );
 }

@@ -33,24 +33,24 @@ export function EmptyState({
         withBorder
           ? isDanger
             ? "border border-dashed border-red-200 bg-red-50/70"
-            : "border border-dashed border-gray-200 bg-gray-50"
+            : "border border-dashed border-brand-100 bg-white/60"
           : ""
       } ${className}`}
     >
-      <div className={`space-y-2 ${isDanger ? "text-red-700" : "text-gray-500"}`}>
+      <div className={`space-y-2 ${isDanger ? "text-red-700" : "text-brand-500"}`}>
         {Icon && (
           <Icon
             aria-hidden="true"
-            className={`mx-auto h-10 w-10 ${isDanger ? "text-red-300" : "text-gray-300"}`}
+            className={`mx-auto h-10 w-10 ${isDanger ? "text-red-300" : "text-brand-300"}`}
           />
         )}
         {title && (
-          <p className={`text-sm font-medium ${isDanger ? "text-red-800" : "text-gray-700"}`}>
+          <p className={`text-sm font-medium ${isDanger ? "text-red-800" : "text-brand-800"}`}>
             {title}
           </p>
         )}
         {description && (
-          <p className={`text-sm ${isDanger ? "text-red-700" : "text-gray-500"}`}>
+          <p className={`text-sm ${isDanger ? "text-red-700" : "text-brand-500"}`}>
             {description}
           </p>
         )}

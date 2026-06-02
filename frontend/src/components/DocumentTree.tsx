@@ -11,11 +11,14 @@ import {
   Type,
   Download,
   BookTemplate,
+  Loader2,
 } from "lucide-react";
 import { useDroppable } from "@dnd-kit/core";
 import toast from "react-hot-toast";
 import { Tooltip } from "./ui/Tooltip";
 import { EmptyState } from "./ui/EmptyState";
+import { LoadingButton } from "./ui/LoadingButton";
+import { useBusyActions } from "../hooks/useBusyActions";
 import { formatLongDate } from "../utils/dateFormat";
 import type { DocumentType, Section, Template } from "../types";
 import {
@@ -127,13 +130,17 @@ function DocumentTree({
   // Template selector
   const [templates, setTemplates] = useState<Template[]>([]);
   const [showTemplates, setShowTemplates] = useState(false);
+  const { isBusy, run } = useBusyActions();
 
-  const handleSaveDocAsTemplate = async () => {
-    try {
-      await saveDocTaxonomyAsTemplate(caseId, `Documentos - ${formatLongDate(new Date())}`);
-      toast.success("Estructura guardada como plantilla");
-    } catch { toast.error("Error al guardar plantilla"); }
-  };
+  const handleSaveDocAsTemplate = () =>
+    run("save-template", async () => {
+      try {
+        await saveDocTaxonomyAsTemplate(caseId, `Documentos - ${formatLongDate(new Date())}`);
+        toast.success("Estructura guardada como plantilla");
+      } catch {
+        toast.error("Error al guardar plantilla");
+      }
+    });
 
   useEffect(() => {
     if (showTemplates) {
@@ -144,63 +151,68 @@ function DocumentTree({
   const toggle = (id: string) =>
     setExpanded((prev) => ({ ...prev, [id]: !prev[id] }));
 
-  const handleAddDocType = async () => {
-    if (!newDt.name || !newDt.code) return;
-    try {
-      await createDocumentType(caseId, {
-        name: newDt.name,
-        code: newDt.code,
-        order: docTypes.length,
-        has_tables: newDt.has_tables,
-      });
-      setNewDt({ name: "", code: "", has_tables: false });
-      setAddingDocType(false);
+  const handleAddDocType = () =>
+    run("add-doc-type", async () => {
+      if (!newDt.name || !newDt.code) return;
+      try {
+        await createDocumentType(caseId, {
+          name: newDt.name,
+          code: newDt.code,
+          order: docTypes.length,
+          has_tables: newDt.has_tables,
+        });
+        setNewDt({ name: "", code: "", has_tables: false });
+        setAddingDocType(false);
+        onRefresh();
+      } catch {
+        toast.error("Error al crear tipo de documento");
+      }
+    });
+
+  const handleToggleTables = (dtId: string, current: boolean) =>
+    run(`toggle-tables:${dtId}`, async () => {
+      try {
+        await updateDocumentType(dtId, { has_tables: !current });
+        onRefresh();
+        toast.success(!current ? "Modo tablas activado" : "Modo texto activado");
+      } catch {
+        toast.error("Error al cambiar modo");
+      }
+    });
+
+  const handleAddSection = (dtId: string, parentId?: string) =>
+    run(parentId ? `add-subsection:${parentId}` : `add-section:${dtId}`, async () => {
+      if (!newSec.name || !newSec.code) return;
+      const dt = docTypes.find((d) => d.id === dtId);
+      try {
+        await createSection(dtId, {
+          name: newSec.name,
+          code: newSec.code,
+          order: dt?.sections.length ?? 0,
+          parent_section_id: parentId,
+        });
+        setNewSec({ name: "", code: "" });
+        setAddingSectionFor(null);
+        setAddingSubsectionFor(null);
+        onRefresh();
+      } catch {
+        toast.error("Error al crear seccion");
+      }
+    });
+
+  const handleDeleteDocType = (id: string) =>
+    run(`delete-doc-type:${id}`, async () => {
+      if (!confirm("Eliminar tipo de documento y todas sus secciones?")) return;
+      await deleteDocumentType(id);
       onRefresh();
-    } catch {
-      toast.error("Error al crear tipo de documento");
-    }
-  };
+    });
 
-  const handleToggleTables = async (dtId: string, current: boolean) => {
-    try {
-      await updateDocumentType(dtId, { has_tables: !current });
+  const handleDeleteSection = (id: string) =>
+    run(`delete-section:${id}`, async () => {
+      if (!confirm("Eliminar seccion y sus subsecciones?")) return;
+      await deleteSection(id);
       onRefresh();
-      toast.success(!current ? "Modo tablas activado" : "Modo texto activado");
-    } catch {
-      toast.error("Error al cambiar modo");
-    }
-  };
-
-  const handleAddSection = async (dtId: string, parentId?: string) => {
-    if (!newSec.name || !newSec.code) return;
-    const dt = docTypes.find((d) => d.id === dtId);
-    try {
-      await createSection(dtId, {
-        name: newSec.name,
-        code: newSec.code,
-        order: dt?.sections.length ?? 0,
-        parent_section_id: parentId,
-      });
-      setNewSec({ name: "", code: "" });
-      setAddingSectionFor(null);
-      setAddingSubsectionFor(null);
-      onRefresh();
-    } catch {
-      toast.error("Error al crear seccion");
-    }
-  };
-
-  const handleDeleteDocType = async (id: string) => {
-    if (!confirm("Eliminar tipo de documento y todas sus secciones?")) return;
-    await deleteDocumentType(id);
-    onRefresh();
-  };
-
-  const handleDeleteSection = async (id: string) => {
-    if (!confirm("Eliminar seccion y sus subsecciones?")) return;
-    await deleteSection(id);
-    onRefresh();
-  };
+    });
 
   const handleSaveCode = async (secId: string) => {
     if (!editCodeValue.trim()) return;
@@ -213,16 +225,17 @@ function DocumentTree({
     }
   };
 
-  const handleApplyTemplate = async (tplId: string) => {
-    try {
-      await applyTemplate(caseId, tplId);
-      toast.success("Plantilla aplicada exitosamente");
-      setShowTemplates(false);
-      onRefresh();
-    } catch {
-      toast.error("Error al aplicar plantilla");
-    }
-  };
+  const handleApplyTemplate = (tplId: string) =>
+    run(`apply-template:${tplId}`, async () => {
+      try {
+        await applyTemplate(caseId, tplId);
+        toast.success("Plantilla aplicada exitosamente");
+        setShowTemplates(false);
+        onRefresh();
+      } catch {
+        toast.error("Error al aplicar plantilla");
+      }
+    });
 
   // Recursive section renderer
   const renderSection = (sec: Section, dt: DocumentType, indent: number) => {
@@ -245,8 +258,8 @@ function DocumentTree({
             <div
               className={`flex items-center gap-1 px-2 py-1 rounded-md cursor-pointer group transition-colors
                 ${isOver ? "bg-brand-100 ring-1 ring-brand-400" : ""}
-                ${isSelected && !isOver ? "bg-white/60 shadow-sm text-brand-700" : ""}
-                ${!isSelected && !isOver ? "hover:bg-white/40 text-gray-700" : ""}`}
+                ${isSelected && !isOver ? "bg-white/75 shadow-sm text-brand-700" : ""}
+                ${!isSelected && !isOver ? "text-brand-700 hover:bg-brand-50/70" : ""}`}
               style={{ paddingLeft: `${8 + indent * 16}px` }}
               onClick={() => onSelectSection(sec.id, dt.id)}
             >
@@ -256,9 +269,9 @@ function DocumentTree({
               className="shrink-0"
             >
               {isExpanded ? (
-                <ChevronDown className="w-3 h-3 text-gray-400" />
+                <ChevronDown className="w-3 h-3 text-brand-400" />
               ) : (
-                <ChevronRight className="w-3 h-3 text-gray-400" />
+                <ChevronRight className="w-3 h-3 text-brand-400" />
               )}
             </button>
           ) : (
@@ -278,7 +291,7 @@ function DocumentTree({
                 onBlur={() => handleSaveCode(sec.id)}
                 autoFocus
               />
-              <span className="text-xs text-gray-500 truncate">&ndash; {sec.name}</span>
+              <span className="truncate text-xs text-brand-500">&ndash; {sec.name}</span>
             </span>
           ) : (
             <Tooltip content="Doble clic para editar código">
@@ -294,7 +307,7 @@ function DocumentTree({
               </span>
             </Tooltip>
           )}
-          <span className="text-[10px] text-gray-400">{sec.page_count}p</span>
+          <span className="text-[10px] text-brand-400">{sec.page_count}p</span>
           {sec.is_required && sec.page_count === 0 && (
             <Tooltip content="Sección requerida pero no tiene páginas asignadas">
               <span>
@@ -314,7 +327,7 @@ function DocumentTree({
                 setAddingSubsectionFor(sec.id);
                 setAddingSectionFor(dt.id);
               }}
-              className="opacity-0 group-hover:opacity-100 p-0.5 text-gray-400 hover:text-brand-600 transition-colors"
+              className="p-0.5 text-brand-400 opacity-0 transition-colors hover:text-brand-600 group-hover:opacity-100"
             >
               <Plus className="w-3 h-3" />
             </button>
@@ -325,7 +338,7 @@ function DocumentTree({
                 e.stopPropagation();
                 handleDeleteSection(sec.id);
               }}
-              className="opacity-0 group-hover:opacity-100 p-0.5 text-gray-400 hover:text-red-500 transition-colors"
+              className="p-0.5 text-brand-400 opacity-0 transition-colors hover:text-red-500 group-hover:opacity-100"
             >
               <Trash2 className="w-3 h-3" />
             </button>
@@ -335,41 +348,43 @@ function DocumentTree({
         {/* Inline subsection form */}
         {addingSubsectionFor === sec.id && (
           <div
-            className="flex flex-col gap-1.5 p-2 bg-indigo-50 rounded-lg border border-indigo-200 mt-0.5 mb-0.5"
+            className="mt-0.5 mb-0.5 flex flex-col gap-1.5 rounded-lg border border-brand-100 bg-brand-50/70 p-2"
             style={{ marginLeft: `${16 + indent * 16}px` }}
           >
             <input
-              className="text-xs border rounded px-2 py-1 focus:ring-1 focus:ring-brand-400 focus:border-brand-400 outline-none"
+                className="rounded border border-brand-100 bg-nova-snow px-2 py-1 text-xs text-brand-800 outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
               placeholder="Nombre subsección"
               value={newSec.name}
               onChange={(e) => setNewSec((p) => ({ ...p, name: e.target.value }))}
               autoFocus
             />
             <div className="flex items-center gap-1.5">
-              <span className="text-[10px] text-gray-500 shrink-0">
+              <span className="shrink-0 text-[10px] text-brand-500">
                 {sec.path_code || `${dt.code}.${sec.code}`}.
               </span>
               <input
-                className="w-12 text-xs border rounded px-1.5 py-0.5 font-mono text-center focus:ring-1 focus:ring-brand-400 focus:border-brand-400 outline-none"
+                className="w-12 rounded border border-brand-100 bg-nova-snow px-1.5 py-0.5 text-center font-mono text-xs text-brand-800 outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
                 value={newSec.code}
                 onChange={(e) => setNewSec((p) => ({ ...p, code: e.target.value }))}
                 title="Código auto-generado, editable"
               />
-              <span className="text-[10px] text-gray-400 truncate flex-1">
+              <span className="flex-1 truncate text-[10px] text-brand-400">
                 {newSec.name || "Nombre…"}
               </span>
             </div>
             <div className="flex gap-1">
-              <button
+              <LoadingButton
                 onClick={() => handleAddSection(dt.id, sec.id)}
                 disabled={!newSec.name}
-                className="flex-1 text-[10px] bg-brand-600 text-white rounded py-0.5 hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                loading={isBusy(`add-subsection:${sec.id}`)}
+                spinnerClassName="h-3 w-3"
+                className="inline-flex flex-1 items-center justify-center gap-1 text-[10px] bg-brand-600 text-white rounded py-0.5 hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition"
               >
                 Crear
-              </button>
+              </LoadingButton>
               <button
                 onClick={() => { setAddingSubsectionFor(null); setNewSec({ name: "", code: "" }); }}
-                className="flex-1 text-[10px] bg-gray-200 rounded py-0.5 hover:bg-gray-300 transition"
+                className="flex-1 rounded border border-brand-100 bg-nova-snow py-0.5 text-[10px] text-brand-700 transition hover:bg-brand-50"
               >
                 Cancelar
               </button>
@@ -393,7 +408,7 @@ function DocumentTree({
   return (
     <div className="flex flex-col gap-1">
       <div className="flex items-center justify-between mb-2">
-        <h3 className="text-sm font-bold text-gray-700 uppercase tracking-wider">
+        <h3 className="text-sm font-bold uppercase tracking-wider text-brand-700">
           Documentos
         </h3>
         <div className="flex items-center gap-1">
@@ -401,9 +416,15 @@ function DocumentTree({
             <Tooltip content="Guardar estructura actual como plantilla reutilizable">
               <button
                 onClick={handleSaveDocAsTemplate}
-                className="p-1 rounded hover:bg-green-100 text-gray-400 hover:text-green-600 transition"
+                disabled={isBusy("save-template")}
+                aria-busy={isBusy("save-template") || undefined}
+                className="rounded p-1 text-brand-400 transition hover:bg-green-100 hover:text-green-600 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Download className="w-4 h-4" />
+                {isBusy("save-template") ? (
+                  <Loader2 className="w-4 h-4 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Download className="w-4 h-4" />
+                )}
               </button>
             </Tooltip>
           )}
@@ -411,7 +432,7 @@ function DocumentTree({
             <button
               onClick={() => setShowTemplates(!showTemplates)}
               className={`p-1 rounded transition-colors ${
-                showTemplates ? "bg-brand-100 text-brand-600" : "hover:bg-gray-200 text-gray-500"
+                showTemplates ? "bg-brand-100 text-brand-600" : "text-brand-500 hover:bg-brand-50"
               }`}
             >
               <BookTemplate className="w-4 h-4" />
@@ -420,7 +441,7 @@ function DocumentTree({
           <Tooltip content="Agregar tipo de documento manual">
             <button
               onClick={() => setAddingDocType(true)}
-              className="p-1 rounded hover:bg-gray-200 text-brand-600 transition"
+              className="rounded p-1 text-brand-600 transition hover:bg-brand-50"
             >
               <Plus className="w-4 h-4" />
             </button>
@@ -430,30 +451,32 @@ function DocumentTree({
 
       {/* Template selector */}
       {showTemplates && (
-        <div className="mb-2 p-2 bg-purple-50 rounded-lg border border-purple-200">
-          <p className="text-[10px] font-semibold text-purple-700 uppercase mb-1">
+        <div className="mb-2 p-2 bg-brand-50 rounded-lg border border-brand-100">
+          <p className="text-[10px] font-semibold text-brand-700 uppercase mb-1">
             Plantillas disponibles
           </p>
           {templates.length === 0 ? (
-            <p className="text-[10px] text-gray-400 italic">
+            <p className="text-[10px] italic text-brand-400">
               No hay plantillas creadas.
             </p>
           ) : (
             <div className="flex flex-col gap-1">
               {templates.map((tpl) => (
-                <button
+                <LoadingButton
                   key={tpl.id}
                   onClick={() => handleApplyTemplate(tpl.id)}
-                  className="flex items-center gap-1.5 text-xs text-left px-2 py-1.5 rounded hover:bg-purple-100 transition"
+                  loading={isBusy(`apply-template:${tpl.id}`)}
+                  spinnerClassName="h-3.5 w-3.5"
+                  className="inline-flex w-full items-center gap-1.5 text-xs text-left px-2 py-1.5 rounded hover:bg-brand-100 transition disabled:opacity-50"
                 >
-                  <Download className="w-3.5 h-3.5 text-purple-500 shrink-0" />
+                  <Download className="w-3.5 h-3.5 text-brand-600 shrink-0" />
                   <div className="flex-1">
-                    <span className="font-medium text-gray-800">{tpl.name}</span>
+                    <span className="font-medium text-brand-800">{tpl.name}</span>
                     {tpl.description && (
-                      <p className="text-[10px] text-gray-400 truncate">{tpl.description}</p>
+                      <p className="truncate text-[10px] text-brand-400">{tpl.description}</p>
                     )}
                   </div>
-                </button>
+                </LoadingButton>
               ))}
             </div>
           )}
@@ -462,42 +485,45 @@ function DocumentTree({
 
       {/* Add new doc type inline form */}
       {addingDocType && (
-        <div className="flex flex-col gap-1 mb-2 p-2 bg-blue-50 rounded-lg border border-blue-200">
+        <div className="mb-2 flex flex-col gap-1 rounded-lg border border-brand-100 bg-brand-50/70 p-2">
           <input
-            className="text-xs border rounded px-2 py-1"
+            className="rounded border border-brand-100 bg-nova-snow px-2 py-1 text-xs text-brand-800"
             placeholder="Nombre (ej. FBI Records)"
             value={newDt.name}
             onChange={(e) => setNewDt((p) => ({ ...p, name: e.target.value }))}
             autoFocus
           />
           <input
-            className="text-xs border rounded px-2 py-1"
+            className="rounded border border-brand-100 bg-nova-snow px-2 py-1 text-xs text-brand-800"
             placeholder="Codigo (ej. 11)"
             value={newDt.code}
             onChange={(e) => setNewDt((p) => ({ ...p, code: e.target.value }))}
           />
-          <label className="flex items-center gap-2 text-xs text-gray-600 px-1 py-0.5 cursor-pointer select-none">
+          <label className="flex cursor-pointer select-none items-center gap-2 px-1 py-0.5 text-xs text-brand-600">
             <input
               type="checkbox"
               checked={newDt.has_tables}
               onChange={(e) =>
                 setNewDt((p) => ({ ...p, has_tables: e.target.checked }))
               }
-              className="rounded border-gray-300 text-brand-600 focus:ring-brand-500"
+              className="rounded border-brand-200 text-brand-600 focus:ring-brand-500"
             />
-            <Table2 className="w-3.5 h-3.5 text-gray-500" />
+            <Table2 className="h-3.5 w-3.5 text-brand-500" />
             Contiene tablas (usar Gemini Vision)
           </label>
           <div className="flex gap-1">
-            <button
+            <LoadingButton
               onClick={handleAddDocType}
-              className="flex-1 text-xs bg-brand-600 text-white rounded py-1 hover:bg-brand-700"
+              disabled={!newDt.name || !newDt.code}
+              loading={isBusy("add-doc-type")}
+              spinnerClassName="h-3 w-3"
+              className="inline-flex flex-1 items-center justify-center gap-1 text-xs bg-brand-600 text-white rounded py-1 hover:bg-brand-700 disabled:opacity-50"
             >
               Crear
-            </button>
+            </LoadingButton>
             <button
               onClick={() => setAddingDocType(false)}
-              className="flex-1 text-xs bg-gray-200 rounded py-1 hover:bg-gray-300"
+              className="flex-1 rounded border border-brand-100 bg-nova-snow py-1 text-xs text-brand-700 hover:bg-brand-50"
             >
               Cancelar
             </button>
@@ -510,16 +536,16 @@ function DocumentTree({
         <div key={dt.id} className="select-none">
           {/* Doc type header */}
           <div
-            className="flex items-center gap-1 px-2 py-1.5 rounded-md hover:bg-white/40 cursor-pointer group transition-colors"
+            className="group flex cursor-pointer items-center gap-1 rounded-md px-2 py-1.5 transition-colors hover:bg-brand-50/70"
             onClick={() => toggle(dt.id)}
           >
             {expanded[dt.id] ? (
-              <ChevronDown className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+              <ChevronDown className="h-3.5 w-3.5 shrink-0 text-brand-400" />
             ) : (
-              <ChevronRight className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+              <ChevronRight className="h-3.5 w-3.5 shrink-0 text-brand-400" />
             )}
             <FolderOpen className="w-4 h-4 text-amber-500 shrink-0" />
-            <span className="text-sm font-medium text-gray-800 truncate flex-1">
+            <span className="flex-1 truncate text-sm font-medium text-brand-800">
               {dt.code} &ndash; {dt.name}
             </span>
             {/* Tables/Text mode indicator & toggle */}
@@ -529,13 +555,17 @@ function DocumentTree({
                   e.stopPropagation();
                   handleToggleTables(dt.id, dt.has_tables);
                 }}
-                className={`p-0.5 rounded transition-colors shrink-0 ${
+                disabled={isBusy(`toggle-tables:${dt.id}`)}
+                aria-busy={isBusy(`toggle-tables:${dt.id}`) || undefined}
+                className={`p-0.5 rounded transition-colors shrink-0 disabled:opacity-50 disabled:cursor-not-allowed ${
                   dt.has_tables
-                    ? "text-purple-600 bg-purple-50 hover:bg-purple-100"
-                    : "text-gray-400 hover:text-gray-600 hover:bg-gray-100"
+                    ? "text-accent-600 bg-accent-50 hover:bg-accent-100"
+                    : "text-brand-400 hover:bg-brand-50 hover:text-brand-600"
                 }`}
               >
-                {dt.has_tables ? (
+                {isBusy(`toggle-tables:${dt.id}`) ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                ) : dt.has_tables ? (
                   <Table2 className="w-3.5 h-3.5" />
                 ) : (
                   <Type className="w-3.5 h-3.5" />
@@ -548,9 +578,15 @@ function DocumentTree({
                   e.stopPropagation();
                   handleDeleteDocType(dt.id);
                 }}
-                className="opacity-0 group-hover:opacity-100 p-0.5 text-gray-400 hover:text-red-500 transition-colors"
+                disabled={isBusy(`delete-doc-type:${dt.id}`)}
+                aria-busy={isBusy(`delete-doc-type:${dt.id}`) || undefined}
+                className="p-0.5 text-brand-400 opacity-0 transition-colors hover:text-red-500 group-hover:opacity-100 disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                <Trash2 className="w-3.5 h-3.5" />
+                {isBusy(`delete-doc-type:${dt.id}`) ? (
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
+                ) : (
+                  <Trash2 className="w-3.5 h-3.5" />
+                )}
               </button>
             </Tooltip>
           </div>
@@ -565,9 +601,9 @@ function DocumentTree({
 
               {/* Add root section */}
               {addingSectionFor === dt.id && !addingSubsectionFor ? (
-                <div className="flex flex-col gap-1.5 p-2 bg-blue-50 rounded-lg border border-blue-200 mt-1">
+                <div className="mt-1 flex flex-col gap-1.5 rounded-lg border border-brand-100 bg-brand-50/70 p-2">
                   <input
-                    className="text-xs border rounded px-2 py-1 focus:ring-1 focus:ring-brand-400 focus:border-brand-400 outline-none"
+                    className="rounded border border-brand-100 bg-nova-snow px-2 py-1 text-xs text-brand-800 outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
                     placeholder="Nombre (ej. Introduccion)"
                     value={newSec.name}
                     onChange={(e) =>
@@ -576,30 +612,32 @@ function DocumentTree({
                     autoFocus
                   />
                   <div className="flex items-center gap-1.5">
-                    <span className="text-[10px] text-gray-500 shrink-0">{dt.code}.</span>
+                    <span className="shrink-0 text-[10px] text-brand-500">{dt.code}.</span>
                     <input
-                      className="w-12 text-xs border rounded px-1.5 py-0.5 font-mono text-center focus:ring-1 focus:ring-brand-400 focus:border-brand-400 outline-none"
+                      className="w-12 rounded border border-brand-100 bg-nova-snow px-1.5 py-0.5 text-center font-mono text-xs text-brand-800 outline-none focus:border-brand-400 focus:ring-1 focus:ring-brand-400"
                       value={newSec.code}
                       onChange={(e) =>
                         setNewSec((p) => ({ ...p, code: e.target.value }))
                       }
                       title="Código auto-generado, editable"
                     />
-                    <span className="text-[10px] text-gray-400 truncate flex-1">
+                    <span className="flex-1 truncate text-[10px] text-brand-400">
                       {newSec.name || "Nombre…"}
                     </span>
                   </div>
                   <div className="flex gap-1">
-                    <button
+                    <LoadingButton
                       onClick={() => handleAddSection(dt.id)}
                       disabled={!newSec.name}
-                      className="flex-1 text-[10px] bg-brand-600 text-white rounded py-0.5 hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition"
+                      loading={isBusy(`add-section:${dt.id}`)}
+                      spinnerClassName="h-3 w-3"
+                      className="inline-flex flex-1 items-center justify-center gap-1 text-[10px] bg-brand-600 text-white rounded py-0.5 hover:bg-brand-700 disabled:opacity-40 disabled:cursor-not-allowed transition"
                     >
                       Crear
-                    </button>
+                    </LoadingButton>
                     <button
                       onClick={() => { setAddingSectionFor(null); setNewSec({ name: "", code: "" }); }}
-                      className="flex-1 text-[10px] bg-gray-200 rounded py-0.5 hover:bg-gray-300 transition"
+                      className="flex-1 rounded border border-brand-100 bg-nova-snow py-0.5 text-[10px] text-brand-700 transition hover:bg-brand-50"
                     >
                       Cancelar
                     </button>
@@ -626,13 +664,12 @@ function DocumentTree({
       ))}
 
       {docTypes.length === 0 && !addingDocType && (
-        <div className="py-4">
-          <EmptyState
-            icon="organize"
-            title="Sin estructura"
-            description="Agrega un tipo de documento manualmente o aplica una plantilla desde el icono superior."
-          />
-        </div>
+        <EmptyState
+          compact
+          icon="organize"
+          title="Sin estructura"
+          description="Agrega un tipo de documento manualmente o aplica una plantilla desde el icono superior."
+        />
       )}
     </div>
   );

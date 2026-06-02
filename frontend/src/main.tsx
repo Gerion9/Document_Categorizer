@@ -16,10 +16,23 @@ if (token) {
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode>
-    <BrowserRouter>
+    <BrowserRouter future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
       <TooltipProvider delayDuration={200}>
         <LiquidGlassFilters />
-        <Toaster position="top-right" />
+        <Toaster
+          position="top-right"
+          toastOptions={{
+            duration: 4000,
+            className:
+              "!rounded-xl !border !border-white/60 !bg-white/95 !text-gray-800 !text-sm !font-medium !shadow-glass-lg !backdrop-blur-md",
+            success: {
+              iconTheme: { primary: "#1e3a5f", secondary: "#eff6ff" },
+            },
+            error: {
+              iconTheme: { primary: "#dc2626", secondary: "#fef2f2" },
+            },
+          }}
+        />
         <App />
       </TooltipProvider>
     </BrowserRouter>

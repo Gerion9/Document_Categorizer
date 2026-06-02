@@ -15,7 +15,7 @@ export function AnimatedFolder({ className = "w-10 h-10" }: Props) {
       whileHover="hover"
     >
       <defs>
-        <linearGradient id="folder-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+        <linearGradient id="folder-gradient" x1="100%" y1="0%" x2="0%" y2="100%">
           <stop offset="0%" stopColor="#f59e0b" /> {/* amber-500 */}
           <stop offset="100%" stopColor="#fbbf24" /> {/* amber-400 */}
         </linearGradient>

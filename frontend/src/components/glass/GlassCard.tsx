@@ -4,7 +4,7 @@ export function GlassCard({ className = "", children, ...props }: GlassSurfacePr
   return (
     <GlassSurface
       filterId="glass-card"
-      className={`rounded-2xl p-5 hover:shadow-glass-lg transition-shadow duration-300 ${className}`}
+      className={`rounded-2xl p-5 hover:shadow-glass-lg hover:-translate-y-0.5 transition-[box-shadow,transform] duration-300 ${className}`}
       {...props}
     >
       {children}

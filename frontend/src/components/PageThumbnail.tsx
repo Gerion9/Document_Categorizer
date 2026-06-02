@@ -29,6 +29,10 @@ interface Props {
   multiSelected?: boolean;
   /** Multi-select toggle handler */
   onToggleSelect?: (selected: boolean) => void;
+  /** Skip mount/exit motion (e.g. paginated grid swaps) */
+  disableAnimation?: boolean;
+  /** Show loading state on remove button */
+  removing?: boolean;
 }
 
 function PageThumbnail({
@@ -44,6 +48,8 @@ function PageThumbnail({
   showIndexStatus = false,
   multiSelected = false,
   onToggleSelect,
+  disableAnimation = false,
+  removing = false,
 }: Props) {
   const effectiveId = sortableId || page.id;
   const {
@@ -98,8 +104,8 @@ function PageThumbnail({
     page.status === "classified"
       ? "bg-green-500"
       : page.status === "extra"
-        ? "bg-amber-500"
-        : "bg-gray-400";
+        ? "bg-brand-600"
+        : "bg-brand-300";
   const extractionDone = page.extraction_status === "done";
   const extractionProcessing = page.extraction_status === "processing";
   const indexProcessing = showIndexStatus && extractionDone && page.index_status === "processing";
@@ -118,18 +124,18 @@ function PageThumbnail({
 
   return (
     <motion.div
-      layout
-      initial={{ opacity: 0, scale: 0.9 }}
-      animate={{ opacity: 1, scale: 1 }}
-      exit={{ opacity: 0, scale: 0.9 }}
-      transition={{ duration: 0.2 }}
+      layout={!disableAnimation}
+      initial={disableAnimation ? false : { opacity: 0, scale: 0.9 }}
+      animate={disableAnimation ? undefined : { opacity: 1, scale: 1 }}
+      exit={disableAnimation ? undefined : { opacity: 0, scale: 0.9 }}
+      transition={disableAnimation ? undefined : { duration: 0.2 }}
       ref={sortable ? setNodeRef : undefined}
       style={style}
       {...composedProps}
       onClick={handleClick}
       className={`
         group relative rounded-xl border overflow-hidden
-        transition-[background-color,border-color,box-shadow,transform] duration-200 touch-none glass-fallback
+        transition-[background-color,border-color,box-shadow,transform] duration-200 touch-none solid-panel
         ${selected ? "ring-2 ring-brand-500 border-brand-400" : "border-white/40"}
         ${compact ? "w-24" : "w-36"}
         ${sortable ? "cursor-grab active:cursor-grabbing" : "cursor-pointer"}
@@ -156,7 +162,7 @@ function PageThumbnail({
       {/* Visual drag indicator — shown on hover to hint "draggable" */}
       {sortable && (
         <div className={`absolute top-1 z-10 rounded bg-white/80 p-0.5 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none ${onToggleSelect ? "left-6" : "left-1"}`}>
-          <GripVertical className="w-3.5 h-3.5 text-gray-400" />
+          <GripVertical className="w-3.5 h-3.5 text-brand-400" />
         </div>
       )}
 
@@ -166,12 +172,18 @@ function PageThumbnail({
           <button
             onClick={(e) => {
               e.stopPropagation();
-              onRemove();
+              if (!removing) onRemove();
             }}
             onPointerDown={(e) => e.stopPropagation()}
-            className="absolute top-1 right-1 z-10 rounded-full bg-white/80 p-0.5 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100"
+            disabled={removing}
+            aria-busy={removing || undefined}
+            className="absolute top-1 right-1 z-10 rounded-full bg-white/80 p-0.5 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-100 disabled:opacity-100 disabled:cursor-not-allowed"
           >
-            <X className="w-3.5 h-3.5 text-red-500" />
+            {removing ? (
+              <Loader2 className="w-3.5 h-3.5 text-red-500 animate-spin" aria-hidden="true" />
+            ) : (
+              <X className="w-3.5 h-3.5 text-red-500" />
+            )}
           </button>
         </Tooltip>
       )}
@@ -182,7 +194,7 @@ function PageThumbnail({
       {/* Multi-link badge */}
       {(page.link_count ?? 0) > 1 && (
         <Tooltip content={`Esta página está en ${page.link_count} secciones`}>
-          <div className="absolute bottom-[28px] right-1 z-10 flex items-center gap-0.5 bg-indigo-600 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full shadow pointer-events-none">
+          <div className="absolute bottom-[28px] right-1 z-10 flex items-center gap-0.5 bg-brand-600 text-white text-[8px] font-bold px-1.5 py-0.5 rounded-full shadow pointer-events-none">
             <Link2 className="w-2.5 h-2.5" />
             {page.link_count}
           </div>
@@ -191,11 +203,11 @@ function PageThumbnail({
 
       {/* Secondary (reference) overlay */}
       {isSecondary && (
-        <div className="absolute inset-0 bg-indigo-500/10 pointer-events-none z-[1]" />
+        <div className="absolute inset-0 bg-brand-500/10 pointer-events-none z-[1]" />
       )}
 
       {/* Thumbnail image */}
-      <div className="bg-gray-100 select-none">
+      <div className="bg-brand-50 select-none">
         <img
           src={page.thumbnail_url}
           alt={`${page.original_filename} p${page.original_page_number}`}
@@ -212,20 +224,20 @@ function PageThumbnail({
           title={combinedIndicatorTitle}
         >
           {showProcessingIndicator ? (
-            <Loader2 className="w-3 h-3 animate-spin text-amber-500" />
+            <Loader2 className="w-3 h-3 animate-spin text-brand-500" />
           ) : (
-            <Sparkles className="w-3 h-3 text-purple-500" />
+            <Sparkles className="w-3 h-3 text-brand-500" />
           )}
         </div>
       )}
 
       {/* Footer info */}
       <div className="px-1.5 py-1.5 bg-white/60 backdrop-blur-sm select-none border-t border-white/40">
-        <p className="text-[10px] text-gray-500 truncate" title={page.original_filename}>
+        <p className="text-[10px] text-brand-500 truncate" title={page.original_filename}>
           {page.original_filename}
         </p>
         <div className="flex items-center justify-between">
-          <span className="text-[10px] text-gray-400">
+          <span className="text-[10px] text-brand-500/70">
             p. {page.original_page_number}
           </span>
           {page.subindex && (
